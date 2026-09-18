@@ -26,7 +26,10 @@ from projectkoios.references.coverage import (
     CoverageState,
     ReferenceCoverage,
 )
-from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.identity import (
+    ProducerIdentity,
+    ReferenceCandidate,
+)
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,
     FrozenCounts,
@@ -35,13 +38,15 @@ from projectkoios.references.reconciliation_package import (
 _ASSERTED_REVISION = "caller-asserted-revision"
 
 
-def _record() -> ReferenceRecord:
-    return ReferenceRecord(
-        citekey="example2026",
+def _record() -> ReferenceCandidate:
+    return ReferenceCandidate.create(
+        proposed_citekey="example2026",
         entry_type="article",
         title="Example",
         authors=("A. Author",),
         year="2026",
+        source_observation_ids=("test-observation:sha256:" + "0" * 64,),
+        generator=ProducerIdentity("test-fixture", "1"),
     )
 
 

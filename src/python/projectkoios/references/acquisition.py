@@ -19,7 +19,7 @@ from projectkoios.references.path_safety import (
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_ENTRIES = 256
 _MAX_TEXT = 4096
-_IDENTITY_STATUSES = frozenset({"accepted-reference", "unaccepted-candidate"})
+_IDENTITY_STATUSES = frozenset({"unaccepted-candidate"})
 
 
 def _bounded(value: object, *, field: str) -> str:

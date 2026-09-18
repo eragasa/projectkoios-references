@@ -87,6 +87,17 @@ def test__acquisition_manifest__rejects_traversal_and_duplicate_keys(
             roots=roots,
         )
 
+    authority_claim = {
+        **_rows()[0],
+        "identity_status": "accepted-reference",
+    }
+    with pytest.raises(ValueError, match="unsupported identity_status"):
+        create_acquisition_manifest(
+            source_id="operator-recommendation-2026",
+            rows=(authority_claim,),
+            roots=roots,
+        )
+
     duplicate = {**_rows()[0], "relative_path": "collection/other.pdf"}
     (roots[0].path / "collection" / "other.pdf").write_bytes(b"%PDF-1.4\nother")
     with pytest.raises(ValueError, match="duplicate citekeys"):

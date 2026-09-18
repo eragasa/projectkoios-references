@@ -25,17 +25,22 @@ from projectkoios.references.collection_reconciliation import (
     scan_managed_pdfs,
     scan_processing_evidence,
 )
-from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.identity import (
+    ProducerIdentity,
+    ReferenceCandidate,
+)
 from projectkoios.references.validation import validate_reference_objects
 
 
-def _record() -> ReferenceRecord:
-    return ReferenceRecord(
-        citekey="example2026",
+def _record() -> ReferenceCandidate:
+    return ReferenceCandidate.create(
+        proposed_citekey="example2026",
         entry_type="article",
         title="Example",
         authors=("A. Author",),
         year="2026",
+        source_observation_ids=("test-observation:sha256:" + "0" * 64,),
+        generator=ProducerIdentity("test-fixture", "1"),
     )
 
 
@@ -179,7 +184,7 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     destination.mkdir()
     protected = tmp_path / "protected.pdf"
     protected.write_bytes(b"do not replace")
-    (destination / "example2026.pdf").symlink_to(protected)
+    (destination / candidate.materialized_filename).symlink_to(protected)
     with pytest.raises(PathSafetyError):
         materialize_asset(
             candidate,

@@ -2,8 +2,13 @@
 
 ## Canonical identity
 
-An accepted BibLaTeX entry key is the portable identity shared by its reading
-note and its locally held PDF:
+An accepted reference exists only after replay of a valid actor-provenanced
+promotion decision. BibLaTeX import, legacy seed mapping, normalization,
+asset discovery, and filename similarity produce noncanonical candidates only.
+See [Reference identity and authority](reference-identity.md).
+
+For an accepted reference, its canonical BibLaTeX entry key is the portable
+name shared by its reading note and locally held PDF:
 
 ```text
 BibLaTeX key == Markdown basename == PDF basename
@@ -32,8 +37,11 @@ end with a period, and must not equal a reserved portable filename such as
 filesystem validator applies these rules before deriving a note, PDF, ingestion,
 or output path.
 
-Once accepted, a key is stable. A key change requires an explicit migration of
-the bibliography entry, note, source asset, and inbound citations.
+Once accepted, a key is stable. A key change requires an explicit
+actor-provenanced citekey-migration decision and a separately authorized
+migration of the bibliography entry, note, source asset, and inbound citations.
+The identity log preserves the former key as alias history; replaying the log
+does not itself mutate any file or bibliography.
 
 Multiple source artifacts use suffixes without changing the reference identity:
 

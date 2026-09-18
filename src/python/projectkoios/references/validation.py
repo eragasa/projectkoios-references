@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.identity import ReferenceCandidate
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
     validate_citekey,
@@ -21,14 +21,14 @@ class ValidationIssue:
 
 
 def validate_reference_objects(
-    records: tuple[ReferenceRecord, ...],
+    records: tuple[ReferenceCandidate, ...],
     *,
     notes_directory: Path,
     pdf_directory: Path,
 ) -> tuple[ValidationIssue, ...]:
-    """Validate canonical basenames without requiring every optional PDF."""
+    """Validate candidate-key basenames without granting acceptance."""
     issues: list[ValidationIssue] = []
-    keys = {validate_citekey(record.citekey) for record in records}
+    keys = {validate_citekey(record.proposed_citekey) for record in records}
     notes = AuthorizedRoot.existing(notes_directory, label="notes root")
     pdfs = AuthorizedRoot.existing(pdf_directory, label="PDF root")
     for relative in notes.iter_files(suffix=".md", recursive=False):

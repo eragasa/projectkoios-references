@@ -21,43 +21,6 @@ def normalize_doi(value: str | None) -> str | None:
     return normalized or None
 
 
-@dataclass(frozen=True)
-class ReferenceRecord:
-    citekey: str
-    entry_type: str
-    title: str | None
-    authors: tuple[str, ...]
-    year: str | None
-    doi: str | None = None
-    isbn: str | None = None
-    url: str | None = None
-    eprint: str | None = None
-
-    def __post_init__(self) -> None:
-        validate_citekey(self.citekey)
-        if not self.entry_type:
-            raise ValueError("entry_type must be non-empty")
-        normalized = normalize_doi(self.doi)
-        if normalized != self.doi:
-            raise ValueError("doi must be normalized")
-
-
-@dataclass(frozen=True)
-class ReferenceAlias:
-    alias: str
-    canonical_citekey: str
-    rationale: str
-
-    def __post_init__(self) -> None:
-        validate_citekey(self.alias, field="reference alias")
-        validate_citekey(
-            self.canonical_citekey,
-            field="canonical citekey",
-        )
-        if not self.rationale:
-            raise ValueError("reference alias must be fully explained")
-
-
 class ReviewStatus(StrEnum):
     DISCOVERED = "discovered"
     METADATA_VERIFIED = "metadata-verified"
@@ -85,7 +48,10 @@ class ReviewMembership:
 
 @dataclass(frozen=True)
 class SourceAssetRecord:
-    citekey: str
+    candidate_id: str
+    proposed_citekey: str
+    identity_status: str
+    citekey_status: str
     sha256: str
     byte_size: int
     root_alias: str
@@ -94,26 +60,28 @@ class SourceAssetRecord:
     asset_status: str
 
     def __post_init__(self) -> None:
-        validate_citekey(self.citekey)
+        if (
+            re.fullmatch(
+                r"reference-candidate:sha256:[0-9a-f]{64}",
+                self.candidate_id,
+            )
+            is None
+        ):
+            raise ValueError("source-asset candidate identity is invalid")
+        validate_citekey(
+            self.proposed_citekey,
+            field="proposed citekey",
+        )
+        if self.identity_status != "unaccepted-candidate":
+            raise ValueError("source asset cannot claim accepted identity")
+        if self.citekey_status != "proposed-noncanonical":
+            raise ValueError("source-asset citekey must be noncanonical")
         validate_root_alias(self.root_alias)
         validate_relative_path(self.relative_path)
         if re.fullmatch(r"[0-9a-f]{64}", self.sha256) is None:
             raise ValueError("source-asset hash must be a SHA-256 digest")
         if self.byte_size < 0:
             raise ValueError("source-asset byte size must be non-negative")
-
-
-@dataclass(frozen=True)
-class BibliographyOccurrence:
-    citekey: str
-    source_id: str
-    source_revision: str | None
-    source_path: str
-
-    def __post_init__(self) -> None:
-        validate_citekey(self.citekey)
-        if not self.source_id or not self.source_path:
-            raise ValueError("bibliography source identity must be complete")
 
 
 @dataclass(frozen=True)

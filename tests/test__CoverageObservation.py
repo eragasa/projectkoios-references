@@ -20,19 +20,24 @@ from projectkoios.references.collection_reconciliation import (
     PdfStatus,
     reconcile_collection,
 )
-from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.identity import (
+    ProducerIdentity,
+    ReferenceCandidate,
+)
 
 _CITEKEY = "example2026"
 _REVISION = "asserted-revision"
 
 
-def _record(*, entry_type: str = "article") -> ReferenceRecord:
-    return ReferenceRecord(
-        citekey=_CITEKEY,
+def _record(*, entry_type: str = "article") -> ReferenceCandidate:
+    return ReferenceCandidate.create(
+        proposed_citekey=_CITEKEY,
         entry_type=entry_type,
         title="Example",
         authors=("A. Author",),
         year="2026",
+        source_observation_ids=("test-observation:sha256:" + "0" * 64,),
+        generator=ProducerIdentity("test-fixture", "1"),
     )
 
 
@@ -113,7 +118,7 @@ def _reconcile(
         bibliography_bytes=b"fixture",
         collection_id="fixture",
         source_revision=_REVISION,
-        collection_rows={record.citekey: _row()},
+        collection_rows={record.proposed_citekey: _row()},
         managed_pdfs=(),
         citation_closure=None,
         coverage_observation=coverage,

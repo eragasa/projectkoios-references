@@ -19,7 +19,10 @@ from projectkoios.references.collection_reconciliation import (
     scan_managed_pdfs,
     scan_processing_evidence,
 )
-from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.identity import (
+    ProducerIdentity,
+    ReferenceCandidate,
+)
 
 
 def _write_collection_rows(path: Path) -> None:
@@ -46,25 +49,33 @@ def _write_collection_rows(path: Path) -> None:
             )
 
 
-def _records() -> tuple[ReferenceRecord, ...]:
+def _candidate(**values: object) -> ReferenceCandidate:
+    return ReferenceCandidate.create(
+        **values,  # type: ignore[arg-type]
+        source_observation_ids=("test-observation:sha256:" + "0" * 64,),
+        generator=ProducerIdentity("test-fixture", "1"),
+    )
+
+
+def _records() -> tuple[ReferenceCandidate, ...]:
     return (
-        ReferenceRecord(
-            citekey="beta2021",
+        _candidate(
+            proposed_citekey="beta2021",
             entry_type="article",
             title="Beta",
             authors=("B. Author",),
             year="2021",
             doi="10.1000/beta",
         ),
-        ReferenceRecord(
-            citekey="manual2022",
+        _candidate(
+            proposed_citekey="manual2022",
             entry_type="manual",
             title="Manual",
             authors=(),
             year="2022",
         ),
-        ReferenceRecord(
-            citekey="alpha2020",
+        _candidate(
+            proposed_citekey="alpha2020",
             entry_type="article",
             title="Alpha",
             authors=("A. Author",),
@@ -147,7 +158,7 @@ def test__reconcile_collection__classifies_missing_and_extra_pdfs(
 ) -> None:
     corpus, pdfs, discovery, pdf_bytes = _inputs(tmp_path)
     del pdf_bytes
-    keys = tuple(record.citekey for record in _records())
+    keys = tuple(record.proposed_citekey for record in _records())
     closure = build_citation_closure(
         tmp_path / "manuscript",
         bibliography_keys=keys,
@@ -167,7 +178,10 @@ def test__reconcile_collection__classifies_missing_and_extra_pdfs(
         citation_closure=closure,
     )
 
-    records = {record.citekey: record for record in outputs.manifest.references}
+    records = {
+        record.proposed_citekey: record
+        for record in outputs.manifest.references
+    }
     assert records["alpha2020"].pdf_status is PdfStatus.MANAGED_VERIFIED
     assert records["alpha2020"].duplicate_citekeys == ("extra2023",)
     assert records["alpha2020"].citation_status is CitationStatus.CITED_DEFINED
@@ -206,6 +220,14 @@ def test__reconcile_collection__classifies_missing_and_extra_pdfs(
     )
     assert extra_citekeys == ("extra2023",)
     files = dict(outputs.files)
+    assert (
+        b"proposed_citekey,identity_status,citekey_status"
+        in files["missing-pdfs.csv"]
+    )
+    assert (
+        b"unaccepted-candidate,proposed-noncanonical"
+        in files["missing-pdfs.csv"]
+    )
     assert b"beta2021" in files["missing-pdfs.csv"]
     assert b"manual2022" not in files["missing-pdfs.csv"]
     assert b"extra2023" in files["extra-pdfs.csv"]
@@ -227,7 +249,10 @@ def test__reconcile_collection__marks_unverified_managed_pdf_present(
         citation_closure=None,
     )
 
-    records = {record.citekey: record for record in outputs.manifest.references}
+    records = {
+        record.proposed_citekey: record
+        for record in outputs.manifest.references
+    }
     assert records["alpha2020"].pdf_status is PdfStatus.MANAGED_PRESENT
 
 
@@ -238,16 +263,16 @@ def test__reconcile_collection__distinguishes_websites_and_preprints() -> None:
         reading_status="unread-or-unknown",
     )
     records = (
-        ReferenceRecord(
-            citekey="projectWebsite",
+        _candidate(
+            proposed_citekey="projectWebsite",
             entry_type="misc",
             title="Project",
             authors=(),
             year=None,
             url="https://example.org/project/",
         ),
-        ReferenceRecord(
-            citekey="preprint2024",
+        _candidate(
+            proposed_citekey="preprint2024",
             entry_type="misc",
             title="Preprint",
             authors=(),
@@ -262,13 +287,16 @@ def test__reconcile_collection__distinguishes_websites_and_preprints() -> None:
         bibliography_bytes=b"fixture bibliography",
         collection_id="fixture",
         source_revision="abc123",
-        collection_rows={record.citekey: evidence for record in records},
+        collection_rows={
+            record.proposed_citekey: evidence for record in records
+        },
         managed_pdfs=(),
         citation_closure=None,
     )
 
     reconciled = {
-        record.citekey: record for record in outputs.manifest.references
+        record.proposed_citekey: record
+        for record in outputs.manifest.references
     }
     assert reconciled["projectWebsite"].source_type == "website"
     assert reconciled["projectWebsite"].full_text_expected is False
@@ -298,7 +326,9 @@ def test__publish_reconciliation__is_immutable_and_replayable(
         ),
         citation_closure=build_citation_closure(
             tmp_path / "manuscript",
-            bibliography_keys=tuple(record.citekey for record in records),
+            bibliography_keys=tuple(
+                record.proposed_citekey for record in records
+            ),
             source_revision="abc123",
         ),
     )

@@ -23,7 +23,7 @@ from projectkoios.references.coverage import (
     CoverageState,
     ReferenceCoverage,
 )
-from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.identity import ReferenceCandidate
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
     PathSafetyError,
@@ -215,7 +215,9 @@ class CitationClosure:
 
 @dataclass(frozen=True)
 class CollectionReference:
-    citekey: str
+    proposed_citekey: str
+    identity_status: str
+    citekey_status: str
     entry_type: str
     source_type: str
     full_text_expected: bool | None
@@ -238,6 +240,20 @@ class CollectionReference:
     ingestion_status: str
     transcript_status: str
     next_lawful_action: str
+
+    def __post_init__(self) -> None:
+        validate_citekey(
+            self.proposed_citekey,
+            field="proposed citekey",
+        )
+        if self.identity_status != "unaccepted-candidate":
+            raise ValueError(
+                "collection reference cannot claim accepted identity"
+            )
+        if self.citekey_status != "proposed-noncanonical":
+            raise ValueError(
+                "collection reference citekey must be noncanonical"
+            )
 
 
 @dataclass(frozen=True)
@@ -607,7 +623,7 @@ def build_citation_closure(
 
 
 def reconcile_collection(
-    records: tuple[ReferenceRecord, ...],
+    records: tuple[ReferenceCandidate, ...],
     *,
     bibliography_bytes: bytes,
     collection_id: str,
@@ -656,10 +672,13 @@ def reconcile_collection(
         if coverage_observation is not None
         else {}
     )
-    ordered_records = tuple(sorted(records, key=lambda item: item.citekey))
+    ordered_records = tuple(
+        sorted(records, key=lambda item: item.proposed_citekey)
+    )
     try:
         citekeys = tuple(
-            validate_citekey(record.citekey) for record in ordered_records
+            validate_citekey(record.proposed_citekey)
+            for record in ordered_records
         )
         for managed_pdf in managed_pdfs:
             validate_citekey(
@@ -726,17 +745,17 @@ def reconcile_collection(
     )
     references: list[CollectionReference] = []
     for record in ordered_records:
-        evidence = collection_rows[record.citekey]
-        matched_pdf = by_citekey.get(record.citekey)
+        evidence = collection_rows[record.proposed_citekey]
+        matched_pdf = by_citekey.get(record.proposed_citekey)
         expectation = _pdf_expectation(record)
         processing = processing_by_citekey.get(
-            record.citekey,
+            record.proposed_citekey,
             ProcessingEvidence(
                 ingestion_status="not-assessed",
                 transcript_status="not-assessed",
             ),
         )
-        coverage_item = coverage_by_citekey.get(record.citekey)
+        coverage_item = coverage_by_citekey.get(record.proposed_citekey)
         status, next_action = _classify_pdf_status(
             matched_pdf=matched_pdf,
             expectation=expectation,
@@ -748,7 +767,7 @@ def reconcile_collection(
                 sorted(
                     key
                     for key in by_digest[matched_pdf.sha256]
-                    if key != record.citekey
+                    if key != record.proposed_citekey
                 )
             )
             if matched_pdf is not None
@@ -756,7 +775,9 @@ def reconcile_collection(
         )
         references.append(
             CollectionReference(
-                citekey=record.citekey,
+                proposed_citekey=record.proposed_citekey,
+                identity_status=record.lifecycle_status,
+                citekey_status=record.citekey_status,
                 entry_type=record.entry_type,
                 source_type=_source_type(record),
                 full_text_expected=_full_text_expected(expectation),
@@ -771,7 +792,7 @@ def reconcile_collection(
                     if citation_closure is None
                     else (
                         CitationStatus.CITED_DEFINED
-                        if record.citekey in cited
+                        if record.proposed_citekey in cited
                         else CitationStatus.DEFINED_UNCITED
                     )
                 ),
@@ -1543,7 +1564,7 @@ def _access_status(
     return "searched-no-access-evidence"
 
 
-def _pdf_expectation(record: ReferenceRecord) -> PdfExpectation:
+def _pdf_expectation(record: ReferenceCandidate) -> PdfExpectation:
     source_type = _source_type(record)
     if record.entry_type.lower() in _EXPECTED_PDF_TYPES:
         return PdfExpectation.EXPECTED
@@ -1558,7 +1579,7 @@ def _pdf_expectation(record: ReferenceRecord) -> PdfExpectation:
     return PdfExpectation.REVIEW
 
 
-def _source_type(record: ReferenceRecord) -> str:
+def _source_type(record: ReferenceCandidate) -> str:
     entry_type = record.entry_type.lower()
     if entry_type == "misc":
         if record.eprint or (
@@ -1715,7 +1736,14 @@ def _counts(
         ),
         "duplicate_content_groups": len(
             {
-                tuple(sorted((record.citekey, *record.duplicate_citekeys)))
+                tuple(
+                    sorted(
+                        (
+                            record.proposed_citekey,
+                            *record.duplicate_citekeys,
+                        )
+                    )
+                )
                 for record in references
                 if record.duplicate_citekeys
             }
@@ -1790,7 +1818,9 @@ def _render_outputs(
 def _reference_csv(records: list[CollectionReference]) -> str:
     stream = io.StringIO(newline="")
     fields = (
-        "citekey",
+        "proposed_citekey",
+        "identity_status",
+        "citekey_status",
         "entry_type",
         "source_type",
         "full_text_expected",
@@ -1812,7 +1842,9 @@ def _reference_csv(records: list[CollectionReference]) -> str:
     for record in records:
         writer.writerow(
             {
-                "citekey": record.citekey,
+                "proposed_citekey": record.proposed_citekey,
+                "identity_status": record.identity_status,
+                "citekey_status": record.citekey_status,
                 "entry_type": record.entry_type,
                 "source_type": record.source_type,
                 "full_text_expected": (

@@ -6,7 +6,12 @@ The reconciliation package is a pre-release, owner-internal evidence projection
 implemented for `REF-PROVENANCE-01`. Its package-manifest schema version is `1`.
 It is not an accepted cross-repository contract, a canonical-reference decision,
 an ingestion contract, a rights decision, or a scientific or publication
-approval.
+approval. Bibliography imports used by reconciliation are exact source
+observations plus normalized `unaccepted-candidate` records. Reference rows in
+the collection manifest carry `proposed_citekey`, `identity_status`, and
+`citekey_status`; candidate CSV outputs use the same explicit fields.
+Candidate-key rows inside package payloads remain evidence projections; neither
+package creation nor verification is a promotion decision.
 
 The accepted Project Koios reference-authority ADR governs the direction of
 this projection: bounded evidence is observed, content identified, and reduced

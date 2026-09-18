@@ -5,13 +5,14 @@ import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
+from projectkoios.references.identity import (
+    ReferenceCandidate,
+    SourceBibliographyObservation,
+)
 from projectkoios.references.models import (
     AbstractRecord,
-    BibliographyOccurrence,
     CitationCandidate,
     CitationEdge,
-    ReferenceAlias,
-    ReferenceRecord,
     ReviewMembership,
     SourceAssetRecord,
 )
@@ -23,6 +24,54 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS catalog_metadata (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS source_bibliography_observations (
+    observation_id TEXT PRIMARY KEY,
+    authority_kind TEXT NOT NULL CHECK(
+        authority_kind = 'source-bibliography-observation'
+    ),
+    observed_citekey TEXT NOT NULL,
+    observation_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reference_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    authority_kind TEXT NOT NULL CHECK(
+        authority_kind = 'reference-candidate'
+    ),
+    lifecycle_status TEXT NOT NULL CHECK(
+        lifecycle_status = 'unaccepted-candidate'
+    ),
+    proposed_citekey TEXT NOT NULL,
+    citekey_status TEXT NOT NULL CHECK(
+        citekey_status = 'proposed-noncanonical'
+    ),
+    candidate_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS candidate_source_observations (
+    candidate_id TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    PRIMARY KEY(candidate_id, observation_id),
+    FOREIGN KEY(candidate_id) REFERENCES reference_candidates(candidate_id),
+    FOREIGN KEY(observation_id)
+        REFERENCES source_bibliography_observations(observation_id)
+);
+CREATE TABLE IF NOT EXISTS candidate_source_assets (
+    candidate_id TEXT NOT NULL,
+    proposed_citekey TEXT NOT NULL,
+    identity_status TEXT NOT NULL CHECK(
+        identity_status = 'unaccepted-candidate'
+    ),
+    citekey_status TEXT NOT NULL CHECK(
+        citekey_status = 'proposed-noncanonical'
+    ),
+    sha256 TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    root_alias TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    rights_status TEXT NOT NULL,
+    asset_status TEXT NOT NULL,
+    PRIMARY KEY(candidate_id, sha256),
+    FOREIGN KEY(candidate_id) REFERENCES reference_candidates(candidate_id)
 );
 CREATE TABLE IF NOT EXISTS reference_records (
     citekey TEXT PRIMARY KEY,
@@ -101,12 +150,12 @@ CREATE TABLE IF NOT EXISTS citation_edges (
 """
 
 
-class ReferenceConflictError(ValueError):
-    """Raised instead of silently replacing conflicting accepted metadata."""
+class CandidateConflictError(ValueError):
+    """Raised instead of silently replacing candidate metadata."""
 
 
 class ReferenceCatalog:
-    """SQLite-backed working catalog with deterministic interchange inputs."""
+    """Provisional SQLite projection; it carries no canonical authority."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -121,13 +170,62 @@ class ReferenceCatalog:
                 (str(_SCHEMA_VERSION),),
             )
 
-    def import_bibliography(
+    def import_candidates(
         self,
-        records: Iterable[ReferenceRecord],
-        occurrences: Iterable[BibliographyOccurrence],
+        candidates: Iterable[ReferenceCandidate],
+        observations: Iterable[SourceBibliographyObservation],
     ) -> None:
+        """Project observed candidates without granting canonical authority."""
+        candidate_values = tuple(candidates)
+        observation_values = tuple(observations)
         with self._connect() as connection:
-            for record in records:
+            for observation in observation_values:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO source_bibliography_observations(
+                        observation_id, authority_kind, observed_citekey,
+                        observation_json
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        observation.observation_id,
+                        observation.authority_kind,
+                        observation.observed_citekey,
+                        observation.to_json(),
+                    ),
+                )
+            for record in candidate_values:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO reference_candidates(
+                        candidate_id, authority_kind, lifecycle_status,
+                        proposed_citekey, citekey_status, candidate_json
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.candidate_id,
+                        record.authority_kind,
+                        record.lifecycle_status,
+                        record.proposed_citekey,
+                        record.citekey_status,
+                        record.to_json(),
+                    ),
+                )
+                for observation_id in record.source_observation_ids:
+                    try:
+                        connection.execute(
+                            """
+                            INSERT OR IGNORE INTO candidate_source_observations(
+                                candidate_id, observation_id
+                            ) VALUES (?, ?)
+                            """,
+                            (record.candidate_id, observation_id),
+                        )
+                    except sqlite3.IntegrityError as error:
+                        raise CandidateConflictError(
+                            "candidate source observation is unavailable"
+                        ) from error
+            for record in candidate_values:
                 values = (
                     record.entry_type,
                     record.title,
@@ -141,11 +239,12 @@ class ReferenceCatalog:
                     SELECT entry_type, title, authors_json, year, doi, isbn
                     FROM reference_records WHERE citekey = ?
                     """,
-                    (record.citekey,),
+                    (record.proposed_citekey,),
                 ).fetchone()
                 if existing is not None and tuple(existing) != values:
-                    raise ReferenceConflictError(
-                        f"conflicting metadata for citekey {record.citekey}"
+                    raise CandidateConflictError(
+                        "conflicting candidate metadata for proposed citekey "
+                        f"{record.proposed_citekey}"
                     )
                 if existing is None:
                     try:
@@ -156,14 +255,14 @@ class ReferenceCatalog:
                                 year, doi, isbn
                             ) VALUES (?, ?, ?, ?, ?, ?, ?)
                             """,
-                            (record.citekey, *values),
+                            (record.proposed_citekey, *values),
                         )
                     except sqlite3.IntegrityError as error:
-                        raise ReferenceConflictError(
-                            "conflicting persistent identity for "
-                            f"{record.citekey}"
+                        raise CandidateConflictError(
+                            "conflicting candidate identifier for "
+                            f"{record.proposed_citekey}"
                         ) from error
-            for occurrence in occurrences:
+            for occurrence in observation_values:
                 connection.execute(
                     """
                     INSERT OR IGNORE INTO bibliography_occurrences(
@@ -171,26 +270,41 @@ class ReferenceCatalog:
                     ) VALUES (?, ?, ?, ?)
                     """,
                     (
-                        occurrence.citekey,
+                        occurrence.observed_citekey,
                         occurrence.source_id,
-                        occurrence.source_revision or "",
+                        occurrence.asserted_source_revision or "",
                         occurrence.source_path,
                     ),
                 )
 
-    def add_alias(self, alias: ReferenceAlias) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO reference_aliases(
-                    alias, canonical_citekey, rationale
-                ) VALUES (?, ?, ?)
-                """,
-                (alias.alias, alias.canonical_citekey, alias.rationale),
-            )
-
     def record_source_asset(self, asset: SourceAssetRecord) -> None:
         with self._connect() as connection:
+            try:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO candidate_source_assets(
+                        candidate_id, proposed_citekey, identity_status,
+                        citekey_status, sha256, byte_size, root_alias,
+                        relative_path, rights_status, asset_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        asset.candidate_id,
+                        asset.proposed_citekey,
+                        asset.identity_status,
+                        asset.citekey_status,
+                        asset.sha256,
+                        asset.byte_size,
+                        asset.root_alias,
+                        asset.relative_path,
+                        asset.rights_status,
+                        asset.asset_status,
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                raise CandidateConflictError(
+                    "source asset candidate is unavailable"
+                ) from error
             connection.execute(
                 """
                 INSERT OR REPLACE INTO source_assets(
@@ -199,7 +313,7 @@ class ReferenceCatalog:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    asset.citekey,
+                    asset.proposed_citekey,
                     asset.sha256,
                     asset.byte_size,
                     asset.root_alias,
@@ -296,24 +410,27 @@ class ReferenceCatalog:
             )
 
     def counts(self) -> dict[str, int]:
-        tables = (
-            "reference_records",
-            "reference_aliases",
-            "bibliography_occurrences",
-            "source_assets",
-            "review_memberships",
-            "abstracts",
-            "citation_candidates",
-            "citation_edges",
+        projections = (
+            ("candidate_records", "reference_candidates"),
+            ("unprovenanced_alias_rows", "reference_aliases"),
+            (
+                "bibliography_observations",
+                "source_bibliography_observations",
+            ),
+            ("source_assets", "candidate_source_assets"),
+            ("review_memberships", "review_memberships"),
+            ("abstracts", "abstracts"),
+            ("citation_candidates", "citation_candidates"),
+            ("citation_edges", "citation_edges"),
         )
         with self._connect() as connection:
             return {
-                table: int(
+                label: int(
                     connection.execute(
                         f"SELECT COUNT(*) FROM {table}"  # noqa: S608
                     ).fetchone()[0]
                 )
-                for table in tables
+                for label, table in projections
             }
 
     def _connect(self) -> sqlite3.Connection:

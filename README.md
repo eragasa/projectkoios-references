@@ -14,6 +14,7 @@ promoted into an availability, rights, relevance, or scientific claim.
 The canonical reference convention uses one accepted BibLaTeX citation key as
 the basename of both the reference note and local PDF. See
 [Reference object convention](docs/reference-object-convention.md),
+[Reference identity and authority](docs/reference-identity.md),
 [Literature-review ingestion](docs/literature-review-ingestion.md),
 [PDF coverage observations](docs/coverage-observations.md), the
 [reconciliation package model](docs/reconciliation-packages.md), and the
@@ -51,6 +52,11 @@ koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
 koios-ref validate references.bib /path/to/notes /path/to/pdfs
 ```
 
+`bib-import` observes exact source entries and projects normalized,
+noncanonical candidates into the provisional local catalog. Import, asset
+matching, validation, and reconciliation do not produce accepted references;
+only replay of a valid actor-provenanced identity decision can do so.
+
 `collection-reconcile` creates an immutable, replayable package containing
 `package-manifest.json`, `collection-manifest.json`, `citation-closure.json`,
 `coverage-observation.json`, `missing-pdfs.csv`, `ambiguous-pdfs.csv`, and
@@ -62,21 +68,25 @@ version, authority, verification, and replay boundaries. The command hashes and
 header-checks managed PDFs, ignores commented LaTeX citations and macro
 placeholders, classifies source/PDF applicability conservatively, and records
 metadata, access, rights, ingestion, and transcript status without changing source
-bibliographies or assets. Absence and discovery statuses require a typed,
+bibliographies or assets. Its candidate-key rows are evidence projections and
+do not grant canonical citekey authority. Absence and discovery statuses require a typed,
 content-identified coverage observation: no coverage produces
 `not-yet-searched`, and incomplete or failed coverage cannot produce
 `not-located`. The command does not scan additional roots, hydrate cloud
 placeholders, download sources, verify rights, or promote bibliography records.
 
-Asset scans store only search-root aliases and relative paths. Applying a
-candidate requires a separate command and rechecks its planned hash. Authorized
+Asset scans store only search-root aliases and relative paths. Plans bind the
+candidate identity and its explicit noncanonical statuses. Applying a candidate
+requires a separate command, rechecks its planned hash, and writes a
+candidate-suffixed filename rather than manufacturing a canonical reference
+object. Authorized
 roots are resolved and identity-bound once; traversal, root replacement, and
 symlink files or directories fail closed before bytes are read, hashed, copied,
 or reported. Confined writes use no-follow directory descriptors and atomic
 same-directory publication. Provider responses are cached locally under
 `.koios/` when requested.
 
-Recurring lawful acquisition uses a separate version-1 manifest. `acquisition-create` reads CSV metadata, resolves each root-relative PDF without permitting traversal, verifies a PDF header, and records its byte size and SHA-256 identity. Required CSV columns are `proposed_citekey`, `root_alias`, `relative_path`, `rights_status`, `asset_status`, and `identity_status`; optional columns are `doi`, `source_url`, and `source_version`. Identity status is either `accepted-reference` or `unaccepted-candidate`, so creating or verifying a manifest never promotes a candidate. `acquisition-verify` rechecks all source bytes. Neither command downloads content, bypasses access controls, verifies license claims, edits canonical BibLaTeX, or writes a vault.
+Recurring lawful acquisition uses a separate version-1 manifest. `acquisition-create` reads CSV metadata, resolves each root-relative PDF without permitting traversal, verifies a PDF header, and records its byte size and SHA-256 identity. Required CSV columns are `proposed_citekey`, `root_alias`, `relative_path`, `rights_status`, `asset_status`, and `identity_status`; optional columns are `doi`, `source_url`, and `source_version`. The only permitted identity status is `unaccepted-candidate`, so creating or verifying a manifest cannot claim accepted-reference authority. `acquisition-verify` rechecks all source bytes. Neither command downloads content, bypasses access controls, verifies license claims, edits canonical BibLaTeX, or writes a vault.
 
 Repository routing is documented in `projectkoios-bootstrap/maps/repositories.md`.
 

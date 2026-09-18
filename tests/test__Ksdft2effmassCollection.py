@@ -7,6 +7,8 @@ from projectkoios.references import (
     AmbiguityEvaluation,
     CoverageObservation,
     CoverageState,
+    LegacySeedMapping,
+    load_bibliography,
 )
 
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -27,6 +29,28 @@ def test__ksdft2effmass_collection__has_one_row_per_unique_key() -> None:
 
     assert len(keys) == len(set(keys))
     assert {row["citekey"] for row in rows} == set(keys)
+
+
+def test__ksdft2effmass_seed__maps_to_candidates_without_authority() -> None:
+    imported = load_bibliography(
+        _COLLECTION / "seed.bib",
+        source_id="ksdft2effmass-legacy-seed",
+        source_revision="asserted-legacy-revision",
+    )
+    mappings = tuple(
+        LegacySeedMapping.from_candidate(candidate)
+        for candidate in imported.candidates
+    )
+
+    assert len(mappings) == len(_seed_keys())
+    assert {item.legacy_citekey for item in mappings} == set(_seed_keys())
+    assert {item.canonical_authority for item in mappings} == {
+        "not-established"
+    }
+    assert all(
+        candidate.lifecycle_status == "unaccepted-candidate"
+        for candidate in imported.candidates
+    )
 
 
 def test__ksdft2effmass_collection__uses_key_named_paths() -> None:

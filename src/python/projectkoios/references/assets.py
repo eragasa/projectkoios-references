@@ -7,8 +7,7 @@ import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from projectkoios.references.models import ReferenceRecord
-from projectkoios.references.naming import ReferenceFilenames
+from projectkoios.references.identity import ReferenceCandidate
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
     validate_citekey,
@@ -37,7 +36,10 @@ class SearchRoot:
 
 @dataclass(frozen=True)
 class AssetCandidate:
-    citekey: str
+    candidate_id: str
+    proposed_citekey: str
+    identity_status: str
+    citekey_status: str
     root_alias: str
     relative_path: str
     score: float
@@ -47,13 +49,33 @@ class AssetCandidate:
     byte_size: int
 
     def __post_init__(self) -> None:
-        validate_citekey(self.citekey)
+        if (
+            re.fullmatch(
+                r"reference-candidate:sha256:[0-9a-f]{64}",
+                self.candidate_id,
+            )
+            is None
+        ):
+            raise ValueError("asset candidate identity is invalid")
+        validate_citekey(
+            self.proposed_citekey,
+            field="proposed citekey",
+        )
+        if self.identity_status != "unaccepted-candidate":
+            raise ValueError("asset candidate cannot claim accepted identity")
+        if self.citekey_status != "proposed-noncanonical":
+            raise ValueError("asset candidate citekey must be noncanonical")
         validate_root_alias(self.root_alias)
         validate_relative_path(self.relative_path)
         if re.fullmatch(r"[0-9a-f]{64}", self.sha256) is None:
             raise ValueError("asset candidate SHA-256 must be lowercase hex")
         if type(self.byte_size) is not int or self.byte_size <= 0:
             raise ValueError("asset candidate byte size must be positive")
+
+    @property
+    def materialized_filename(self) -> str:
+        digest = self.candidate_id.rsplit(":", maxsplit=1)[-1]
+        return f"{self.proposed_citekey}.candidate-{digest[:16]}.pdf"
 
 
 @dataclass(frozen=True)
@@ -73,7 +95,10 @@ class AssetDiscoveryPlan:
             schema_version=1,
             candidates=tuple(
                 AssetCandidate(
-                    citekey=item["citekey"],
+                    candidate_id=item["candidate_id"],
+                    proposed_citekey=item["proposed_citekey"],
+                    identity_status=item["identity_status"],
+                    citekey_status=item["citekey_status"],
                     root_alias=item["root_alias"],
                     relative_path=item["relative_path"],
                     score=float(item["score"]),
@@ -92,7 +117,7 @@ class AssetDiscoveryPlanner:
 
     def scan(
         self,
-        records: tuple[ReferenceRecord, ...],
+        records: tuple[ReferenceCandidate, ...],
         roots: tuple[SearchRoot, ...],
     ) -> AssetDiscoveryPlan:
         candidates: list[AssetCandidate] = []
@@ -102,7 +127,7 @@ class AssetDiscoveryPlanner:
             for relative in safe_root.iter_files(suffix=".pdf", recursive=True):
                 path = safe_root.child_path(relative)
                 matches: list[
-                    tuple[ReferenceRecord, float, tuple[str, ...]]
+                    tuple[ReferenceCandidate, float, tuple[str, ...]]
                 ] = []
                 for record in records:
                     score, evidence = self._score(record, path)
@@ -115,7 +140,10 @@ class AssetDiscoveryPlanner:
                 for record, score, evidence in matches:
                     candidates.append(
                         AssetCandidate(
-                            citekey=record.citekey,
+                            candidate_id=record.candidate_id,
+                            proposed_citekey=record.proposed_citekey,
+                            identity_status=record.lifecycle_status,
+                            citekey_status=record.citekey_status,
                             root_alias=root.alias,
                             relative_path=relative.as_posix(),
                             score=score,
@@ -133,7 +161,8 @@ class AssetDiscoveryPlanner:
             sorted(
                 candidates,
                 key=lambda item: (
-                    item.citekey,
+                    item.proposed_citekey,
+                    item.candidate_id,
                     -item.score,
                     item.root_alias,
                     item.relative_path,
@@ -144,12 +173,12 @@ class AssetDiscoveryPlanner:
 
     @staticmethod
     def _score(
-        record: ReferenceRecord,
+        record: ReferenceCandidate,
         path: Path,
     ) -> tuple[float, tuple[str, ...]]:
         stem_words = _normalized_words(path.stem)
         stem_joined = "".join(stem_words)
-        key_joined = "".join(_normalized_words(record.citekey))
+        key_joined = "".join(_normalized_words(record.proposed_citekey))
         evidence: list[str] = []
         score = 0.0
         if stem_joined == key_joined:
@@ -201,7 +230,7 @@ def materialize_asset(
         destination_directory,
         label="asset destination root",
     )
-    filename = ReferenceFilenames.from_citekey(candidate.citekey).pdf.name
+    filename = candidate.materialized_filename
     state = destination_root.state(filename)
     destination = destination_root.child_path(filename)
     if state == "regular":

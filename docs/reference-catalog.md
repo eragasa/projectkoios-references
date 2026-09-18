@@ -1,20 +1,37 @@
 # Reference working catalog
 
-The reusable working catalog is SQLite. BibLaTeX, CSV, JSON, and Markdown remain
-interchange or projection formats rather than the sole mutable database.
+The reusable working catalog is a provisional SQLite projection. BibLaTeX,
+CSV, JSON, and Markdown remain interchange or evidence formats rather than the
+sole mutable database.
 
 ## Schema version 1
 
-The catalog records:
+The existing schema-version-1 tables are retained as local implementation
+details; no database migration is performed by `REF-IDENTITY-01`. Their legacy
+names must not be interpreted as authority. The public API projects:
 
-- accepted reference records;
-- bibliography occurrences with source identity and revision;
+- normalized, unaccepted candidate records;
+- bibliography observations with source identity and asserted revision;
 - provider-attributed abstracts;
-- unaccepted citation candidates; and
-- source-located citation edges.
+- unaccepted citation candidates;
+- source-located citation edges; and
+- source assets associated with proposed keys.
 
-A citation candidate is deliberately separate from an accepted reference. Its
-proposed citekey has no canonical authority until metadata review.
+`ReferenceCatalog.import_candidates` accepts `ReferenceCandidate` and
+`SourceBibliographyObservation` values. It stores their canonical JSON and
+content identities in explicitly named `reference_candidates`,
+`source_bibliography_observations`, candidate-to-observation, and
+`candidate_source_assets` tables. Candidate asset rows retain both noncanonical
+status fields and the candidate identity. The older tables remain adapters for
+existing local review and asset operations;
+they do not change candidate status. Import cannot create an
+`AcceptedReference`. Public counts use `candidate_records` and
+`bibliography_observations`; `unprovenanced_alias_rows` is reported only to make
+legacy state visible. The old direct alias mutation API is unavailable because
+an alias requires an actor-provenanced identity decision.
+
+See [Reference identity and authority](reference-identity.md) for the canonical
+decision and replay model.
 
 ## Local state
 
@@ -31,7 +48,8 @@ user's home-directory layout.
 Commands initialize their schema idempotently. Source-asset scans are read-only.
 Asset materialization is a separate operation, accepts only strong candidates,
 rechecks source size and SHA-256, writes through a temporary file, and refuses
-to replace different destination bytes.
+to replace different destination bytes. Materialization does not accept the
+candidate or make its proposed citekey canonical.
 
 Network enrichment is explicit and cached. Absence of a provider abstract is
 stored as absence; the tool does not generate one.

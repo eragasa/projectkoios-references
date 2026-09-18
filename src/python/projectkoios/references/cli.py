@@ -35,7 +35,6 @@ from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
 from projectkoios.references.graph import load_candidate_graph
 from projectkoios.references.models import (
-    ReferenceAlias,
     ReviewMembership,
     ReviewStatus,
     SourceAssetRecord,
@@ -62,7 +61,10 @@ def _parser() -> argparse.ArgumentParser:
     initialize = commands.add_parser("catalog-init")
     initialize.add_argument("catalog", type=Path)
 
-    import_bib = commands.add_parser("bib-import")
+    import_bib = commands.add_parser(
+        "bib-import",
+        help="observe BibTeX and import noncanonical candidates",
+    )
     import_bib.add_argument("catalog", type=Path)
     import_bib.add_argument("bibliography", type=Path)
     import_bib.add_argument("--source-id", required=True)
@@ -76,12 +78,6 @@ def _parser() -> argparse.ArgumentParser:
 
     summary = commands.add_parser("catalog-summary")
     summary.add_argument("catalog", type=Path)
-
-    alias = commands.add_parser("alias-add")
-    alias.add_argument("catalog", type=Path)
-    alias.add_argument("alias")
-    alias.add_argument("canonical_citekey")
-    alias.add_argument("--rationale", required=True)
 
     review = commands.add_parser("review-set")
     review.add_argument("catalog", type=Path)
@@ -98,7 +94,10 @@ def _parser() -> argparse.ArgumentParser:
         "--status", choices=tuple(ReviewStatus), default="discovered"
     )
 
-    reconcile = commands.add_parser("collection-reconcile")
+    reconcile = commands.add_parser(
+        "collection-reconcile",
+        help="project candidate evidence without canonical promotion",
+    )
     reconcile.add_argument("bibliography", type=Path)
     reconcile.add_argument("corpus", type=Path)
     reconcile.add_argument("pdfs", type=Path)
@@ -110,7 +109,10 @@ def _parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--manuscript-root", type=Path)
     reconcile.add_argument("--ingestion-root", type=Path)
 
-    scan = commands.add_parser("assets-scan")
+    scan = commands.add_parser(
+        "assets-scan",
+        help="match assets to proposed noncanonical citekeys",
+    )
     scan.add_argument("bibliography", type=Path)
     scan.add_argument("output", type=Path)
     scan.add_argument("--source-id", default="asset-scan")
@@ -178,7 +180,10 @@ def main(arguments: list[str] | None = None) -> int:
             source_revision=args.source_revision,
             source_path=args.source_path,
         )
-        catalog.import_bibliography(imported.records, imported.occurrences)
+        catalog.import_candidates(
+            imported.candidates,
+            imported.observations,
+        )
         print(json.dumps(catalog.counts(), indent=2))
         return 0
     if args.command == "graph-import":
@@ -190,17 +195,6 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
     if args.command == "catalog-summary":
         print(json.dumps(ReferenceCatalog(args.catalog).counts(), indent=2))
-        return 0
-    if args.command == "alias-add":
-        catalog = ReferenceCatalog(args.catalog)
-        catalog.initialize()
-        catalog.add_alias(
-            ReferenceAlias(
-                alias=args.alias,
-                canonical_citekey=args.canonical_citekey,
-                rationale=args.rationale,
-            )
-        )
         return 0
     if args.command == "review-set":
         catalog = ReferenceCatalog(args.catalog)
@@ -250,7 +244,10 @@ def main(arguments: list[str] | None = None) -> int:
             build_citation_closure(
                 args.manuscript_root,
                 bibliography_keys=tuple(
-                    sorted(record.citekey for record in imported.records)
+                    sorted(
+                        record.proposed_citekey
+                        for record in imported.candidates
+                    )
                 ),
                 source_revision=args.source_revision,
             )
@@ -264,7 +261,9 @@ def main(arguments: list[str] | None = None) -> int:
         processing_evidence = (
             scan_processing_evidence(
                 args.ingestion_root,
-                citekeys=tuple(record.citekey for record in imported.records)
+                citekeys=tuple(
+                    record.proposed_citekey for record in imported.candidates
+                )
                 + tuple(pdf.citekey for pdf in managed_pdfs),
             )
             if args.ingestion_root is not None
@@ -286,7 +285,7 @@ def main(arguments: list[str] | None = None) -> int:
             else None
         )
         outputs = reconcile_collection(
-            imported.records,
+            imported.candidates,
             bibliography_bytes=bibliography_bytes,
             collection_id=args.collection_id,
             source_revision=args.source_revision,
@@ -321,7 +320,7 @@ def main(arguments: list[str] | None = None) -> int:
             source_id=args.source_id,
         )
         plan = AssetDiscoveryPlanner().scan(
-            imported.records,
+            imported.candidates,
             tuple(args.search_root),
         )
         write_path_bytes(
@@ -339,7 +338,7 @@ def main(arguments: list[str] | None = None) -> int:
         matches = [
             item
             for item in plan.candidates
-            if item.citekey == args.citekey
+            if item.proposed_citekey == args.citekey
             and (
                 args.candidate_path is None
                 or item.relative_path == args.candidate_path
@@ -361,7 +360,10 @@ def main(arguments: list[str] | None = None) -> int:
             catalog.initialize()
             catalog.record_source_asset(
                 SourceAssetRecord(
-                    citekey=candidate.citekey,
+                    candidate_id=candidate.candidate_id,
+                    proposed_citekey=candidate.proposed_citekey,
+                    identity_status=candidate.identity_status,
+                    citekey_status=candidate.citekey_status,
                     sha256=candidate.sha256,
                     byte_size=candidate.byte_size,
                     root_alias="materialized-assets",
@@ -383,7 +385,10 @@ def main(arguments: list[str] | None = None) -> int:
                 continue
             catalog.record_source_asset(
                 SourceAssetRecord(
-                    citekey=candidate.citekey,
+                    candidate_id=candidate.candidate_id,
+                    proposed_citekey=candidate.proposed_citekey,
+                    identity_status=candidate.identity_status,
+                    citekey_status=candidate.citekey_status,
                     sha256=candidate.sha256,
                     byte_size=candidate.byte_size,
                     root_alias=candidate.root_alias,
@@ -456,7 +461,7 @@ def main(arguments: list[str] | None = None) -> int:
             source_id=args.source_id,
         )
         issues = validate_reference_objects(
-            imported.records,
+            imported.candidates,
             notes_directory=args.notes,
             pdf_directory=args.pdfs,
         )
