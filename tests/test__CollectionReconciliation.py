@@ -309,7 +309,8 @@ def test__publish_reconciliation__is_immutable_and_replayable(
 
     assert created.status == "created"
     assert unchanged.status == "unchanged"
-    assert created.manifest_id == unchanged.manifest_id
+    assert created.package_id == unchanged.package_id
+    assert created.package_id == outputs.package_manifest.package_id
 
     (destination / "missing-pdfs.csv").write_text(
         "different\n",

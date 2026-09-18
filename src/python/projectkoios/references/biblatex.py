@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,13 @@ from projectkoios.references.path_safety import read_path_text
 
 class BibLaTeXUnavailableError(RuntimeError):
     """Raised when the optional BibLaTeX parser is unavailable."""
+
+
+def biblatex_parser_identity() -> str:
+    try:
+        return f"pybtex@{version('pybtex')}"
+    except PackageNotFoundError:
+        return "pybtex@uninstalled"
 
 
 @dataclass(frozen=True)

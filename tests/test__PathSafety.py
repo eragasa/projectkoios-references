@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import os
 import unicodedata
 from pathlib import Path
 
 import pytest
 from projectkoios.references import (
-    AmbiguityEvaluation,
     AuthorizedRoot,
     PathSafetyError,
     validate_citekey,
@@ -20,10 +18,10 @@ from projectkoios.references.assets import (
     materialize_asset,
 )
 from projectkoios.references.collection_reconciliation import (
-    CollectionManifest,
     CollectionReconciliationError,
-    ReconciliationOutputs,
+    CollectionRowEvidence,
     publish_reconciliation,
+    reconcile_collection,
     scan_managed_pdfs,
     scan_processing_evidence,
 )
@@ -270,25 +268,20 @@ def test__publication__does_not_follow_output_directory_symlink(
     parent.mkdir()
     destination = parent / "fixture"
     destination.symlink_to(outside, target_is_directory=True)
-    manifest = CollectionManifest(
-        schema_version=1,
-        processor_version="fixture",
+    outputs = reconcile_collection(
+        (_record(),),
+        bibliography_bytes=b"fixture",
         collection_id="fixture",
-        source_revision="revision",
-        bibliography_sha256=hashlib.sha256(b"fixture").hexdigest(),
-        coverage_observation_id=None,
-        coverage_state=None,
-        ambiguity_evaluation=AmbiguityEvaluation.NOT_EVALUATED,
-        coverage=(),
-        references=(),
-        extra_pdfs=(),
-        counts={},
-        manifest_id="collection-manifest:sha256:" + "0" * 64,
-    )
-    outputs = ReconciliationOutputs(
-        manifest=manifest,
+        source_revision="asserted-revision",
+        collection_rows={
+            "example2026": CollectionRowEvidence(
+                source_bibliographies=("references.bib",),
+                bibliographic_status="unverified",
+                reading_status="unread",
+            )
+        },
+        managed_pdfs=(),
         citation_closure=None,
-        files=(("collection-manifest.json", b"{}\n"),),
     )
 
     with pytest.raises(CollectionReconciliationError, match="symlink"):

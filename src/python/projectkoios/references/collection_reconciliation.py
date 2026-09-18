@@ -7,11 +7,13 @@ import json
 import re
 import secrets
 import shutil
+import subprocess
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast, overload
 from urllib.parse import urlparse
 
 from projectkoios.references.coverage import (
@@ -25,15 +27,34 @@ from projectkoios.references.models import ReferenceRecord
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
     PathSafetyError,
-    read_path_text,
+    read_path_bytes,
     validate_citekey,
     validate_relative_path,
 )
+from projectkoios.references.reconciliation_package import (
+    PACKAGE_MANIFEST_FILENAME,
+    ContentEvidence,
+    FrozenCounts,
+    LoadedReconciliationPackage,
+    ReconciliationPackageError,
+    ReconciliationPackageManifest,
+    SoftwareIdentity,
+    VerifiedSourceTree,
+    canonical_json_bytes,
+    load_reconciliation_package,
+    parse_package_files,
+    pretty_json,
+)
 
-_SCHEMA_VERSION = 1
-_PROCESSOR_VERSION = "0.5.0"
+_SCHEMA_VERSION = 2
+_PROCESSOR_VERSION = "0.6.0"
+_CITATION_PARSER_VERSION = "1"
+_COLLECTION_ROWS_PARSER_VERSION = "1"
+_SOURCE_DISCOVERY_PARSER_VERSION = "1"
+_PROCESSING_OBSERVER_VERSION = "1"
 _MAX_RECORDS = 10_000
 _MAX_STATUS_JSON_BYTES = 10_000_000
+_MAX_COLLECTION_ROWS_BYTES = 50_000_000
 _MAX_TEX_FILES = 10_000
 _MAX_TEX_BYTES = 50_000_000
 _MAX_PDF_BYTES = 4_000_000_000
@@ -62,6 +83,34 @@ _EXPECTED_PDF_TYPES = frozenset(
 
 class CollectionReconciliationError(RuntimeError):
     """Raised when collection evidence cannot be reconciled safely."""
+
+
+_Value = TypeVar("_Value")
+
+
+@dataclass(frozen=True)
+class EvidenceMapping(Mapping[str, _Value]):
+    """Immutable parsed values retaining exact input-byte evidence."""
+
+    entries: tuple[tuple[str, _Value], ...]
+    input_evidence: tuple[ContentEvidence, ...]
+
+    def __post_init__(self) -> None:
+        keys = tuple(key for key, _ in self.entries)
+        if keys != tuple(sorted(keys)) or len(keys) != len(set(keys)):
+            raise ValueError("evidence mapping keys must be sorted and unique")
+
+    def __getitem__(self, key: str) -> _Value:
+        for candidate, value in self.entries:
+            if candidate == key:
+                return value
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[str]:
+        return (key for key, _ in self.entries)
+
+    def __len__(self) -> int:
+        return len(self.entries)
 
 
 class PdfExpectation(StrEnum):
@@ -117,6 +166,26 @@ class ManagedPdf:
 
 
 @dataclass(frozen=True)
+class ManagedPdfScan(Sequence[ManagedPdf]):
+    pdfs: tuple[ManagedPdf, ...]
+    input_evidence: tuple[ContentEvidence, ...]
+
+    @overload
+    def __getitem__(self, index: int) -> ManagedPdf: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> tuple[ManagedPdf, ...]: ...
+
+    def __getitem__(
+        self, index: int | slice
+    ) -> ManagedPdf | tuple[ManagedPdf, ...]:
+        return self.pdfs[index]
+
+    def __len__(self) -> int:
+        return len(self.pdfs)
+
+
+@dataclass(frozen=True)
 class CitationUse:
     citekey: str
     source_files: tuple[str, ...]
@@ -125,7 +194,7 @@ class CitationUse:
 @dataclass(frozen=True)
 class CitationClosure:
     schema_version: int
-    source_revision: str
+    asserted_source_revision: str
     bibliography_keys: tuple[str, ...]
     explicit_uses: tuple[CitationUse, ...]
     cited_and_defined: tuple[str, ...]
@@ -133,10 +202,15 @@ class CitationClosure:
     defined_but_uncited: tuple[str, ...]
     nocite_all: bool
     source_files: tuple[str, ...]
+    source_file_evidence: tuple[ContentEvidence, ...]
     closure_id: str
+    verified_source_tree: VerifiedSourceTree | None = field(
+        default=None,
+        init=False,
+    )
 
     def to_json(self) -> str:
-        return _pretty_json(asdict(self))
+        return pretty_json(self)
 
 
 @dataclass(frozen=True)
@@ -184,7 +258,7 @@ class CollectionManifest:
     schema_version: int
     processor_version: str
     collection_id: str
-    source_revision: str
+    asserted_source_revision: str
     bibliography_sha256: str
     coverage_observation_id: str | None
     coverage_state: CoverageState | None
@@ -192,17 +266,18 @@ class CollectionManifest:
     coverage: tuple[str, ...]
     references: tuple[CollectionReference, ...]
     extra_pdfs: tuple[ExtraPdf, ...]
-    counts: dict[str, int]
+    counts: FrozenCounts
     manifest_id: str
 
     def to_json(self) -> str:
-        return _pretty_json(asdict(self))
+        return pretty_json(self)
 
 
 @dataclass(frozen=True)
 class ReconciliationOutputs:
     manifest: CollectionManifest
     citation_closure: CitationClosure | None
+    package_manifest: ReconciliationPackageManifest
     files: tuple[tuple[str, bytes], ...]
 
 
@@ -210,11 +285,23 @@ class ReconciliationOutputs:
 class PublicationResult:
     status: str
     output_directory: Path
-    manifest_id: str
+    package_id: str
 
 
-def load_collection_rows(path: Path) -> dict[str, CollectionRowEvidence]:
-    text = read_path_text(path, label="collection rows")
+def load_collection_rows(
+    path: Path,
+) -> EvidenceMapping[CollectionRowEvidence]:
+    content = read_path_bytes(
+        path,
+        label="collection rows",
+        max_bytes=_MAX_COLLECTION_ROWS_BYTES,
+    )
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CollectionReconciliationError(
+            "collection rows are not UTF-8"
+        ) from error
     rows = tuple(csv.DictReader(io.StringIO(text, newline="")))
     if len(rows) > _MAX_RECORDS:
         raise CollectionReconciliationError("collection rows exceed hard limit")
@@ -247,21 +334,31 @@ def load_collection_rows(path: Path) -> dict[str, CollectionRowEvidence]:
             ),
             reading_status=row.get("reading_status") or "unrecorded",
         )
-    return result
+    return EvidenceMapping(
+        entries=tuple(sorted(result.items())),
+        input_evidence=(
+            ContentEvidence.from_bytes(
+                role="collection-rows",
+                filename="inputs/collection-rows.csv",
+                content=content,
+            ),
+        ),
+    )
 
 
 def scan_managed_pdfs(
     directory: Path,
     *,
     source_discovery: Path | None = None,
-) -> tuple[ManagedPdf, ...]:
+) -> ManagedPdfScan:
     try:
         root = AuthorizedRoot.existing(directory, label="managed PDF root")
         relative_files = root.iter_files(suffix=".pdf", recursive=False)
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
-    historical = _load_source_discovery(source_discovery)
+    historical, discovery_evidence = _load_source_discovery(source_discovery)
     pdfs: list[ManagedPdf] = []
+    asset_evidence: list[ContentEvidence] = []
     for relative in relative_files:
         try:
             citekey = validate_citekey(Path(relative.name).stem)
@@ -274,6 +371,14 @@ def scan_managed_pdfs(
                 f"managed PDF size is outside bounds: {relative.name}"
             )
         digest = _hash_pdf(content, filename=relative.name)
+        asset_evidence.append(
+            ContentEvidence(
+                role="managed-asset",
+                filename=f"inputs/managed-assets/{relative.name}",
+                byte_size=byte_size,
+                sha256=digest,
+            )
+        )
         discovery = historical.get(citekey)
         if discovery is not None and discovery[0] == digest:
             verified = True
@@ -291,14 +396,22 @@ def scan_managed_pdfs(
                 discovery_evidence=evidence,
             )
         )
-    return tuple(pdfs)
+    return ManagedPdfScan(
+        pdfs=tuple(pdfs),
+        input_evidence=tuple(
+            sorted(
+                (*discovery_evidence, *asset_evidence),
+                key=_content_evidence_key,
+            )
+        ),
+    )
 
 
 def scan_processing_evidence(
     ingestion_root: Path,
     *,
     citekeys: tuple[str, ...],
-) -> dict[str, ProcessingEvidence]:
+) -> EvidenceMapping[ProcessingEvidence]:
     try:
         root = AuthorizedRoot.existing(
             ingestion_root,
@@ -307,6 +420,7 @@ def scan_processing_evidence(
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
     result: dict[str, ProcessingEvidence] = {}
+    input_evidence: list[ContentEvidence] = []
     for raw_citekey in sorted(set(citekeys)):
         try:
             citekey = validate_citekey(raw_citekey)
@@ -320,17 +434,50 @@ def scan_processing_evidence(
             raise CollectionReconciliationError(
                 f"processing extraction is not a file: {citekey}"
             )
-        ingestion_status = (
-            "raw-extraction-present"
-            if extraction_state == "regular"
-            else "not-ingested"
+        if extraction_state == "regular":
+            extraction_content = root.read_bytes(
+                extraction,
+                max_bytes=_MAX_STATUS_JSON_BYTES,
+            )
+            input_evidence.append(
+                ContentEvidence.from_bytes(
+                    role="processing-source",
+                    filename=(
+                        "inputs/processing-source/"
+                        f"{citekey}/raw-extraction-record.json"
+                    ),
+                    content=extraction_content,
+                )
+            )
+            ingestion_status = "raw-extraction-present"
+        else:
+            ingestion_status = "not-ingested"
+        transcript_status, transcript_evidence = _transcript_status(
+            root,
+            citekey,
         )
-        transcript_status = _transcript_status(root, citekey)
+        input_evidence.extend(transcript_evidence)
         result[citekey] = ProcessingEvidence(
             ingestion_status=ingestion_status,
             transcript_status=transcript_status,
         )
-    return result
+    observation = canonical_json_bytes(
+        {
+            "observer_version": _PROCESSING_OBSERVER_VERSION,
+            "records": result,
+        }
+    )
+    input_evidence.append(
+        ContentEvidence.from_bytes(
+            role="processing-observation",
+            filename="inputs/processing-observation.json",
+            content=observation,
+        )
+    )
+    return EvidenceMapping(
+        entries=tuple(sorted(result.items())),
+        input_evidence=tuple(sorted(input_evidence, key=_content_evidence_key)),
+    )
 
 
 def build_citation_closure(
@@ -353,6 +500,7 @@ def build_citation_closure(
     uses: dict[str, set[str]] = defaultdict(set)
     nocite_all = False
     relative_files: list[str] = []
+    source_file_evidence: list[ContentEvidence] = []
     total_bytes = 0
     for relative_path in source_files:
         try:
@@ -370,6 +518,13 @@ def build_citation_closure(
             raise CollectionReconciliationError("TeX source bytes exceed limit")
         relative = relative_path.as_posix()
         relative_files.append(relative)
+        source_file_evidence.append(
+            ContentEvidence.from_bytes(
+                role="citation-source",
+                filename=f"inputs/citation-source/{relative}",
+                content=content,
+            )
+        )
         uncommented = "\n".join(
             _strip_latex_comment(line) for line in text.splitlines()
         )
@@ -395,9 +550,14 @@ def build_citation_closure(
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
     cited = set(uses)
+    verified_source_tree = _verify_source_tree(
+        root.path,
+        asserted_revision=source_revision,
+    )
     payload: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
-        "source_revision": source_revision,
+        "asserted_source_revision": source_revision,
+        "verified_source_tree": verified_source_tree,
         "bibliography_keys": sorted(bibliography),
         "explicit_uses": [
             {
@@ -411,11 +571,15 @@ def build_citation_closure(
         "defined_but_uncited": sorted(bibliography - cited),
         "nocite_all": nocite_all,
         "source_files": sorted(relative_files),
+        "source_file_evidence": sorted(
+            source_file_evidence,
+            key=_content_evidence_key,
+        ),
     }
     closure_id = _stable_id("citation-closure", payload)
-    return CitationClosure(
+    closure = CitationClosure(
         schema_version=_SCHEMA_VERSION,
-        source_revision=source_revision,
+        asserted_source_revision=source_revision,
         bibliography_keys=tuple(payload["bibliography_keys"]),
         explicit_uses=tuple(
             CitationUse(
@@ -429,8 +593,17 @@ def build_citation_closure(
         defined_but_uncited=tuple(payload["defined_but_uncited"]),
         nocite_all=nocite_all,
         source_files=tuple(payload["source_files"]),
+        source_file_evidence=tuple(
+            cast(list[ContentEvidence], payload["source_file_evidence"])
+        ),
         closure_id=closure_id,
     )
+    object.__setattr__(
+        closure,
+        "verified_source_tree",
+        verified_source_tree,
+    )
+    return closure
 
 
 def reconcile_collection(
@@ -439,16 +612,39 @@ def reconcile_collection(
     bibliography_bytes: bytes,
     collection_id: str,
     source_revision: str,
-    collection_rows: dict[str, CollectionRowEvidence],
-    managed_pdfs: tuple[ManagedPdf, ...],
+    collection_rows: Mapping[str, CollectionRowEvidence],
+    managed_pdfs: Sequence[ManagedPdf],
     citation_closure: CitationClosure | None,
     coverage_observation: CoverageObservation | None = None,
-    processing_evidence: dict[str, ProcessingEvidence] | None = None,
+    coverage_observation_bytes: bytes | None = None,
+    processing_evidence: Mapping[str, ProcessingEvidence] | None = None,
+    bibliography_parser: str = "caller-supplied-records",
 ) -> ReconciliationOutputs:
     if not collection_id or not source_revision:
         raise CollectionReconciliationError(
-            "collection and source revision must be non-empty"
+            "collection and asserted source revision must be non-empty"
         )
+    if not bibliography_parser:
+        raise CollectionReconciliationError(
+            "bibliography parser identity must be non-empty"
+        )
+    if coverage_observation_bytes is not None:
+        if coverage_observation is None:
+            raise CollectionReconciliationError(
+                "coverage bytes were supplied without an observation"
+            )
+        try:
+            parsed_coverage = CoverageObservation.from_json(
+                coverage_observation_bytes.decode("utf-8")
+            )
+        except (UnicodeDecodeError, ValueError) as error:
+            raise CollectionReconciliationError(
+                "coverage observation bytes are invalid"
+            ) from error
+        if parsed_coverage != coverage_observation:
+            raise CollectionReconciliationError(
+                "coverage observation bytes differ from parsed evidence"
+            )
     if not records or len(records) > _MAX_RECORDS:
         raise CollectionReconciliationError(
             "bibliography record count is outside bounds"
@@ -507,7 +703,7 @@ def reconcile_collection(
             f"collection row coverage differs: missing={missing}, extra={extra}"
         )
     if citation_closure is not None and (
-        citation_closure.source_revision != source_revision
+        citation_closure.asserted_source_revision != source_revision
         or set(citation_closure.bibliography_keys) != set(citekeys)
     ):
         raise CollectionReconciliationError(
@@ -633,7 +829,7 @@ def reconcile_collection(
         for pdf in managed_pdfs
         if pdf.citekey not in seed
     )
-    counts = _counts(tuple(references), extras, citation_closure)
+    counts = FrozenCounts(_counts(tuple(references), extras, citation_closure))
     coverage = _coverage_claims(
         coverage_observation=coverage_observation,
         processing_supplied=processing_supplied,
@@ -644,7 +840,7 @@ def reconcile_collection(
         "schema_version": _SCHEMA_VERSION,
         "processor_version": _PROCESSOR_VERSION,
         "collection_id": collection_id,
-        "source_revision": source_revision,
+        "asserted_source_revision": source_revision,
         "bibliography_sha256": bibliography_sha256,
         "coverage_observation_id": (
             coverage_observation.coverage_id
@@ -670,7 +866,7 @@ def reconcile_collection(
         schema_version=_SCHEMA_VERSION,
         processor_version=_PROCESSOR_VERSION,
         collection_id=collection_id,
-        source_revision=source_revision,
+        asserted_source_revision=source_revision,
         bibliography_sha256=bibliography_sha256,
         coverage_observation_id=(
             coverage_observation.coverage_id
@@ -698,10 +894,65 @@ def reconcile_collection(
         citation_closure,
         coverage_observation,
     )
+    inputs = _bound_input_evidence(
+        bibliography_bytes=bibliography_bytes,
+        collection_rows=collection_rows,
+        managed_pdfs=managed_pdfs,
+        citation_closure=citation_closure,
+        coverage_observation=coverage_observation,
+        coverage_observation_bytes=coverage_observation_bytes,
+        processing_evidence=processing_evidence,
+    )
+    package_manifest = ReconciliationPackageManifest.create(
+        collection_id=collection_id,
+        asserted_source_revision=source_revision,
+        verified_source_tree=(
+            citation_closure.verified_source_tree
+            if citation_closure is not None
+            else None
+        ),
+        components=(
+            SoftwareIdentity(
+                name="collection-reconciliation",
+                version=_PROCESSOR_VERSION,
+            ),
+            SoftwareIdentity(
+                name="collection-rows-parser",
+                version=_COLLECTION_ROWS_PARSER_VERSION,
+            ),
+            SoftwareIdentity(
+                name="source-discovery-parser",
+                version=_SOURCE_DISCOVERY_PARSER_VERSION,
+            ),
+            SoftwareIdentity(
+                name="processing-observer",
+                version=_PROCESSING_OBSERVER_VERSION,
+            ),
+            SoftwareIdentity(
+                name="latex-citation-parser",
+                version=_CITATION_PARSER_VERSION,
+            ),
+            SoftwareIdentity(
+                name="bibliography-parser",
+                version=bibliography_parser,
+            ),
+        ),
+        inputs=inputs,
+        output_files=rendered,
+    )
+    rendered[PACKAGE_MANIFEST_FILENAME] = package_manifest.to_json().encode(
+        "utf-8"
+    )
+    files = tuple(sorted(rendered.items()))
+    try:
+        parse_package_files(dict(files))
+    except ReconciliationPackageError as error:
+        raise CollectionReconciliationError(str(error)) from error
     return ReconciliationOutputs(
         manifest=manifest,
         citation_closure=citation_closure,
-        files=tuple(sorted(rendered.items())),
+        package_manifest=package_manifest,
+        files=files,
     )
 
 
@@ -711,6 +962,14 @@ def publish_reconciliation(
     output_directory: Path,
 ) -> PublicationResult:
     expected = dict(outputs.files)
+    try:
+        parsed = parse_package_files(expected)
+    except ReconciliationPackageError as error:
+        raise CollectionReconciliationError(str(error)) from error
+    if parsed.manifest != outputs.package_manifest:
+        raise CollectionReconciliationError(
+            "in-memory package manifest differs from rendered bytes"
+        )
     try:
         parent = AuthorizedRoot.create(
             output_directory.parent,
@@ -755,7 +1014,7 @@ def publish_reconciliation(
         return PublicationResult(
             status="unchanged",
             output_directory=parent.child_path(output_name),
-            manifest_id=outputs.manifest.manifest_id,
+            package_id=outputs.package_manifest.package_id,
         )
 
     temporary_name = f".{output_name.name}.{secrets.token_hex(12)}.temporary"
@@ -771,22 +1030,225 @@ def publish_reconciliation(
     return PublicationResult(
         status="created",
         output_directory=published,
-        manifest_id=outputs.manifest.manifest_id,
+        package_id=outputs.package_manifest.package_id,
+    )
+
+
+def parse_reconciliation_package(
+    text: str,
+) -> ReconciliationPackageManifest:
+    try:
+        return ReconciliationPackageManifest.from_json(text)
+    except ValueError as error:
+        raise CollectionReconciliationError(str(error)) from error
+
+
+def verify_reconciliation_package(
+    directory: Path,
+    *,
+    expected_package_id: str | None = None,
+) -> LoadedReconciliationPackage:
+    try:
+        loaded = load_reconciliation_package(directory)
+    except ReconciliationPackageError as error:
+        raise CollectionReconciliationError(str(error)) from error
+    if (
+        expected_package_id is not None
+        and loaded.manifest.package_id != expected_package_id
+    ):
+        raise CollectionReconciliationError(
+            "reconciliation package identity differs from expected identity"
+        )
+    return loaded
+
+
+def replay_reconciliation(
+    outputs: ReconciliationOutputs,
+    *,
+    output_directory: Path,
+) -> PublicationResult:
+    """Replay deterministic bytes through immutable publication semantics."""
+    return publish_reconciliation(outputs, output_directory=output_directory)
+
+
+def _bound_input_evidence(
+    *,
+    bibliography_bytes: bytes,
+    collection_rows: Mapping[str, CollectionRowEvidence],
+    managed_pdfs: Sequence[ManagedPdf],
+    citation_closure: CitationClosure | None,
+    coverage_observation: CoverageObservation | None,
+    coverage_observation_bytes: bytes | None,
+    processing_evidence: Mapping[str, ProcessingEvidence] | None,
+) -> tuple[ContentEvidence, ...]:
+    evidence = [
+        ContentEvidence.from_bytes(
+            role="bibliography",
+            filename="inputs/bibliography.bib",
+            content=bibliography_bytes,
+        )
+    ]
+    evidence.extend(_retained_input_evidence(collection_rows))
+    if not _retained_input_evidence(collection_rows):
+        evidence.append(
+            ContentEvidence.from_bytes(
+                role="collection-rows-normalized",
+                filename="inputs/collection-rows.normalized.json",
+                content=canonical_json_bytes(dict(collection_rows)),
+            )
+        )
+    retained_assets = _retained_input_evidence(managed_pdfs)
+    evidence.extend(retained_assets)
+    if not retained_assets:
+        evidence.extend(
+            ContentEvidence(
+                role="managed-asset",
+                filename=f"inputs/managed-assets/{item.filename}",
+                byte_size=item.byte_size,
+                sha256=item.sha256,
+            )
+            for item in managed_pdfs
+        )
+    if citation_closure is not None:
+        evidence.extend(citation_closure.source_file_evidence)
+        evidence.append(
+            ContentEvidence.from_bytes(
+                role="citation-closure",
+                filename="inputs/citation-closure.json",
+                content=citation_closure.to_json().encode("utf-8"),
+            )
+        )
+    if coverage_observation is not None:
+        content = (
+            coverage_observation_bytes
+            if coverage_observation_bytes is not None
+            else coverage_observation.to_json().encode("utf-8")
+        )
+        evidence.append(
+            ContentEvidence.from_bytes(
+                role="coverage-observation",
+                filename="inputs/coverage-observation.json",
+                content=content,
+            )
+        )
+    if processing_evidence is not None:
+        retained_processing = _retained_input_evidence(processing_evidence)
+        evidence.extend(retained_processing)
+        if not retained_processing:
+            evidence.append(
+                ContentEvidence.from_bytes(
+                    role="processing-observation",
+                    filename="inputs/processing-observation.json",
+                    content=canonical_json_bytes(dict(processing_evidence)),
+                )
+            )
+    normalized = canonical_json_bytes(
+        {
+            "collection_rows": dict(collection_rows),
+            "managed_pdfs": tuple(managed_pdfs),
+            "coverage_observation": coverage_observation,
+            "processing_evidence": (
+                None
+                if processing_evidence is None
+                else dict(processing_evidence)
+            ),
+        }
+    )
+    evidence.append(
+        ContentEvidence.from_bytes(
+            role="normalized-reconciliation-input",
+            filename="inputs/reconciliation-input.normalized.json",
+            content=normalized,
+        )
+    )
+    ordered = tuple(sorted(evidence, key=_content_evidence_key))
+    filenames = tuple(item.filename for item in ordered)
+    if len(filenames) != len(set(filenames)):
+        raise CollectionReconciliationError(
+            "bound input evidence contains duplicate filenames"
+        )
+    return ordered
+
+
+def _retained_input_evidence(value: object) -> tuple[ContentEvidence, ...]:
+    retained = getattr(value, "input_evidence", ())
+    if not isinstance(retained, tuple) or any(
+        not isinstance(item, ContentEvidence) for item in retained
+    ):
+        raise CollectionReconciliationError(
+            "retained input evidence has an invalid representation"
+        )
+    return retained
+
+
+def _content_evidence_key(
+    value: ContentEvidence,
+) -> tuple[str, str, int, str]:
+    return (value.role, value.filename, value.byte_size, value.sha256)
+
+
+def _verify_source_tree(
+    source_root: Path,
+    *,
+    asserted_revision: str,
+) -> VerifiedSourceTree | None:
+    if re.fullmatch(r"[0-9a-f]{40,64}", asserted_revision) is None:
+        return None
+
+    def git(*arguments: str) -> str:
+        completed = subprocess.run(
+            ("git", "-C", str(source_root), *arguments),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return completed.stdout.strip()
+
+    try:
+        repository_root = Path(git("rev-parse", "--show-toplevel"))
+        source_root.resolve(strict=True).relative_to(
+            repository_root.resolve(strict=True)
+        )
+        head = git("rev-parse", "HEAD")
+        if head != asserted_revision:
+            return None
+        if git("status", "--porcelain=v1", "--untracked-files=all"):
+            return None
+        tree_id = git("rev-parse", "HEAD^{tree}")
+    except (
+        FileNotFoundError,
+        subprocess.SubprocessError,
+        TimeoutError,
+        ValueError,
+    ):
+        return None
+    return VerifiedSourceTree(
+        commit_id=head,
+        tree_id=tree_id,
+        verification_method="git-clean-head",
     )
 
 
 def _load_source_discovery(
     path: Path | None,
-) -> dict[str, tuple[str, tuple[str, ...]]]:
+) -> tuple[
+    dict[str, tuple[str, tuple[str, ...]]],
+    tuple[ContentEvidence, ...],
+]:
     if path is None:
-        return {}
-    data = json.loads(
-        read_path_text(
-            path,
-            label="source-discovery document",
-            max_bytes=_MAX_STATUS_JSON_BYTES,
-        )
+        return {}, ()
+    content = read_path_bytes(
+        path,
+        label="source-discovery document",
+        max_bytes=_MAX_STATUS_JSON_BYTES,
     )
+    try:
+        data = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CollectionReconciliationError(
+            "source-discovery document is invalid"
+        ) from error
     if not isinstance(data, dict) or data.get("schema_version") != 1:
         raise CollectionReconciliationError(
             "unsupported source-discovery document"
@@ -825,15 +1287,24 @@ def _load_source_discovery(
                 f"duplicate source-discovery citekey: {citekey}"
             )
         result[citekey] = (digest, (basis,))
-    return result
+    return result, (
+        ContentEvidence.from_bytes(
+            role="source-discovery",
+            filename="inputs/source-discovery.json",
+            content=content,
+        ),
+    )
 
 
-def _transcript_status(root: AuthorizedRoot, citekey: str) -> str:
+def _transcript_status(
+    root: AuthorizedRoot,
+    citekey: str,
+) -> tuple[str, tuple[ContentEvidence, ...]]:
     base = f"{citekey}/derived/transcription"
     try:
         directory_state = root.state(base)
         if directory_state == "missing":
-            return "not-transcribed"
+            return "not-transcribed", ()
         if directory_state != "directory":
             raise CollectionReconciliationError(
                 "transcript path is not a directory"
@@ -856,35 +1327,65 @@ def _transcript_status(root: AuthorizedRoot, citekey: str) -> str:
         )
     present = tuple(state == "regular" for state in states)
     if not any(present):
-        return "not-transcribed"
+        return "not-transcribed", ()
+    contents = {
+        path: root.read_bytes(path, max_bytes=_MAX_STATUS_JSON_BYTES)
+        for path, is_present in zip(required, present, strict=True)
+        if is_present
+    }
+    evidence_names = {
+        "audit.json": "audit-record.json",
+        "clean.json": "clean-record.json",
+        "clean.txt": "clean-text.txt",
+        "manifest.json": "manifest-record.json",
+    }
+    evidence = tuple(
+        sorted(
+            (
+                ContentEvidence.from_bytes(
+                    role="processing-source",
+                    filename=(
+                        "inputs/processing-source/"
+                        f"{citekey}/{evidence_names[Path(path).name]}"
+                    ),
+                    content=content,
+                )
+                for path, content in contents.items()
+            ),
+            key=_content_evidence_key,
+        )
+    )
     if not all(present):
-        return "partial-transcript-artifacts"
-    manifest = _read_bounded_json(root, f"{base}/manifest.json")
-    audit = _read_bounded_json(root, f"{base}/audit.json")
+        return "partial-transcript-artifacts", evidence
+    manifest = _parse_bounded_json(
+        contents[f"{base}/manifest.json"],
+        filename="manifest.json",
+    )
+    audit = _parse_bounded_json(
+        contents[f"{base}/audit.json"],
+        filename="audit.json",
+    )
     if (
         manifest.get("status") == "automated_unreviewed"
         and audit.get("status") == "passed"
     ):
-        return "automated-unreviewed-with-recorded-passing-audit"
-    return "transcript-present-status-unverified"
+        return "automated-unreviewed-with-recorded-passing-audit", evidence
+    return "transcript-present-status-unverified", evidence
 
 
-def _read_bounded_json(
-    root: AuthorizedRoot,
-    relative: str,
+def _parse_bounded_json(
+    content: bytes,
+    *,
+    filename: str,
 ) -> dict[str, Any]:
-    try:
-        content = root.read_bytes(relative, max_bytes=_MAX_STATUS_JSON_BYTES)
-    except PathSafetyError as error:
-        raise CollectionReconciliationError(str(error)) from error
     if not content:
         raise CollectionReconciliationError(
-            f"processing status JSON is empty: {Path(relative).name}"
+            f"processing status JSON is empty: {filename}"
         )
     data = json.loads(content.decode("utf-8"))
     if not isinstance(data, dict):
         raise CollectionReconciliationError(
-            f"processing status JSON must be an object: {Path(relative).name}"
+            f"processing status JSON must be an object: {filename}"
         )
     return data
 
@@ -1259,18 +1760,20 @@ def _render_outputs(
         "citation-closure.json": (
             closure.to_json().encode("utf-8")
             if closure is not None
-            else _pretty_json(
+            else pretty_json(
                 {
                     "schema_version": _SCHEMA_VERSION,
                     "status": "not-supplied",
-                    "source_revision": manifest.source_revision,
+                    "asserted_source_revision": (
+                        manifest.asserted_source_revision
+                    ),
                 }
             ).encode("utf-8")
         ),
         "coverage-observation.json": (
             coverage_observation.to_json().encode("utf-8")
             if coverage_observation is not None
-            else _pretty_json(
+            else pretty_json(
                 {
                     "schema_version": 1,
                     "status": "not-supplied",
@@ -1369,22 +1872,5 @@ def _extra_csv(extras: tuple[ExtraPdf, ...]) -> str:
 
 
 def _stable_id(kind: str, payload: object) -> str:
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    canonical = canonical_json_bytes(payload)
     return f"{kind}:sha256:{hashlib.sha256(canonical).hexdigest()}"
-
-
-def _pretty_json(payload: object) -> str:
-    return (
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n"
-    )

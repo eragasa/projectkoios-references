@@ -18,7 +18,10 @@ from projectkoios.references.assets import (
     SearchRoot,
     materialize_asset,
 )
-from projectkoios.references.biblatex import load_bibliography
+from projectkoios.references.biblatex import (
+    biblatex_parser_identity,
+    load_bibliography,
+)
 from projectkoios.references.catalog import ReferenceCatalog
 from projectkoios.references.collection_reconciliation import (
     build_citation_closure,
@@ -267,14 +270,19 @@ def main(arguments: list[str] | None = None) -> int:
             if args.ingestion_root is not None
             else None
         )
-        coverage_observation = (
-            CoverageObservation.from_json(
-                read_path_text(
-                    args.coverage_observation,
-                    label="coverage observation",
-                )
+        coverage_observation_bytes = (
+            read_path_bytes(
+                args.coverage_observation,
+                label="coverage observation",
             )
             if args.coverage_observation is not None
+            else None
+        )
+        coverage_observation = (
+            CoverageObservation.from_json(
+                coverage_observation_bytes.decode("utf-8")
+            )
+            if coverage_observation_bytes is not None
             else None
         )
         outputs = reconcile_collection(
@@ -286,7 +294,9 @@ def main(arguments: list[str] | None = None) -> int:
             managed_pdfs=managed_pdfs,
             citation_closure=citation_closure,
             coverage_observation=coverage_observation,
+            coverage_observation_bytes=coverage_observation_bytes,
             processing_evidence=processing_evidence,
+            bibliography_parser=biblatex_parser_identity(),
         )
         publication = publish_reconciliation(
             outputs,
@@ -296,9 +306,9 @@ def main(arguments: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "status": publication.status,
-                    "manifest_id": publication.manifest_id,
+                    "package_id": publication.package_id,
                     "output_directory": str(publication.output_directory),
-                    "counts": outputs.manifest.counts,
+                    "counts": dict(outputs.manifest.counts),
                 },
                 indent=2,
                 sort_keys=True,

@@ -6,8 +6,8 @@ Reference management and citation handling for Project Koios.
 
 The integrated command set remains a pre-release prototype under adversarial
 remediation. It is not yet a safe generic scanner, final missing-PDF census,
-canonical-promotion gate, accepted ingestion interface, or complete
-content-addressed reconciliation package. Each use must follow the open owner
+canonical-promotion gate, accepted ingestion interface, or accepted
+cross-repository reconciliation contract. Each use must follow the open owner
 issues and supplied-root limitations; failed or absent evidence must not be
 promoted into an availability, rights, relevance, or scientific claim.
 
@@ -15,7 +15,8 @@ The canonical reference convention uses one accepted BibLaTeX citation key as
 the basename of both the reference note and local PDF. See
 [Reference object convention](docs/reference-object-convention.md),
 [Literature-review ingestion](docs/literature-review-ingestion.md),
-[PDF coverage observations](docs/coverage-observations.md), and the
+[PDF coverage observations](docs/coverage-observations.md), the
+[reconciliation package model](docs/reconciliation-packages.md), and the
 [reference working catalog](docs/reference-catalog.md). Deferred graph,
 metadata, review, and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
@@ -41,7 +42,7 @@ koios-ref acquisition-create acquisition.csv .koios/acquisition.json \
 koios-ref acquisition-verify .koios/acquisition.json \
   --source-root staging=/private/staging
 koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
-  .koios/references/example/reconciliation-0.4.0 \
+  .koios/references/example/reconciliation-output \
   --collection-id example --source-revision REV \
   --source-discovery source-discovery.json \
   --coverage-observation coverage-observation.json \
@@ -50,12 +51,17 @@ koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
 koios-ref validate references.bib /path/to/notes /path/to/pdfs
 ```
 
-`collection-reconcile` creates immutable, replayable
-`collection-manifest.json`, `citation-closure.json`, `missing-pdfs.csv`,
-`ambiguous-pdfs.csv`, and `extra-pdfs.csv` outputs. It hashes and header-checks
-managed PDFs, ignores commented LaTeX citations and macro placeholders,
-classifies source/PDF applicability conservatively, and records metadata,
-access, rights, ingestion, and transcript status without changing source
+`collection-reconcile` creates an immutable, replayable package containing
+`package-manifest.json`, `collection-manifest.json`, `citation-closure.json`,
+`coverage-observation.json`, `missing-pdfs.csv`, `ambiguous-pdfs.csv`, and
+`extra-pdfs.csv`. The package identity binds every payload output and all
+consumed evidence bytes. Source-revision labels remain explicitly asserted;
+only a matching clean Git `HEAD` can add verified commit and tree identity. See
+[Reconciliation packages](docs/reconciliation-packages.md) for the package,
+version, authority, verification, and replay boundaries. The command hashes and
+header-checks managed PDFs, ignores commented LaTeX citations and macro
+placeholders, classifies source/PDF applicability conservatively, and records
+metadata, access, rights, ingestion, and transcript status without changing source
 bibliographies or assets. Absence and discovery statuses require a typed,
 content-identified coverage observation: no coverage produces
 `not-yet-searched`, and incomplete or failed coverage cannot produce

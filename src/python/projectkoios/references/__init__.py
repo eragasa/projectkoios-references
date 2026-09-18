@@ -33,10 +33,13 @@ from projectkoios.references.collection_reconciliation import (
     ReconciliationOutputs,
     build_citation_closure,
     load_collection_rows,
+    parse_reconciliation_package,
     publish_reconciliation,
     reconcile_collection,
+    replay_reconciliation,
     scan_managed_pdfs,
     scan_processing_evidence,
+    verify_reconciliation_package,
 )
 from projectkoios.references.coverage import (
     AmbiguityEvaluation,
@@ -66,6 +69,10 @@ from projectkoios.references.path_safety import (
     validate_citekey,
     validate_relative_path,
 )
+from projectkoios.references.reconciliation_package import (
+    LoadedReconciliationPackage,
+    ReconciliationPackageManifest,
+)
 
 __all__ = [
     "AbstractRecord",
@@ -91,6 +98,7 @@ __all__ = [
     "CoverageCandidate",
     "CoverageObservation",
     "CoverageState",
+    "LoadedReconciliationPackage",
     "ManagedPdf",
     "PdfExpectation",
     "PathSafetyError",
@@ -98,6 +106,7 @@ __all__ = [
     "ProcessingEvidence",
     "PublicationResult",
     "ReconciliationOutputs",
+    "ReconciliationPackageManifest",
     "ReferenceAlias",
     "ReferenceCoverage",
     "ReferenceCatalog",
@@ -112,12 +121,15 @@ __all__ = [
     "load_bibliography",
     "load_collection_rows",
     "materialize_asset",
+    "parse_reconciliation_package",
     "publish_reconciliation",
     "reconcile_collection",
+    "replay_reconciliation",
     "scan_managed_pdfs",
     "scan_processing_evidence",
     "normalize_doi",
     "validate_citekey",
     "validate_relative_path",
     "verify_acquisition_manifest",
+    "verify_reconciliation_package",
 ]
