@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "citekey": "padbergHoffmann2015",
+  "doi": "10.4236/jcc.2015.32002",
+  "source_url": "https://www.scirp.org/pdf/JCC_2015022715085803.pdf",
+  "license": "CC-BY-4.0",
+  "vault_note": "20_references/projectkoios-workflow/padbergHoffmann2015.md",
+  "vault_asset": "assets/references/projectkoios-workflow/padbergHoffmann2015.pdf",
+  "sha256": "2d042a92d1fad7fa97921eaa2b042b3276cdfa40d9463284acb3326f5e8008ca",
+  "byte_size": 1352331,
+  "status": "metadata-and-source-identity-verified",
+  "transcription": {
+    "vault_note": "20_references/projectkoios-workflow/padbergHoffmann2015.md",
+    "status": "raw-extraction-plus-structured-normalization-needs-proofreading",
+    "source_pages": "20-28",
+    "pdf_pages": "1-9",
+    "excluded_pdf_pages": [
+      10
+    ],
+    "excluded_reason": "publisher advertisement outside the article"
+  },
+  "derived_figures": [
+    {
+      "figure": 1,
+      "vault_asset": "assets/references/projectkoios-workflow/padbergHoffmann2015-figure-01.png",
+      "sha256": "96e25c38afd80ab08694baefc393b4837b1e4f49de739704e61b027b64e0d458",
+      "byte_size": 90592
+    },
+    {
+      "figure": 2,
+      "vault_asset": "assets/references/projectkoios-workflow/padbergHoffmann2015-figure-02.png",
+      "sha256": "757947a651a99b7296f76701d62ed011ddeeda2ce1d8e3c3f454f0175bb5b6be",
+      "byte_size": 31224
+    },
+    {
+      "figure": 3,
+      "vault_asset": "assets/references/projectkoios-workflow/padbergHoffmann2015-figure-03.png",
+      "sha256": "017ce442502e36a8eab4435aac744b25efb4fb4b171bd3d43a887ba2e4d76437",
+      "byte_size": 36590
+    },
+    {
+      "figure": 4,
+      "vault_asset": "assets/references/projectkoios-workflow/padbergHoffmann2015-figure-04.png",
+      "sha256": "df843f569e895bf3886b2c570f5f141fa4a00f05f30522639411b1116caf3d0c",
+      "byte_size": 24105
+    },
+    {
+      "figure": 5,
+      "vault_asset": "assets/references/projectkoios-workflow/padbergHoffmann2015-figure-05.png",
+      "sha256": "566811ac0cf90d8ca1c6e51b52981bc8e4f618fb588a46d79b1e84f7097f37bd",
+      "byte_size": 55111
+    },
+    {
+      "figure": 6,
+      "vault_asset": "assets/references/projectkoios-workflow/padbergHoffmann2015-figure-06.png",
+      "sha256": "c8d81bf8db75f841afa92cf9d58a3f7cb898747fa156dc741e67ba730324b3f4",
+      "byte_size": 53784
+    }
+  ],
+  "citation_graph": {
+    "nodes": "collections/projectkoios-workflow/padbergHoffmann2015/nodes.csv",
+    "edges": "collections/projectkoios-workflow/padbergHoffmann2015/edges.csv",
+    "direct_reference_count": 34
+  },
+  "cold_extraction": {
+    "source_id": "reference:padbergHoffmann2015",
+    "source_hash": "2d042a92d1fad7fa97921eaa2b042b3276cdfa40d9463284acb3326f5e8008ca",
+    "contract_version": "2.0",
+    "extractor": "pymupdf",
+    "extractor_version": "1",
+    "physical_page_count": 10,
+    "block_count": 196,
+    "warnings": [
+      {
+        "code": "pdf.low_text_density",
+        "physical_page_index": 9
+      }
+    ],
+    "artifact_status": "private-local-reproducible"
+  }
+}

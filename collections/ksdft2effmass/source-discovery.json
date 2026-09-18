@@ -1,0 +1,318 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-15T08:08:33.317209+00:00",
+  "source_project": "ksdft2effmass",
+  "source_revision": "64e28463a909777771f4f74b59ed4508911b63d4",
+  "mode": "read-only-source-discovery-and-copy",
+  "bibliographies": [
+    "docs/publications/research-monograph/references.bib",
+    "docs/publications/papers/ksdft2effmass.P01/latex/references.bib",
+    "docs/publications/papers/ksdft2effmass.P91/references.bib"
+  ],
+  "counts": {
+    "bibliography_entries_total": 116,
+    "unique_citekeys": 90,
+    "local_pdfs_located": 22,
+    "local_pdfs_not_located": 68,
+    "notes_created": 90,
+    "pdf_candidates_scanned": 1929
+  },
+  "privacy": {
+    "absolute_paths_recorded": false,
+    "personal_and_finance_vaults_searched": false,
+    "source_roots_are_local_aliases": true
+  },
+  "matches": [
+    {
+      "citekey": "blochl1994paw",
+      "source_root": "dropbox-references",
+      "source_relative_path": "references_dft/blochl1994_paw.pdf",
+      "match_basis": "citekey filename, author, year, and title match",
+      "sha256": "5c2079e451c4a2e95f6dfb945c0ff331875d88905c6480e7405d025f303c4c02",
+      "byte_size": 1769846,
+      "vault_asset": "assets/references/ksdft2effmass/blochl1994paw.pdf"
+    },
+    {
+      "citekey": "burt1992",
+      "source_root": "dlsu-teaching-vault",
+      "source_relative_path": "03_references/articles/burt1992.pdf",
+      "match_basis": "exact citekey filename",
+      "sha256": "f9d71310259366874009b2c1f85b9ef65eca67798b464cdf3f648cf84ff097aa",
+      "byte_size": 2107315,
+      "vault_asset": "assets/references/ksdft2effmass/burt1992.pdf"
+    },
+    {
+      "citekey": "burt1999",
+      "source_root": "dlsu-teaching-vault",
+      "source_relative_path": "03_references/articles/burt1999.pdf",
+      "match_basis": "exact citekey filename",
+      "sha256": "5409e076717b73ae20cd16997515f095e3565853f0c67ba7cc6db7231ab7d328",
+      "byte_size": 354633,
+      "vault_asset": "assets/references/ksdft2effmass/burt1999.pdf"
+    },
+    {
+      "citekey": "ermoneit2026",
+      "source_root": "dlsu-teaching-vault",
+      "source_relative_path": "03_references/articles/Ermoneit2026.pdf",
+      "match_basis": "exact citekey filename and PDF metadata title",
+      "sha256": "3b5438898e03a4d40c702c6974b8f41b0e86632a108f103f02112259d37926f9",
+      "byte_size": 9811983,
+      "vault_asset": "assets/references/ksdft2effmass/ermoneit2026.pdf"
+    },
+    {
+      "citekey": "giannozzi2009",
+      "source_root": "dropbox-references",
+      "source_relative_path": "references_dft/gianozzi2009_quantumespresso.pdf",
+      "match_basis": "title, authors, journal, volume, and article number verified on first pages",
+      "sha256": "1f2702616d1fc269af1e94d5a440c49d661d6a46a0028210cd5eac81ad486843",
+      "byte_size": 1415975,
+      "vault_asset": "assets/references/ksdft2effmass/giannozzi2009.pdf"
+    },
+    {
+      "citekey": "hohenberg1964",
+      "source_root": "dropbox-notes",
+      "source_relative_path": "dft/hohenberg1964_dft.pdf",
+      "match_basis": "citekey and author-year filename",
+      "sha256": "d241218df9578242dd461101f369c4a7d3ed58388567897a53f2e885a1be8a97",
+      "byte_size": 838879,
+      "vault_asset": "assets/references/ksdft2effmass/hohenberg1964.pdf"
+    },
+    {
+      "citekey": "kato1995",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/Kato2Ed.pdf",
+      "match_basis": "author, title, and edition match",
+      "sha256": "ec4a79bbbcd6e94097c04a5cd2e324c00ca776349c3b9559e779e79cfbc8bdf3",
+      "byte_size": 10415515,
+      "vault_asset": "assets/references/ksdft2effmass/kato1995.pdf"
+    },
+    {
+      "citekey": "kittel2004",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/kittel2004_solidstate_8th.pdf",
+      "match_basis": "citekey filename and title-page match",
+      "sha256": "7c177d8ce281eeb1a1e0897e8d711bd908c2657ec42abd690ff1105533b7a6ed",
+      "byte_size": 6914153,
+      "vault_asset": "assets/references/ksdft2effmass/kittel2004.pdf"
+    },
+    {
+      "citekey": "kohn1965",
+      "source_root": "dropbox-notes",
+      "source_relative_path": "dft/kohn1965_ksequations.pdf",
+      "match_basis": "citekey filename and title on first page",
+      "sha256": "99685aebe6c51a23ffe4288394f8b8fa5dfe9fd33956348851d1a0354155c83b",
+      "byte_size": 530221,
+      "vault_asset": "assets/references/ksdft2effmass/kohn1965.pdf"
+    },
+    {
+      "citekey": "luttingerKohn1955",
+      "source_root": "dlsu-teaching-vault",
+      "source_relative_path": "03_references/articles/luttingerkhon1955.pdf",
+      "match_basis": "PDF metadata title match",
+      "sha256": "0f9e4d89833fe90acdbe69569bcded984139a5dc64f3f29425c880f1862b5e17",
+      "byte_size": 1411440,
+      "vault_asset": "assets/references/ksdft2effmass/luttingerKohn1955.pdf"
+    },
+    {
+      "citekey": "martin2020",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/dokumen.pub_electronic-structure-basic-theory-and-practical-methods-2nd-edition-2nbsped-9781108429900-9781108555586.pdf",
+      "match_basis": "title and second edition match",
+      "sha256": "3c491ea46a7c8ddcd940c957a297e56fd6165b75f7952c5ba293c0fb2b1d5220",
+      "byte_size": 19016486,
+      "vault_asset": "assets/references/ksdft2effmass/martin2020.pdf"
+    },
+    {
+      "citekey": "marzari1997",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/articles/marzari1997.pdf",
+      "match_basis": "exact citekey filename",
+      "sha256": "56bee626804d3f0959b64e1c22b5e74cde8c8ee79a1ca140e0a8b5427e8137e8",
+      "byte_size": 503139,
+      "vault_asset": "assets/references/ksdft2effmass/marzari1997.pdf"
+    },
+    {
+      "citekey": "nationalResearchCouncil2012",
+      "source_root": "dropbox-research-notes",
+      "source_relative_path": "_notes_VVUQ/NRC_VVUQ.pdf",
+      "match_basis": "title and DOI verified on first page",
+      "sha256": "6a732766adb7af43eb6f585a46f1795e56130dae2672c1da490bd71033b5efc3",
+      "byte_size": 5294014,
+      "vault_asset": "assets/references/ksdft2effmass/nationalResearchCouncil2012.pdf"
+    },
+    {
+      "citekey": "nielsenchuang2010",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/NielsenChuang2Ed.pdf",
+      "match_basis": "title and edition match",
+      "sha256": "d7a7e784cad22e6a039ddd215be6fff27098e5997e9f33a15ed4c9994839949a",
+      "byte_size": 6067602,
+      "vault_asset": "assets/references/ksdft2effmass/nielsenchuang2010.pdf"
+    },
+    {
+      "citekey": "perdew1996",
+      "source_root": "dropbox-references",
+      "source_relative_path": "references_dft/perdew1996_gga_pbe.pdf",
+      "match_basis": "citekey filename and title on first page",
+      "sha256": "fa60ddfeb4bc6c2eebc5037cf04dcc802bb6757e98fedcfc0129029fa8dbee91",
+      "byte_size": 154271,
+      "vault_asset": "assets/references/ksdft2effmass/perdew1996.pdf"
+    },
+    {
+      "citekey": "reedSimon1975",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/reed1975_MathematicalPhysicsII.pdf",
+      "match_basis": "author-year filename and PDF metadata title",
+      "sha256": "860c253c1801841fc10ff3fccde9db647924ad70ad92e91dab9f5bb4eedda405",
+      "byte_size": 12714345,
+      "vault_asset": "assets/references/ksdft2effmass/reedSimon1975.pdf"
+    },
+    {
+      "citekey": "rostgaard2009",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/articles/Rostgaard2009.pdf",
+      "match_basis": "exact citekey filename, author, and title match",
+      "sha256": "323846b3c7455d61b75a6aaecd300d850fae9ce36864f5e28d66aeecb3741a02",
+      "byte_size": 381561,
+      "vault_asset": "assets/references/ksdft2effmass/rostgaard2009.pdf"
+    },
+    {
+      "citekey": "shankar1994",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/Shankar2Ed.pdf",
+      "match_basis": "author and edition filename; local full-text match",
+      "sha256": "80fde605baa846ac67d752e208e53bd546cff4ff4121ae8d5e3df0ae778bcd94",
+      "byte_size": 7220706,
+      "vault_asset": "assets/references/ksdft2effmass/shankar1994.pdf"
+    },
+    {
+      "citekey": "simon2013",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/SimonSS1Ed.pdf",
+      "match_basis": "title-page match",
+      "sha256": "46807198536b8672000463b8d9c8ae555f4955ba0ad0e80cec19b01671030be2",
+      "byte_size": 5627954,
+      "vault_asset": "assets/references/ksdft2effmass/simon2013.pdf"
+    },
+    {
+      "citekey": "souza2001",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/articles/souza2001.pdf",
+      "match_basis": "exact citekey filename",
+      "sha256": "212c45940705cbff3609926b112e1223eae97dce26c5ca44fc416a862ddb5463",
+      "byte_size": 3934630,
+      "vault_asset": "assets/references/ksdft2effmass/souza2001.pdf"
+    },
+    {
+      "citekey": "szeLee2012",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/SzeLee3Ed.pdf",
+      "match_basis": "title, authors, and edition match",
+      "sha256": "539257eb20229bee438dbd628e017bcf8ba6bb6348198ce1e9000cd685d7263e",
+      "byte_size": 20143593,
+      "vault_asset": "assets/references/ksdft2effmass/szeLee2012.pdf"
+    },
+    {
+      "citekey": "yuCardona2010",
+      "source_root": "dlsu-projectkoios-vault",
+      "source_relative_path": "03_references/textbooks/YuCardona4Ed.pdf",
+      "match_basis": "PDF metadata title and edition match",
+      "sha256": "acfc317504ba1e20a14686c9cbf66b542fb844b4d29b9cc66307598961963f30",
+      "byte_size": 9995980,
+      "vault_asset": "assets/references/ksdft2effmass/yuCardona2010.pdf"
+    }
+  ],
+  "unmatched_citekeys": [
+    "angelone2024",
+    "baldereschiLipari1973",
+    "bect2021discretization",
+    "bertotCasteran2004",
+    "bjork1973",
+    "bonneau2001",
+    "bornOppenheimer1927",
+    "brouder2007",
+    "carnimeo2023",
+    "cawley2010",
+    "coveney2021reliability",
+    "davis1970",
+    "deeptbProject2024",
+    "demouraUllrich2021",
+    "feshbach1958",
+    "feshbach1962",
+    "foreman1993",
+    "foreman2005",
+    "freysoldt2009",
+    "freysoldt2014",
+    "fried2025pointDefects",
+    "giannozzi2017",
+    "giannozzi2020",
+    "groen2021vecmatk",
+    "gu2024deeptb",
+    "hamann2013",
+    "higham1986",
+    "hilbert1902",
+    "kohn1959",
+    "kohnLuttinger1955donor",
+    "komsa2012",
+    "li2022deeph",
+    "li2025mlreview",
+    "lowdin1982",
+    "marzari2012",
+    "mathlib2020",
+    "mclachlan1947",
+    "monkhorst1976",
+    "neumaier2004",
+    "nipkowPaulsonWenzel2002",
+    "paier2006",
+    "perdewLevy1983",
+    "pizzi2020",
+    "prodanKohn2005",
+    "pseudodojoRepository",
+    "quantumEspressoDocumentation",
+    "quantumEspressoPwInput",
+    "rubel2021effectiveMass",
+    "sandve2013",
+    "schattauer2022defects",
+    "schmudgen2012",
+    "schonemann1966",
+    "shamSchluter1983",
+    "simon2005",
+    "slater1954",
+    "strikwerda2004",
+    "tantardini2024",
+    "teschl2014",
+    "vansetten2018",
+    "vogl1983",
+    "wannier1937",
+    "wannier90Website",
+    "yates2007",
+    "ye2021uqPatterns",
+    "yuan2024deephr",
+    "yuan2026deephr",
+    "zhang2024selfConsistency",
+    "zou2026mltbReview"
+  ],
+  "source_roots": {
+    "dropbox-notes": "legacy scientific Notes tree",
+    "dropbox-references": "legacy scientific references tree",
+    "dropbox-research-notes": "legacy scientific research-notes tree",
+    "dlsu-teaching-vault": "DLSU teaching Obsidian vault",
+    "dlsu-projectkoios-vault": "DLSU Project Koios Obsidian vault"
+  },
+  "search_scope": [
+    "Project Koios working vault",
+    "DLSU teaching-vault reference library",
+    "DLSU Project Koios vault reference library and ksdft2effmass area",
+    "legacy Dropbox scientific notes, references, and research-note trees",
+    "legacy University of Florida research tree",
+    "local Downloads folder"
+  ],
+  "method": [
+    "exact and normalized citation-key filename matching",
+    "author-year filename matching",
+    "Spotlight title and DOI discovery",
+    "PDF metadata comparison",
+    "first-page title, author, journal, volume, article-number, or DOI checks",
+    "manual rejection of citation-containing and otherwise ambiguous PDFs"
+  ]
+}
