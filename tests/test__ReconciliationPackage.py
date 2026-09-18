@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import subprocess
 from dataclasses import FrozenInstanceError, fields, is_dataclass, replace
@@ -16,7 +17,6 @@ from projectkoios.references.collection_reconciliation import (
     reconcile_collection,
     replay_reconciliation,
     scan_managed_pdfs,
-    scan_processing_evidence,
     verify_reconciliation_package,
 )
 from projectkoios.references.coverage import (
@@ -30,12 +30,53 @@ from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
 )
+from projectkoios.references.ingestion_evidence import (
+    IngestionEvidenceVerificationError,
+    ReferenceEvidenceInput,
+    load_ingestion_reference_evidence,
+)
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,
     FrozenCounts,
 )
 
 _ASSERTED_REVISION = "caller-asserted-revision"
+_FIXTURE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "ingestion-reference-evidence"
+    / "complete.json"
+)
+
+
+def _canonical(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def _reidentify(value: dict[str, object]) -> bytes:
+    identity = dict(value)
+    identity.pop("record_id", None)
+    digest = hashlib.sha256(_canonical([identity])).hexdigest()
+    value["record_id"] = f"reference-evidence-record:sha256:{digest}"
+    return _canonical(value)
+
+
+def _reference_evidence_for_source(content: bytes) -> bytes:
+    value = json.loads(_FIXTURE.read_bytes())
+    digest = hashlib.sha256(content).hexdigest()
+    value["source"] = {
+        "blob_id": f"blob:sha256:{digest}",
+        "hash_algorithm": "sha256",
+        "content_sha256": digest,
+        "byte_length": len(content),
+        "media_type": "application/pdf",
+    }
+    return _reidentify(value)
 
 
 def _record() -> ReferenceCandidate:
@@ -83,8 +124,6 @@ def _prepare_inputs(root: Path) -> dict[str, Path]:
     pdfs.mkdir()
     pdf_content = b"%PDF-1.4\nfixture\n%%EOF\n"
     (pdfs / "example2026.pdf").write_bytes(pdf_content)
-    import hashlib
-
     discovery = root / "source-discovery.json"
     discovery.write_text(
         json.dumps(
@@ -111,20 +150,8 @@ def _prepare_inputs(root: Path) -> dict[str, Path]:
         encoding="utf-8",
     )
 
-    ingestion = root / "ingestion"
-    transcript = ingestion / "example2026" / "derived" / "transcription"
-    transcript.mkdir(parents=True)
-    (ingestion / "example2026" / "extraction.json").write_text(
-        "{}\n", encoding="utf-8"
-    )
-    (transcript / "manifest.json").write_text(
-        '{"status":"automated_unreviewed"}\n', encoding="utf-8"
-    )
-    (transcript / "audit.json").write_text(
-        '{"status":"passed"}\n', encoding="utf-8"
-    )
-    (transcript / "clean.json").write_text("{}\n", encoding="utf-8")
-    (transcript / "clean.txt").write_text("evidence\n", encoding="utf-8")
+    evidence = root / "reference-evidence.json"
+    evidence.write_bytes(_reference_evidence_for_source(pdf_content))
 
     coverage = CoverageObservation.create(
         asserted_source_revision=_ASSERTED_REVISION,
@@ -151,7 +178,7 @@ def _prepare_inputs(root: Path) -> dict[str, Path]:
         "pdfs": pdfs,
         "discovery": discovery,
         "manuscript": manuscript,
-        "ingestion": ingestion,
+        "evidence": evidence,
         "coverage": coverage_path,
     }
 
@@ -164,20 +191,22 @@ def _reconcile(paths: dict[str, Path]):
         bibliography_keys=("example2026",),
         source_revision=_ASSERTED_REVISION,
     )
+    managed = scan_managed_pdfs(
+        paths["pdfs"], source_discovery=paths["discovery"]
+    )
     return reconcile_collection(
         (_record(),),
         bibliography_bytes=paths["bibliography"].read_bytes(),
         collection_id="fixture",
         source_revision=_ASSERTED_REVISION,
         collection_rows=load_collection_rows(paths["corpus"]),
-        managed_pdfs=scan_managed_pdfs(
-            paths["pdfs"], source_discovery=paths["discovery"]
-        ),
+        managed_pdfs=managed,
         citation_closure=closure,
         coverage_observation=coverage,
         coverage_observation_bytes=coverage_bytes,
-        processing_evidence=scan_processing_evidence(
-            paths["ingestion"], citekeys=("example2026",)
+        processing_evidence=load_ingestion_reference_evidence(
+            (ReferenceEvidenceInput("example2026", paths["evidence"]),),
+            managed_pdfs=managed,
         ),
         bibliography_parser="pybtex@test-version",
     )
@@ -219,10 +248,21 @@ def test__package_manifest__covers_all_payload_outputs_and_bound_inputs(
         "citation-source",
         "citation-closure",
         "coverage-observation",
-        "processing-source",
+        "ingestion-reference-evidence",
         "processing-observation",
         "normalized-reconciliation-input",
     } <= roles
+    evidence_input = next(
+        item
+        for item in package.inputs
+        if item.role == "ingestion-reference-evidence"
+    )
+    evidence_bytes = paths["evidence"].read_bytes()
+    assert evidence_input.filename == (
+        "inputs/ingestion-reference-evidence/example2026.json"
+    )
+    assert evidence_input.byte_size == len(evidence_bytes)
+    assert evidence_input.sha256 == hashlib.sha256(evidence_bytes).hexdigest()
     assert package.asserted_source_revision == _ASSERTED_REVISION
     assert package.verified_source_tree is None
     assert package.generator.name == "projectkoios-references"
@@ -232,7 +272,9 @@ def test__package_manifest__covers_all_payload_outputs_and_bound_inputs(
         "latex-citation-parser",
     }
     assert str(tmp_path) not in package.to_json()
-    assert "derived/transcription" not in package.to_json()
+    assert "projectkoios.ingestion.reference-evidence" in (
+        paths["evidence"].read_text(encoding="utf-8")
+    )
 
     changed_payload = {
         name: content
@@ -261,16 +303,7 @@ def test__package_identity__changes_for_every_bound_input_byte_class(
         (paths["bibliography"], b"% byte-only bibliography change\n"),
         (paths["corpus"], b"\n"),
         (paths["discovery"], b" "),
-        (paths["pdfs"] / "example2026.pdf", b"% changed asset bytes\n"),
         (paths["manuscript"] / "main.tex", b"% source byte change\n"),
-        (
-            paths["ingestion"]
-            / "example2026"
-            / "derived"
-            / "transcription"
-            / "clean.txt",
-            b"changed processing bytes\n",
-        ),
         (paths["coverage"], b" "),
     )
     for path, suffix in mutations:
@@ -278,6 +311,24 @@ def test__package_identity__changes_for_every_bound_input_byte_class(
         path.write_bytes(original + suffix)
         assert _reconcile(paths).package_manifest.package_id != baseline
         path.write_bytes(original)
+
+    pdf_path = paths["pdfs"] / "example2026.pdf"
+    original_pdf = pdf_path.read_bytes()
+    pdf_path.write_bytes(original_pdf + b"% changed asset bytes\n")
+    with pytest.raises(
+        IngestionEvidenceVerificationError,
+        match="managed PDF identity",
+    ):
+        _reconcile(paths)
+    pdf_path.write_bytes(original_pdf)
+
+    evidence_path = paths["evidence"]
+    original_evidence = evidence_path.read_bytes()
+    value = json.loads(original_evidence)
+    value["transcript"]["warning_count"] += 1
+    evidence_path.write_bytes(_reidentify(value))
+    assert _reconcile(paths).package_manifest.package_id != baseline
+    evidence_path.write_bytes(original_evidence)
 
 
 def test__package_identity__binds_citation_closure_even_when_statuses_match(

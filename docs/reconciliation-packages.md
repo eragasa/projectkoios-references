@@ -31,8 +31,9 @@ binds:
 - every citation-source file by relative logical filename, byte size, and
   SHA-256 digest;
 - the complete citation-closure record;
-- the processing bytes observed by the provisional adapter, using logical
-  evidence names rather than private workspace paths;
+- exact explicitly injected canonical ingestion reference-evidence bytes,
+  source-bound status projections, and adapter observations under logical names
+  rather than producer paths;
 - a normalized immutable record of all reconciliation inputs;
 - the package distribution version and the reconciliation, bibliography,
   collection-row, discovery, processing, and citation-parser versions; and
@@ -82,3 +83,20 @@ The Python API provides:
 Replaying an identical package at an existing destination returns `unchanged`.
 An incomplete, unexpected, or byte-different destination fails closed and is
 not repaired or overwritten.
+
+## Ingestion evidence boundary
+
+Processing status is consumed only through the references-owned strict adapter
+for the Proposed `projectkoios.ingestion.reference-evidence@0.1.0` producer
+record. Evidence must be explicitly injected and match the managed PDF SHA-256
+and byte length. No evidence is represented as
+`reference-evidence-not-supplied`; absence never becomes a claim that a private
+producer workspace was searched or that ingestion did not occur.
+
+The package retains the record's completed extraction status,
+`automated_unreviewed` transcript lineage, recorded passing derivation-audit
+scope and coverage, Proposed contract status, and
+`independently_revalidated: false`. Package verification does not rerun the
+audit or upgrade proofreading, semantic, scientific, rights, reference, or
+publication authority. See
+[Ingestion reference-evidence consumer](ingestion-reference-evidence.md).

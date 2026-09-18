@@ -51,9 +51,9 @@ _PROCESSOR_VERSION = "0.6.0"
 _CITATION_PARSER_VERSION = "1"
 _COLLECTION_ROWS_PARSER_VERSION = "1"
 _SOURCE_DISCOVERY_PARSER_VERSION = "1"
-_PROCESSING_OBSERVER_VERSION = "1"
+_REFERENCE_EVIDENCE_CONSUMER_VERSION = "1"
 _MAX_RECORDS = 10_000
-_MAX_STATUS_JSON_BYTES = 10_000_000
+_MAX_INPUT_JSON_BYTES = 10_000_000
 _MAX_COLLECTION_ROWS_BYTES = 50_000_000
 _MAX_TEX_FILES = 10_000
 _MAX_TEX_BYTES = 50_000_000
@@ -149,10 +149,127 @@ class CollectionRowEvidence:
     reading_status: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class ProcessingEvidence:
     ingestion_status: str
     transcript_status: str
+    evidence_record_id: str | None
+    contract_status: str
+    derivation_audit_status: str
+    derivation_audit_scope: str
+    independently_revalidated: bool
+
+    @classmethod
+    def _create(
+        cls,
+        *,
+        ingestion_status: str,
+        transcript_status: str,
+        evidence_record_id: str | None,
+        contract_status: str,
+        derivation_audit_status: str,
+        derivation_audit_scope: str,
+        independently_revalidated: bool,
+    ) -> ProcessingEvidence:
+        value = object.__new__(cls)
+        for field_name, field_value in (
+            ("ingestion_status", ingestion_status),
+            ("transcript_status", transcript_status),
+            ("evidence_record_id", evidence_record_id),
+            ("contract_status", contract_status),
+            ("derivation_audit_status", derivation_audit_status),
+            ("derivation_audit_scope", derivation_audit_scope),
+            ("independently_revalidated", independently_revalidated),
+        ):
+            object.__setattr__(value, field_name, field_value)
+        value.__post_init__()
+        return value
+
+    @classmethod
+    def _from_reference_evidence(
+        cls,
+        *,
+        evidence_record_id: str,
+        contract_status: str,
+        derivation_audit_status: str,
+        derivation_audit_scope: str,
+        independently_revalidated: bool,
+    ) -> ProcessingEvidence:
+        return cls._create(
+            ingestion_status="completed-source-bound-reference-evidence",
+            transcript_status=(
+                "automated-unreviewed-with-recorded-passing-audit"
+            ),
+            evidence_record_id=evidence_record_id,
+            contract_status=contract_status,
+            derivation_audit_status=derivation_audit_status,
+            derivation_audit_scope=derivation_audit_scope,
+            independently_revalidated=independently_revalidated,
+        )
+
+    @classmethod
+    def not_supplied(cls) -> ProcessingEvidence:
+        return cls._create(
+            ingestion_status="reference-evidence-not-supplied",
+            transcript_status="reference-evidence-not-supplied",
+            evidence_record_id=None,
+            contract_status="not-supplied",
+            derivation_audit_status="not-supplied",
+            derivation_audit_scope="not-supplied",
+            independently_revalidated=False,
+        )
+
+    def __post_init__(self) -> None:
+        if self.evidence_record_id is None:
+            if (
+                self.ingestion_status,
+                self.transcript_status,
+                self.contract_status,
+                self.derivation_audit_status,
+                self.derivation_audit_scope,
+                self.independently_revalidated,
+            ) != (
+                "reference-evidence-not-supplied",
+                "reference-evidence-not-supplied",
+                "not-supplied",
+                "not-supplied",
+                "not-supplied",
+                False,
+            ):
+                raise ValueError(
+                    "processing evidence without a record must be "
+                    "explicitly not supplied"
+                )
+            return
+        if (
+            re.fullmatch(
+                r"reference-evidence-record:sha256:[0-9a-f]{64}",
+                self.evidence_record_id,
+            )
+            is None
+        ):
+            raise ValueError("processing evidence record identity is invalid")
+        expected = (
+            "completed-source-bound-reference-evidence",
+            "automated-unreviewed-with-recorded-passing-audit",
+            "proposed",
+            "recorded-passing",
+            "recorded_producer_derivation_audit",
+            False,
+        )
+        actual = (
+            self.ingestion_status,
+            self.transcript_status,
+            self.contract_status,
+            self.derivation_audit_status,
+            self.derivation_audit_scope,
+            self.independently_revalidated,
+        )
+        if actual != expected:
+            raise ValueError(
+                "processing evidence status contradicts the supported "
+                "producer record"
+            )
 
 
 @dataclass(frozen=True)
@@ -423,79 +540,6 @@ def scan_managed_pdfs(
     )
 
 
-def scan_processing_evidence(
-    ingestion_root: Path,
-    *,
-    citekeys: tuple[str, ...],
-) -> EvidenceMapping[ProcessingEvidence]:
-    try:
-        root = AuthorizedRoot.existing(
-            ingestion_root,
-            label="ingestion root",
-        )
-    except PathSafetyError as error:
-        raise CollectionReconciliationError(str(error)) from error
-    result: dict[str, ProcessingEvidence] = {}
-    input_evidence: list[ContentEvidence] = []
-    for raw_citekey in sorted(set(citekeys)):
-        try:
-            citekey = validate_citekey(raw_citekey)
-            extraction = f"{citekey}/extraction.json"
-            extraction_state = root.state(extraction)
-        except PathSafetyError as error:
-            raise CollectionReconciliationError(
-                f"unsafe processing lookup for citekey: {raw_citekey}"
-            ) from error
-        if extraction_state == "directory":
-            raise CollectionReconciliationError(
-                f"processing extraction is not a file: {citekey}"
-            )
-        if extraction_state == "regular":
-            extraction_content = root.read_bytes(
-                extraction,
-                max_bytes=_MAX_STATUS_JSON_BYTES,
-            )
-            input_evidence.append(
-                ContentEvidence.from_bytes(
-                    role="processing-source",
-                    filename=(
-                        "inputs/processing-source/"
-                        f"{citekey}/raw-extraction-record.json"
-                    ),
-                    content=extraction_content,
-                )
-            )
-            ingestion_status = "raw-extraction-present"
-        else:
-            ingestion_status = "not-ingested"
-        transcript_status, transcript_evidence = _transcript_status(
-            root,
-            citekey,
-        )
-        input_evidence.extend(transcript_evidence)
-        result[citekey] = ProcessingEvidence(
-            ingestion_status=ingestion_status,
-            transcript_status=transcript_status,
-        )
-    observation = canonical_json_bytes(
-        {
-            "observer_version": _PROCESSING_OBSERVER_VERSION,
-            "records": result,
-        }
-    )
-    input_evidence.append(
-        ContentEvidence.from_bytes(
-            role="processing-observation",
-            filename="inputs/processing-observation.json",
-            content=observation,
-        )
-    )
-    return EvidenceMapping(
-        entries=tuple(sorted(result.items())),
-        input_evidence=tuple(sorted(input_evidence, key=_content_evidence_key)),
-    )
-
-
 def build_citation_closure(
     manuscript_root: Path,
     *,
@@ -734,6 +778,20 @@ def reconcile_collection(
         raise CollectionReconciliationError(
             "managed PDF directory has duplicate citekey stems"
         )
+    unmatched_processing = sorted(set(processing_by_citekey) - set(by_citekey))
+    if unmatched_processing:
+        raise CollectionReconciliationError(
+            "processing evidence has no matching managed PDF: "
+            f"{unmatched_processing}"
+        )
+    if any(
+        not isinstance(item, ProcessingEvidence)
+        or item.evidence_record_id is None
+        for item in processing_by_citekey.values()
+    ):
+        raise CollectionReconciliationError(
+            "supplied processing evidence is not source-bound producer evidence"
+        )
     by_digest: dict[str, list[str]] = defaultdict(list)
     for managed_pdf in managed_pdfs:
         by_digest[managed_pdf.sha256].append(managed_pdf.citekey)
@@ -750,10 +808,7 @@ def reconcile_collection(
         expectation = _pdf_expectation(record)
         processing = processing_by_citekey.get(
             record.proposed_citekey,
-            ProcessingEvidence(
-                ingestion_status="not-assessed",
-                transcript_status="not-assessed",
-            ),
+            ProcessingEvidence.not_supplied(),
         )
         coverage_item = coverage_by_citekey.get(record.proposed_citekey)
         status, next_action = _classify_pdf_status(
@@ -840,11 +895,11 @@ def reconcile_collection(
             rights_status="not-assessed",
             ingestion_status=processing_by_citekey.get(
                 pdf.citekey,
-                ProcessingEvidence("not-assessed", "not-assessed"),
+                ProcessingEvidence.not_supplied(),
             ).ingestion_status,
             transcript_status=processing_by_citekey.get(
                 pdf.citekey,
-                ProcessingEvidence("not-assessed", "not-assessed"),
+                ProcessingEvidence.not_supplied(),
             ).transcript_status,
         )
         for pdf in managed_pdfs
@@ -946,8 +1001,8 @@ def reconcile_collection(
                 version=_SOURCE_DISCOVERY_PARSER_VERSION,
             ),
             SoftwareIdentity(
-                name="processing-observer",
-                version=_PROCESSING_OBSERVER_VERSION,
+                name="ingestion-reference-evidence-consumer",
+                version=_REFERENCE_EVIDENCE_CONSUMER_VERSION,
             ),
             SoftwareIdentity(
                 name="latex-citation-parser",
@@ -1262,7 +1317,7 @@ def _load_source_discovery(
     content = read_path_bytes(
         path,
         label="source-discovery document",
-        max_bytes=_MAX_STATUS_JSON_BYTES,
+        max_bytes=_MAX_INPUT_JSON_BYTES,
     )
     try:
         data = json.loads(content.decode("utf-8"))
@@ -1315,100 +1370,6 @@ def _load_source_discovery(
             content=content,
         ),
     )
-
-
-def _transcript_status(
-    root: AuthorizedRoot,
-    citekey: str,
-) -> tuple[str, tuple[ContentEvidence, ...]]:
-    base = f"{citekey}/derived/transcription"
-    try:
-        directory_state = root.state(base)
-        if directory_state == "missing":
-            return "not-transcribed", ()
-        if directory_state != "directory":
-            raise CollectionReconciliationError(
-                "transcript path is not a directory"
-            )
-        required = tuple(
-            f"{base}/{name}"
-            for name in (
-                "audit.json",
-                "clean.json",
-                "clean.txt",
-                "manifest.json",
-            )
-        )
-        states = tuple(root.state(path) for path in required)
-    except PathSafetyError as error:
-        raise CollectionReconciliationError(str(error)) from error
-    if any(state == "directory" for state in states):
-        raise CollectionReconciliationError(
-            "transcript artifact is not a regular file"
-        )
-    present = tuple(state == "regular" for state in states)
-    if not any(present):
-        return "not-transcribed", ()
-    contents = {
-        path: root.read_bytes(path, max_bytes=_MAX_STATUS_JSON_BYTES)
-        for path, is_present in zip(required, present, strict=True)
-        if is_present
-    }
-    evidence_names = {
-        "audit.json": "audit-record.json",
-        "clean.json": "clean-record.json",
-        "clean.txt": "clean-text.txt",
-        "manifest.json": "manifest-record.json",
-    }
-    evidence = tuple(
-        sorted(
-            (
-                ContentEvidence.from_bytes(
-                    role="processing-source",
-                    filename=(
-                        "inputs/processing-source/"
-                        f"{citekey}/{evidence_names[Path(path).name]}"
-                    ),
-                    content=content,
-                )
-                for path, content in contents.items()
-            ),
-            key=_content_evidence_key,
-        )
-    )
-    if not all(present):
-        return "partial-transcript-artifacts", evidence
-    manifest = _parse_bounded_json(
-        contents[f"{base}/manifest.json"],
-        filename="manifest.json",
-    )
-    audit = _parse_bounded_json(
-        contents[f"{base}/audit.json"],
-        filename="audit.json",
-    )
-    if (
-        manifest.get("status") == "automated_unreviewed"
-        and audit.get("status") == "passed"
-    ):
-        return "automated-unreviewed-with-recorded-passing-audit", evidence
-    return "transcript-present-status-unverified", evidence
-
-
-def _parse_bounded_json(
-    content: bytes,
-    *,
-    filename: str,
-) -> dict[str, Any]:
-    if not content:
-        raise CollectionReconciliationError(
-            f"processing status JSON is empty: {filename}"
-        )
-    data = json.loads(content.decode("utf-8"))
-    if not isinstance(data, dict):
-        raise CollectionReconciliationError(
-            f"processing status JSON must be an object: {filename}"
-        )
-    return data
 
 
 def _hash_pdf(content: bytes, *, filename: str) -> str:
@@ -1630,6 +1591,14 @@ def _coverage_claims(
             else "citation-closure:not-supplied"
         ),
     }
+    if processing_supplied:
+        values.update(
+            {
+                "processing-contract:proposed",
+                "processing-audit:recorded-producer-status",
+                "processing-independent-revalidation:not-performed",
+            }
+        )
     if coverage_observation is None:
         values.update(
             {
@@ -1717,7 +1686,8 @@ def _counts(
         ),
         "extra_pdfs": len(extras),
         "seed_raw_extractions": sum(
-            record.ingestion_status == "raw-extraction-present"
+            record.ingestion_status
+            == "completed-source-bound-reference-evidence"
             for record in references
         ),
         "seed_transcripts_with_recorded_passing_audit": sum(
@@ -1726,7 +1696,8 @@ def _counts(
             for record in references
         ),
         "extra_raw_extractions": sum(
-            extra.ingestion_status == "raw-extraction-present"
+            extra.ingestion_status
+            == "completed-source-bound-reference-evidence"
             for extra in extras
         ),
         "extra_transcripts_with_recorded_passing_audit": sum(

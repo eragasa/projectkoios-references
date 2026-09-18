@@ -34,8 +34,9 @@ Keys must start with an ASCII letter and contain only ASCII letters, numbers,
 periods, underscores, or hyphens. They are limited to 200 characters, must not
 end with a period, and must not equal a reserved portable filename such as
 `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, or `LPT1`–`LPT9`. The shared
-filesystem validator applies these rules before deriving a note, PDF, ingestion,
-or output path.
+filesystem validator applies these rules before deriving a note, PDF, or output
+path. Ingestion evidence is injected explicitly and is never found by deriving a
+producer workspace path from a citekey.
 
 Once accepted, a key is stable. A key change requires an explicit
 actor-provenanced citekey-migration decision and a separately authorized

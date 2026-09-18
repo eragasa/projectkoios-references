@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import unicodedata
 from pathlib import Path
@@ -20,14 +21,19 @@ from projectkoios.references.assets import (
 from projectkoios.references.collection_reconciliation import (
     CollectionReconciliationError,
     CollectionRowEvidence,
+    ManagedPdf,
     publish_reconciliation,
     reconcile_collection,
     scan_managed_pdfs,
-    scan_processing_evidence,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
+)
+from projectkoios.references.ingestion_evidence import (
+    IngestionEvidenceVerificationError,
+    ReferenceEvidenceInput,
+    load_ingestion_reference_evidence,
 )
 from projectkoios.references.validation import validate_reference_objects
 
@@ -222,21 +228,39 @@ def test__acquisition__rejects_symlinked_source_component(
         )
 
 
-def test__processing_lookup__rejects_traversal_and_symlink_directory(
+def test__reference_evidence_input__rejects_traversal_and_symlink_file(
     tmp_path: Path,
 ) -> None:
-    root = tmp_path / "ingestion"
-    root.mkdir()
+    fixture_bytes = b"sanitized reference-evidence fixture source\n"
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "ingestion-reference-evidence"
+        / "complete.json"
+    )
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "extraction.json").write_text("{}", encoding="utf-8")
+    external = outside / "evidence.json"
+    external.write_bytes(fixture.read_bytes())
 
-    with pytest.raises(CollectionReconciliationError, match="unsafe"):
-        scan_processing_evidence(root, citekeys=("../outside",))
+    with pytest.raises(PathSafetyError, match="citekey"):
+        ReferenceEvidenceInput("../outside", external)
 
-    (root / "example2026").symlink_to(outside, target_is_directory=True)
-    with pytest.raises(CollectionReconciliationError, match="unsafe"):
-        scan_processing_evidence(root, citekeys=("example2026",))
+    link = tmp_path / "evidence.json"
+    link.symlink_to(external)
+    managed = ManagedPdf(
+        filename="example2026.pdf",
+        citekey="example2026",
+        sha256=hashlib.sha256(fixture_bytes).hexdigest(),
+        byte_size=len(fixture_bytes),
+        historically_verified=False,
+        discovery_evidence=(),
+    )
+    with pytest.raises(IngestionEvidenceVerificationError, match="safely open"):
+        load_ingestion_reference_evidence(
+            (ReferenceEvidenceInput("example2026", link),),
+            managed_pdfs=(managed,),
+        )
 
 
 def test__managed_pdf_and_object_validation__reject_symlinks(

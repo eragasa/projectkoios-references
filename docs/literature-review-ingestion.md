@@ -72,6 +72,12 @@ koios-obsidian-note
 
 Local SQLite catalogs, provider caches, discovery plans, acquisition manifests, and cold-extraction artifacts live under ignored `.koios/` directories. The final Markdown note and key-named PDF remain application-owned vault projections.
 
+References does not inspect that local ingestion layout. Reconciliation accepts
+only explicitly injected canonical reference-evidence records, validates each
+against the actual managed PDF identity, and preserves recorded producer audit
+status separately from independent revalidation. See
+[Ingestion reference-evidence consumer](ingestion-reference-evidence.md).
+
 `koios-ref acquisition-create` replaces source-specific manifest scripts for recurring full-source acquisition. It hashes already lawfully held root-relative PDFs and retains proposed identity, DOI, source URL/version, rights status, and asset status. `koios-ref acquisition-verify` rechecks those bytes before downstream use. These commands neither retrieve a source nor convert `unaccepted-candidate` into an accepted reference.
 
 The initial implementation does not yet perform OCR, equation recognition,

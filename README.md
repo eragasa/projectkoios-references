@@ -17,8 +17,9 @@ the basename of both the reference note and local PDF. See
 [Reference identity and authority](docs/reference-identity.md),
 [Literature-review ingestion](docs/literature-review-ingestion.md),
 [PDF coverage observations](docs/coverage-observations.md), the
-[reconciliation package model](docs/reconciliation-packages.md), and the
-[reference working catalog](docs/reference-catalog.md). Deferred graph,
+[reconciliation package model](docs/reconciliation-packages.md), the
+[ingestion reference-evidence consumer](docs/ingestion-reference-evidence.md),
+and the [reference working catalog](docs/reference-catalog.md). Deferred graph,
 metadata, review, and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
 
@@ -48,7 +49,7 @@ koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
   --source-discovery source-discovery.json \
   --coverage-observation coverage-observation.json \
   --manuscript-root /isolated/source/docs/publications \
-  --ingestion-root /managed/workspace/.koios/ingestion
+  --reference-evidence example2026=/explicit/evidence/example2026.json
 koios-ref validate references.bib /path/to/notes /path/to/pdfs
 ```
 
@@ -76,7 +77,12 @@ version, authority, verification, and replay boundaries. The command hashes and
 header-checks managed PDFs, ignores commented LaTeX citations and macro
 placeholders, classifies source/PDF applicability conservatively, and records
 metadata, access, rights, ingestion, and transcript status without changing source
-bibliographies or assets. Its candidate-key rows are evidence projections and
+bibliographies or assets. Ingestion state is accepted only through explicitly
+injected, canonical `projectkoios.ingestion.reference-evidence@0.1.0` bytes that
+match the managed PDF digest and size; the command never discovers a producer
+workspace or interprets its private filenames. The contract remains Proposed,
+and a recorded passing producer audit remains distinct from independent
+revalidation. Its candidate-key rows are evidence projections and
 do not grant canonical citekey authority. Absence and discovery statuses require a typed,
 content-identified coverage observation: no coverage produces
 `not-yet-searched`, and incomplete or failed coverage cannot produce

@@ -29,11 +29,14 @@ from projectkoios.references.collection_reconciliation import (
     publish_reconciliation,
     reconcile_collection,
     scan_managed_pdfs,
-    scan_processing_evidence,
 )
 from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
 from projectkoios.references.graph import load_candidate_graph
+from projectkoios.references.ingestion_evidence import (
+    ReferenceEvidenceInput,
+    load_ingestion_reference_evidence,
+)
 from projectkoios.references.models import (
     ReviewMembership,
     ReviewStatus,
@@ -52,6 +55,18 @@ def _root(value: str) -> SearchRoot:
     if not separator:
         raise argparse.ArgumentTypeError("search root must be ALIAS=PATH")
     return SearchRoot(alias, Path(raw_path).expanduser())
+
+
+def _reference_evidence(value: str) -> ReferenceEvidenceInput:
+    citekey, separator, raw_path = value.partition("=")
+    if not separator or not citekey or not raw_path:
+        raise argparse.ArgumentTypeError(
+            "reference evidence must be CITEKEY=PATH"
+        )
+    try:
+        return ReferenceEvidenceInput(citekey, Path(raw_path).expanduser())
+    except (TypeError, ValueError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -107,7 +122,17 @@ def _parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--source-discovery", type=Path)
     reconcile.add_argument("--coverage-observation", type=Path)
     reconcile.add_argument("--manuscript-root", type=Path)
-    reconcile.add_argument("--ingestion-root", type=Path)
+    reconcile.add_argument(
+        "--reference-evidence",
+        action="append",
+        type=_reference_evidence,
+        default=[],
+        metavar="CITEKEY=PATH",
+        help=(
+            "inject one canonical ingestion reference-evidence record; "
+            "repeat for multiple managed PDFs"
+        ),
+    )
 
     scan = commands.add_parser(
         "assets-scan",
@@ -261,14 +286,11 @@ def main(arguments: list[str] | None = None) -> int:
             source_discovery=args.source_discovery,
         )
         processing_evidence = (
-            scan_processing_evidence(
-                args.ingestion_root,
-                citekeys=tuple(
-                    record.proposed_citekey for record in imported.candidates
-                )
-                + tuple(pdf.citekey for pdf in managed_pdfs),
+            load_ingestion_reference_evidence(
+                tuple(args.reference_evidence),
+                managed_pdfs=managed_pdfs,
             )
-            if args.ingestion_root is not None
+            if args.reference_evidence
             else None
         )
         coverage_observation_bytes = (

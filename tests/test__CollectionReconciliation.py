@@ -17,11 +17,14 @@ from projectkoios.references.collection_reconciliation import (
     publish_reconciliation,
     reconcile_collection,
     scan_managed_pdfs,
-    scan_processing_evidence,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
+)
+from projectkoios.references.ingestion_evidence import (
+    ReferenceEvidenceInput,
+    load_ingestion_reference_evidence,
 )
 
 
@@ -353,39 +356,84 @@ def test__publish_reconciliation__is_immutable_and_replayable(
         publish_reconciliation(outputs, output_directory=destination)
 
 
-def test__scan_processing_evidence__classifies_audited_transcript(
+def test__reconcile_collection__uses_injected_source_bound_evidence(
     tmp_path: Path,
 ) -> None:
-    root = tmp_path / "ingestion"
-    transcript = root / "alpha2020" / "derived" / "transcription"
-    transcript.mkdir(parents=True)
-    (root / "alpha2020" / "extraction.json").write_text(
-        "{}\n",
+    corpus, pdfs, discovery, pdf_bytes = _inputs(tmp_path)
+    del discovery
+    managed = scan_managed_pdfs(pdfs)
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "ingestion-reference-evidence"
+        / "complete.json"
+    )
+    value = json.loads(fixture.read_bytes())
+    digest = hashlib.sha256(pdf_bytes).hexdigest()
+    value["source"] = {
+        "blob_id": f"blob:sha256:{digest}",
+        "hash_algorithm": "sha256",
+        "content_sha256": digest,
+        "byte_length": len(pdf_bytes),
+        "media_type": "application/pdf",
+    }
+    identity = dict(value)
+    identity.pop("record_id")
+    record_digest = hashlib.sha256(
+        json.dumps(
+            [identity],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    value["record_id"] = f"reference-evidence-record:sha256:{record_digest}"
+    evidence_path = tmp_path / "alpha-evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
-    (transcript / "manifest.json").write_text(
-        '{"status":"automated_unreviewed"}\n',
-        encoding="utf-8",
+    evidence = load_ingestion_reference_evidence(
+        (ReferenceEvidenceInput("alpha2020", evidence_path),),
+        managed_pdfs=managed,
     )
-    (transcript / "audit.json").write_text(
-        '{"status":"passed"}\n',
-        encoding="utf-8",
-    )
-    (transcript / "clean.json").write_text("{}\n", encoding="utf-8")
-    (transcript / "clean.txt").write_text("evidence\n", encoding="utf-8")
 
-    evidence = scan_processing_evidence(
-        root,
-        citekeys=("beta2021", "alpha2020"),
+    outputs = reconcile_collection(
+        _records(),
+        bibliography_bytes=b"fixture bibliography",
+        collection_id="fixture",
+        source_revision="abc123",
+        collection_rows=load_collection_rows(corpus),
+        managed_pdfs=managed,
+        citation_closure=None,
+        processing_evidence=evidence,
     )
-
-    assert evidence["alpha2020"].ingestion_status == "raw-extraction-present"
+    records = {
+        record.proposed_citekey: record
+        for record in outputs.manifest.references
+    }
+    assert records["alpha2020"].ingestion_status == (
+        "completed-source-bound-reference-evidence"
+    )
+    assert records["alpha2020"].transcript_status == (
+        "automated-unreviewed-with-recorded-passing-audit"
+    )
+    assert records["beta2021"].ingestion_status == (
+        "reference-evidence-not-supplied"
+    )
+    assert records["beta2021"].transcript_status == (
+        "reference-evidence-not-supplied"
+    )
+    assert "processing-contract:proposed" in outputs.manifest.coverage
     assert (
-        evidence["alpha2020"].transcript_status
-        == "automated-unreviewed-with-recorded-passing-audit"
+        "processing-independent-revalidation:not-performed"
+        in outputs.manifest.coverage
     )
-    assert evidence["beta2021"].ingestion_status == "not-ingested"
-    assert evidence["beta2021"].transcript_status == "not-transcribed"
 
 
 def test__scan_managed_pdfs__rejects_non_pdf_bytes(tmp_path: Path) -> None:
