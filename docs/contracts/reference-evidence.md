@@ -1,25 +1,12 @@
-# Reference evidence contracts
-
-## Contract metadata
-
-| Field | Value |
-|---|---|
-| Contract ID | `projectkoios.references.reference-evidence` |
-| Owner | `projectkoios-references` |
-| Status | Proposed |
-| Contract version | Unassigned |
-| Architecture record | [`ADR20260918`](https://github.com/eragasa/projectkoios/blob/main/docs/adr.20260918.evidence-grounded-scientific-rag.md) |
-| Task | [`REF-RAG-01`](https://github.com/eragasa/projectkoios-references/issues/1) |
-| Supersedes | None |
-| Consumers | `projectkoios-search`, `projectkoios-research` |
+# Reference evidence contract suite
 
 ## Status
 
-Proposed under
+The candidate-manifest contract is proposed under
 [`REF-RAG-01`](https://github.com/eragasa/projectkoios-references/issues/1).
-This document defines planning boundaries for candidate metadata and later
-claim-locator evidence. It does not accept any candidate into the canonical
-bibliography or authorize manuscript use.
+The claim-locator contract remains draft under deferred task `REF-RAG-02`.
+This suite does not accept any candidate into the canonical bibliography or
+authorize manuscript use.
 
 ## Purpose
 
@@ -27,10 +14,32 @@ Project Koios needs reference records that distinguish bibliographic identity,
 source access, rights, claim evidence, architecture use, and human acceptance.
 These dimensions cannot be collapsed into a single `verified` flag.
 
-This document defines two related but separate records:
+This document defines two independently versioned contracts:
 
-1. a candidate reference manifest; and
-2. a claim-locator record created only after bibliographic identity is stable.
+1. `projectkoios.references.candidate-manifest`; and
+2. `projectkoios.references.claim-locator`, created only after bibliographic
+   identity is stable.
+
+## Normative scope and conformance
+
+The **Candidate reference manifest** through **Discrepancy records** sections
+are normative for `projectkoios.references.candidate-manifest`. The
+**Claim-locator record** and **Architecture-use record** sections are normative
+for `projectkoios.references.claim-locator`. Shared authority, access, rights,
+determinism, and publication limits apply to both. Purpose, rationale, and
+deferred decisions are informative.
+
+Candidate-manifest conformance subjects are manifest producers, parsers, and
+canonical-promotion gates. Claim-locator conformance subjects are locator
+producers, verifiers, and consumers. Each conformance claim MUST identify the
+contract ID, target or accepted version, exact specification commit,
+implementation or review evidence, and validation result.
+
+Existing lowercase requirements in the named normative sections express
+requirements for these proposed contracts. Before acceptance, they MUST be
+converted to the shared capitalized normative vocabulary or mapped explicitly
+to conformance evidence. Automated retrieval proposals cannot satisfy the human
+scientific-support decision.
 
 ## Authority boundaries
 
@@ -45,6 +54,25 @@ and access evidence, and reference-object naming. It does not decide:
 
 Those decisions remain with their owning architecture, research, publication,
 and human-review processes.
+
+## Contract metadata: candidate manifest
+
+| Field | Value |
+|---|---|
+| Contract ID | `projectkoios.references.candidate-manifest` |
+| Target version | `0.1.0` |
+| Status | Proposed |
+| Specification revision | Git commit containing this document |
+| Owner | `projectkoios-references` |
+| Acceptance authority | Project Koios operator after reference-owner and materially affected consumer review |
+| Architecture record | [`ADR20260918`](https://github.com/eragasa/projectkoios/blob/main/docs/adr.20260918.evidence-grounded-scientific-rag.md) |
+| Task | [`REF-RAG-01`](https://github.com/eragasa/projectkoios-references/issues/1) |
+| Predecessor | None registered |
+| Supersedes | None while proposed |
+| Dependencies | None registered; authoritative external metadata sources remain evidence, not Project Koios contracts |
+| Consumers | `projectkoios-search`, `projectkoios-research` |
+| Compatibility | Breaking relative to ad hoc candidate data; no accepted predecessor contract exists |
+| Effective baseline | None while proposed |
 
 ## Candidate reference manifest
 
@@ -134,6 +162,25 @@ A discrepancy record contains:
 Unresolved discrepancies block canonical promotion when they affect work
 identity, authorship, title, publication venue, date, edition, or persistent
 identifier.
+
+## Contract metadata: claim locator
+
+| Field | Value |
+|---|---|
+| Contract ID | `projectkoios.references.claim-locator` |
+| Target version | `0.1.0` |
+| Status | Draft |
+| Specification revision | Git commit containing this document |
+| Owner | `projectkoios-references` |
+| Acceptance authority | Project Koios operator after reference-owner, research-owner, and materially affected consumer review |
+| Architecture record | [`ADR20260918`](https://github.com/eragasa/projectkoios/blob/main/docs/adr.20260918.evidence-grounded-scientific-rag.md) |
+| Task | `REF-RAG-02` deferred; no owner issue exists yet |
+| Predecessor | None registered |
+| Supersedes | None while draft |
+| Dependencies | `projectkoios.references.candidate-manifest@0.1.0` |
+| Consumers | `projectkoios-search`, `projectkoios-research`, architecture evidence records |
+| Compatibility | Unknown until locator verification and rights policies are accepted |
+| Effective baseline | None while draft |
 
 ## Claim-locator record
 

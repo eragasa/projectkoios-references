@@ -5,10 +5,13 @@ by `projectkoios-references`.
 
 | Contract ID | Authoritative document | Scope |
 |---|---|---|
-| `projectkoios.references.reference-evidence` | [`reference-evidence.md`](reference-evidence.md) | Candidate metadata and later claim-locator evidence |
+| `projectkoios.references.candidate-manifest` | [`reference-evidence.md`](reference-evidence.md#contract-metadata-candidate-manifest) | Candidate bibliographic identity, access, rights, and discrepancies |
+| `projectkoios.references.claim-locator` | [`reference-evidence.md`](reference-evidence.md#contract-metadata-claim-locator) | Claim-to-source locator and verification evidence |
 
 Cross-repository discovery is provided by the
 [Project Koios contract catalog](https://github.com/eragasa/projectkoios/blob/main/docs/contracts/README.md).
+Lifecycle, pre-release versioning, compatibility, and conformance follow the
+[Project Koios contract governance policy](https://github.com/eragasa/projectkoios/blob/main/docs/policies/contracts.md).
 Task and recovery authority rules are defined by the
 [Project Koios task and recovery policy](https://github.com/eragasa/projectkoios/blob/main/docs/policies/task-and-recovery-records.md).
 
