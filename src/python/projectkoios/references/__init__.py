@@ -59,6 +59,15 @@ from projectkoios.references.coverage import (
     CoverageState,
     ReferenceCoverage,
 )
+from projectkoios.references.graph import (
+    CitationCandidate,
+    CitationEdge,
+    CitationGraph,
+    CitationGraphError,
+    CitationSourceObservation,
+    GraphImportLimits,
+    load_candidate_graph,
+)
 from projectkoios.references.identity import (
     ActorAuthorityScope,
     ActorKind,
@@ -93,8 +102,6 @@ from projectkoios.references.ingestion_evidence import (
 )
 from projectkoios.references.models import (
     AbstractRecord,
-    CitationCandidate,
-    CitationEdge,
     ReviewMembership,
     ReviewStatus,
     SourceAssetRecord,
@@ -137,6 +144,9 @@ __all__ = [
     "CitationCandidate",
     "CitationClosure",
     "CitationEdge",
+    "CitationGraph",
+    "CitationGraphError",
+    "CitationSourceObservation",
     "CandidateVersionRelation",
     "CitationStatus",
     "CollectionManifest",
@@ -153,6 +163,7 @@ __all__ = [
     "IngestionEvidenceVerificationError",
     "IdentityDecision",
     "IdentityDecisionKind",
+    "GraphImportLimits",
     "IdentityProjection",
     "IdentityRecordError",
     "LegacySeedMapping",
@@ -186,6 +197,7 @@ __all__ = [
     "build_citation_closure",
     "create_acquisition_manifest",
     "load_bibliography",
+    "load_candidate_graph",
     "load_collection_rows",
     "load_ingestion_reference_evidence",
     "materialize_asset",

@@ -9,16 +9,18 @@ from projectkoios.references.catalog import (
     CatalogConflictError,
     ReferenceCatalog,
 )
+from projectkoios.references.graph import (
+    CitationCandidate,
+    CitationEdge,
+    CitationGraph,
+    CitationSourceObservation,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
     SourceBibliographyObservation,
 )
-from projectkoios.references.models import (
-    CitationCandidate,
-    CitationEdge,
-    SourceAssetRecord,
-)
+from projectkoios.references.models import SourceAssetRecord
 
 
 def _observed_candidate(
@@ -82,8 +84,11 @@ def test__catalog__round_trips_complete_identity_records(
         "unprovenanced_alias_rows": 0,
         "review_memberships": 0,
         "abstracts": 0,
+        "citation_source_observations": 0,
         "citation_candidates": 0,
         "citation_edges": 0,
+        "legacy_citation_candidates": 0,
+        "legacy_citation_edges": 0,
     }
 
     with sqlite3.connect(catalog.path) as connection:
@@ -157,43 +162,53 @@ def test__catalog__source_assets_are_append_only_and_transactional(
     assert catalog.counts()["source_assets"] == 1
 
 
+def _citation_graph(*, title: str = "Source title") -> CitationGraph:
+    source = CitationSourceObservation.create(
+        source_id="fixture-parent",
+        asserted_source_revision="revision-1",
+        source_path="parent.pdf",
+        source_sha256="f" * 64,
+        source_byte_size=100,
+    )
+    candidate = CitationCandidate.create(
+        source_observation_id=source.source_observation_id,
+        source_locator="References [1]",
+        verbatim_title=title,
+        verbatim_authors="Ada Example",
+        proposed_citekey="example2026",
+        proposed_title=title,
+        proposed_authors=("Ada Example",),
+        proposed_year="2026",
+        proposed_doi="10.1000/example",
+    )
+    edge = CitationEdge.create(
+        source_observation_id=source.source_observation_id,
+        target_candidate_id=candidate.candidate_id,
+        source_locator=candidate.source_locator,
+    )
+    return CitationGraph.create(
+        sources=(source,),
+        candidates=(candidate,),
+        edges=(edge,),
+    )
+
+
 def test__catalog__graph_replay_is_idempotent_and_conflicts_fail(
     tmp_path: Path,
 ) -> None:
     catalog = ReferenceCatalog(tmp_path / "references.sqlite3")
     catalog.initialize()
-    node = CitationCandidate(
-        candidate_id="fixture.ref01",
-        proposed_citekey="padberg2014",
-        title="Reconfigurable Decorated PT Nets",
-        authors="Julia Padberg",
-        year="2014",
-        doi=None,
-        metadata_status="transcribed",
-        abstract_status="not-requested",
-    )
-    edge = CitationEdge(
-        source_id="source-observation",
-        target_id="fixture.ref01",
-        relation="cites",
-        source_locator="References [1]",
-        verification_status="verified-in-source",
-    )
-    catalog.import_citation_graph((node,), (edge,))
-    catalog.import_citation_graph((node,), (edge,))
+    graph = _citation_graph()
+    catalog.import_citation_graph(graph)
+    first_export = catalog.export_citation_graph_json()
+    catalog.import_citation_graph(graph)
 
-    conflicting = CitationCandidate(
-        candidate_id=node.candidate_id,
-        proposed_citekey=node.proposed_citekey,
-        title="Changed title",
-        authors=node.authors,
-        year=node.year,
-        doi=node.doi,
-        metadata_status=node.metadata_status,
-        abstract_status=node.abstract_status,
-    )
+    conflicting = _citation_graph(title="Changed source title")
     with pytest.raises(CatalogConflictError, match="existing evidence"):
-        catalog.import_citation_graph((conflicting,), ())
+        catalog.import_citation_graph(conflicting)
 
+    assert catalog.read_citation_graph() == graph
+    assert catalog.export_citation_graph_json() == first_export
+    assert catalog.counts()["citation_source_observations"] == 1
     assert catalog.counts()["citation_candidates"] == 1
     assert catalog.counts()["citation_edges"] == 1
