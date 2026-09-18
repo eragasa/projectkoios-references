@@ -17,7 +17,17 @@ from projectkoios.references.biblatex import (
     BibliographyImport,
     load_bibliography,
 )
-from projectkoios.references.catalog import ReferenceCatalog
+from projectkoios.references.catalog import (
+    CATALOG_SCHEMA_FINGERPRINT,
+    CATALOG_SCHEMA_VERSION,
+    SUPPORTED_CATALOG_SCHEMA_VERSIONS,
+    CatalogConflictError,
+    CatalogMigrationPlan,
+    CatalogMigrationRequired,
+    CatalogSchemaError,
+    CatalogSchemaInfo,
+    ReferenceCatalog,
+)
 from projectkoios.references.collection_reconciliation import (
     CitationClosure,
     CitationStatus,
@@ -99,7 +109,15 @@ __all__ = [
     "AssetDiscoveryPlan",
     "AssetDiscoveryPlanner",
     "BibliographyImport",
+    "CATALOG_SCHEMA_FINGERPRINT",
+    "CATALOG_SCHEMA_VERSION",
+    "SUPPORTED_CATALOG_SCHEMA_VERSIONS",
     "CanonicalPlan",
+    "CatalogConflictError",
+    "CatalogMigrationPlan",
+    "CatalogMigrationRequired",
+    "CatalogSchemaError",
+    "CatalogSchemaInfo",
     "CitationCandidate",
     "CitationClosure",
     "CitationEdge",

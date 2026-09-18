@@ -57,6 +57,14 @@ noncanonical candidates into the provisional local catalog. Import, asset
 matching, validation, and reconciliation do not produce accepted references;
 only replay of a valid actor-provenanced identity decision can do so.
 
+The working catalog supports owner-internal schema version 2 with a deterministic
+schema fingerprint and complete observation/candidate round trips, including
+URL and eprint. Existing, newer, altered, or incomplete schemas are never
+silently relabeled. Recognized synthetic version-1 layouts require an explicit
+backup-confirmed forward migration through the Python API; no operator catalog
+is migrated by these commands. See
+[Reference working catalog](docs/reference-catalog.md).
+
 `collection-reconcile` creates an immutable, replayable package containing
 `package-manifest.json`, `collection-manifest.json`, `citation-closure.json`,
 `coverage-observation.json`, `missing-pdfs.csv`, `ambiguous-pdfs.csv`, and

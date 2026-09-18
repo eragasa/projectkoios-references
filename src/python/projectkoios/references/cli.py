@@ -216,19 +216,21 @@ def main(arguments: list[str] | None = None) -> int:
             newline="",
         )
         rows = tuple(csv.DictReader(stream))
+        memberships: list[ReviewMembership] = []
         for row in rows:
             citekey = row.get("citekey")
             if not citekey:
                 raise ValueError(
                     "review corpus must contain non-empty citekeys"
                 )
-            catalog.set_review_membership(
+            memberships.append(
                 ReviewMembership(
                     collection_id=args.collection_id,
                     citekey=citekey,
                     status=ReviewStatus(args.status),
                 )
             )
+        catalog.set_review_memberships(tuple(memberships))
         return 0
     if args.command == "collection-reconcile":
         bibliography_bytes = read_path_bytes(
@@ -380,23 +382,23 @@ def main(arguments: list[str] | None = None) -> int:
         plan = AssetDiscoveryPlan.from_json(
             read_path_text(args.plan, label="asset discovery plan")
         )
-        for candidate in plan.candidates:
-            if candidate.recommendation != "strong-candidate":
-                continue
-            catalog.record_source_asset(
-                SourceAssetRecord(
-                    candidate_id=candidate.candidate_id,
-                    proposed_citekey=candidate.proposed_citekey,
-                    identity_status=candidate.identity_status,
-                    citekey_status=candidate.citekey_status,
-                    sha256=candidate.sha256,
-                    byte_size=candidate.byte_size,
-                    root_alias=candidate.root_alias,
-                    relative_path=candidate.relative_path,
-                    rights_status=args.rights_status,
-                    asset_status=args.asset_status,
-                )
+        assets = tuple(
+            SourceAssetRecord(
+                candidate_id=candidate.candidate_id,
+                proposed_citekey=candidate.proposed_citekey,
+                identity_status=candidate.identity_status,
+                citekey_status=candidate.citekey_status,
+                sha256=candidate.sha256,
+                byte_size=candidate.byte_size,
+                root_alias=candidate.root_alias,
+                relative_path=candidate.relative_path,
+                rights_status=args.rights_status,
+                asset_status=args.asset_status,
             )
+            for candidate in plan.candidates
+            if candidate.recommendation == "strong-candidate"
+        )
+        catalog.record_source_assets(assets)
         return 0
     if args.command == "acquisition-create":
         stream = io.StringIO(

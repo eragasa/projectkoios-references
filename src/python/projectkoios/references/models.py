@@ -11,6 +11,7 @@ from projectkoios.references.path_safety import (
 )
 
 _DOI_PREFIX = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.I)
+_MAX_TEXT = 4096
 
 
 def normalize_doi(value: str | None) -> str | None:
@@ -80,8 +81,20 @@ class SourceAssetRecord:
         validate_relative_path(self.relative_path)
         if re.fullmatch(r"[0-9a-f]{64}", self.sha256) is None:
             raise ValueError("source-asset hash must be a SHA-256 digest")
-        if self.byte_size < 0:
-            raise ValueError("source-asset byte size must be non-negative")
+        if type(self.byte_size) is not int or self.byte_size < 0:
+            raise ValueError(
+                "source-asset byte size must be a non-negative integer"
+            )
+        for field, value in (
+            ("rights_status", self.rights_status),
+            ("asset_status", self.asset_status),
+        ):
+            if (
+                not isinstance(value, str)
+                or not value
+                or len(value) > _MAX_TEXT
+            ):
+                raise ValueError(f"{field} must be a bounded non-empty string")
 
 
 @dataclass(frozen=True)

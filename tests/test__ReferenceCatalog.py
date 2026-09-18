@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from projectkoios.references.catalog import (
-    CandidateConflictError,
+    CatalogConflictError,
     ReferenceCatalog,
 )
 from projectkoios.references.identity import (
@@ -17,8 +17,6 @@ from projectkoios.references.identity import (
 from projectkoios.references.models import (
     CitationCandidate,
     CitationEdge,
-    ReviewMembership,
-    ReviewStatus,
     SourceAssetRecord,
 )
 
@@ -27,6 +25,8 @@ def _observed_candidate(
     *,
     citekey: str = "jensenKristensen2009",
     title: str = "Coloured Petri Nets",
+    url: str | None = "https://example.test/reference",
+    eprint: str | None = "arXiv:2601.00001",
 ) -> tuple[SourceBibliographyObservation, ReferenceCandidate]:
     bibliography = (
         f"@book{{{citekey}, title={{{title}}}, year={{2009}}}}\n"
@@ -48,124 +48,152 @@ def _observed_candidate(
         authors=("Kurt Jensen", "Lars M. Kristensen"),
         year="2009",
         doi="10.1007/b95112",
+        url=url,
+        eprint=eprint,
         source_observation_ids=(observation.observation_id,),
         generator=ProducerIdentity("fixture-normalizer", "1"),
     )
     return observation, candidate
 
 
-def test__catalog__projects_bibliography_candidates_without_acceptance(
+def test__catalog__round_trips_complete_identity_records(
+    tmp_path: Path,
+) -> None:
+    catalog = ReferenceCatalog(tmp_path / "references.sqlite3")
+    schema = catalog.initialize()
+    observation, candidate = _observed_candidate()
+
+    catalog.import_candidates((candidate,), (observation,))
+    first_export = catalog.export_identity_json()
+    catalog.import_candidates((candidate,), (observation,))
+
+    assert catalog.schema_info() == schema
+    assert catalog.read_observations() == (observation,)
+    assert catalog.read_candidates() == (candidate,)
+    assert catalog.export_identity_json() == first_export
+    assert json.loads(first_export)["authority_boundary"] == (
+        "non-authoritative-rebuildable-working-projection"
+    )
+    assert catalog.counts() == {
+        "candidate_records": 1,
+        "bibliography_observations": 1,
+        "source_assets": 0,
+        "legacy_reference_rows": 0,
+        "unprovenanced_alias_rows": 0,
+        "review_memberships": 0,
+        "abstracts": 0,
+        "citation_candidates": 0,
+        "citation_edges": 0,
+    }
+
+    with sqlite3.connect(catalog.path) as connection:
+        row = connection.execute(
+            """
+            SELECT url, eprint, candidate_json
+            FROM reference_candidates
+            """
+        ).fetchone()
+    assert row[:2] == (candidate.url, candidate.eprint)
+    assert row[2] == candidate.to_json()
+
+
+def test__catalog__keeps_same_proposed_key_as_distinct_candidates(
+    tmp_path: Path,
+) -> None:
+    catalog = ReferenceCatalog(tmp_path / "references.sqlite3")
+    catalog.initialize()
+    first_observation, first = _observed_candidate(title="First title")
+    second_observation, second = _observed_candidate(title="Second title")
+
+    catalog.import_candidates(
+        (first, second),
+        (first_observation, second_observation),
+    )
+
+    assert first.candidate_id != second.candidate_id
+    assert catalog.read_candidates() == tuple(
+        sorted((first, second), key=lambda item: item.candidate_id)
+    )
+    assert catalog.counts()["legacy_reference_rows"] == 0
+
+
+def test__catalog__source_assets_are_append_only_and_transactional(
     tmp_path: Path,
 ) -> None:
     catalog = ReferenceCatalog(tmp_path / "references.sqlite3")
     catalog.initialize()
     observation, candidate = _observed_candidate()
     catalog.import_candidates((candidate,), (observation,))
-    catalog.record_source_asset(
-        SourceAssetRecord(
-            candidate_id=candidate.candidate_id,
-            proposed_citekey=candidate.proposed_citekey,
-            identity_status=candidate.lifecycle_status,
-            citekey_status=candidate.citekey_status,
-            sha256="a" * 64,
-            byte_size=42,
-            root_alias="papers",
-            relative_path="candidate.pdf",
-            rights_status="unreviewed",
-            asset_status="located-candidate",
-        )
+    first = SourceAssetRecord(
+        candidate_id=candidate.candidate_id,
+        proposed_citekey=candidate.proposed_citekey,
+        identity_status=candidate.lifecycle_status,
+        citekey_status=candidate.citekey_status,
+        sha256="a" * 64,
+        byte_size=42,
+        root_alias="papers",
+        relative_path="candidate.pdf",
+        rights_status="unreviewed",
+        asset_status="located-candidate",
     )
-    catalog.set_review_membership(
-        ReviewMembership(
-            collection_id="workflow",
-            citekey=candidate.proposed_citekey,
-            status=ReviewStatus.METADATA_VERIFIED,
-        )
-    )
-    catalog.import_citation_graph(
-        (
-            CitationCandidate(
-                candidate_id="fixture.ref01",
-                proposed_citekey="padberg2014",
-                title="Reconfigurable Decorated PT Nets",
-                authors="Julia Padberg",
-                year="2014",
-                doi=None,
-                metadata_status="transcribed",
-                abstract_status="not-requested",
-            ),
-        ),
-        (
-            CitationEdge(
-                source_id=candidate.candidate_id,
-                target_id="fixture.ref01",
-                relation="cites",
-                source_locator="References [1]",
-                verification_status="verified-in-source",
-            ),
-        ),
+    conflicting = SourceAssetRecord(
+        candidate_id=candidate.candidate_id,
+        proposed_citekey=candidate.proposed_citekey,
+        identity_status=candidate.lifecycle_status,
+        citekey_status=candidate.citekey_status,
+        sha256="a" * 64,
+        byte_size=42,
+        root_alias="papers",
+        relative_path="different.pdf",
+        rights_status="unreviewed",
+        asset_status="located-candidate",
     )
 
-    assert candidate.lifecycle_status == "unaccepted-candidate"
-    assert catalog.counts() == {
-        "candidate_records": 1,
-        "unprovenanced_alias_rows": 0,
-        "bibliography_observations": 1,
-        "source_assets": 1,
-        "review_memberships": 1,
-        "abstracts": 0,
-        "citation_candidates": 1,
-        "citation_edges": 1,
-    }
-    with sqlite3.connect(catalog.path) as connection:
-        candidate_row = connection.execute(
-            """
-            SELECT lifecycle_status, citekey_status, candidate_json
-            FROM reference_candidates
-            """
-        ).fetchone()
-        observation_json = connection.execute(
-            "SELECT observation_json FROM source_bibliography_observations"
-        ).fetchone()[0]
-        asset_status = connection.execute(
-            """
-            SELECT identity_status, citekey_status
-            FROM candidate_source_assets
-            """
-        ).fetchone()
-    assert candidate_row[:2] == (
-        "unaccepted-candidate",
-        "proposed-noncanonical",
-    )
-    assert (
-        json.loads(candidate_row[2])["candidate_id"] == candidate.candidate_id
-    )
-    assert json.loads(observation_json)["verbatim_entry"] == (
-        observation.verbatim_entry
-    )
-    assert asset_status == (
-        "unaccepted-candidate",
-        "proposed-noncanonical",
-    )
+    catalog.record_source_asset(first)
+    catalog.record_source_asset(first)
+    with pytest.raises(CatalogConflictError, match="existing evidence"):
+        catalog.record_source_assets((conflicting,))
+
+    assert catalog.counts()["source_assets"] == 1
 
 
-def test__catalog__rejects_conflicting_candidate_projection(
+def test__catalog__graph_replay_is_idempotent_and_conflicts_fail(
     tmp_path: Path,
 ) -> None:
     catalog = ReferenceCatalog(tmp_path / "references.sqlite3")
     catalog.initialize()
-    first_observation, first = _observed_candidate(
-        citekey="example2020",
-        title="First title",
+    node = CitationCandidate(
+        candidate_id="fixture.ref01",
+        proposed_citekey="padberg2014",
+        title="Reconfigurable Decorated PT Nets",
+        authors="Julia Padberg",
+        year="2014",
+        doi=None,
+        metadata_status="transcribed",
+        abstract_status="not-requested",
     )
-    conflicting_observation, conflicting = _observed_candidate(
-        citekey="example2020",
-        title="Conflicting title",
+    edge = CitationEdge(
+        source_id="source-observation",
+        target_id="fixture.ref01",
+        relation="cites",
+        source_locator="References [1]",
+        verification_status="verified-in-source",
     )
-    catalog.import_candidates((first,), (first_observation,))
+    catalog.import_citation_graph((node,), (edge,))
+    catalog.import_citation_graph((node,), (edge,))
 
-    with pytest.raises(CandidateConflictError, match="candidate metadata"):
-        catalog.import_candidates(
-            (conflicting,),
-            (conflicting_observation,),
-        )
+    conflicting = CitationCandidate(
+        candidate_id=node.candidate_id,
+        proposed_citekey=node.proposed_citekey,
+        title="Changed title",
+        authors=node.authors,
+        year=node.year,
+        doi=node.doi,
+        metadata_status=node.metadata_status,
+        abstract_status=node.abstract_status,
+    )
+    with pytest.raises(CatalogConflictError, match="existing evidence"):
+        catalog.import_citation_graph((conflicting,), ())
+
+    assert catalog.counts()["citation_candidates"] == 1
+    assert catalog.counts()["citation_edges"] == 1

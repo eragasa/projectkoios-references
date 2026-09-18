@@ -73,11 +73,13 @@ noncanonical statuses. Materialization writes a candidate-suffixed filename,
 not the canonical `citekey.pdf` shape; any later canonical rename requires a
 separately authorized identity and file migration.
 
-The schema-version-1 SQLite catalog is a provisional local projection. Its
-legacy internal table names do not confer canonical status. `import_candidates`
-projects candidates and observations, the public counts use candidate and
-observation terminology, and the old unprovenanced alias mutation API is not
-available. No database migration is performed by this work.
+The schema-version-2 SQLite catalog is a provisional local projection with an
+explicit schema fingerprint. `import_candidates` projects complete candidates
+and observations without populating quarantined legacy reference rows. Public
+counts use candidate and observation terminology, and the old unprovenanced
+alias mutation API is not available. Recognized synthetic version-1 layouts
+require an explicit backup-confirmed forward migration; no operator database is
+migrated by this work. See [Reference working catalog](reference-catalog.md).
 
 Acquisition manifests created by this repository accept only
 `unaccepted-candidate` identity status. Recording or verifying an asset never
