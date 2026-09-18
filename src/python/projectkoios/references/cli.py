@@ -73,6 +73,7 @@ def _parser() -> argparse.ArgumentParser:
 
     import_graph = commands.add_parser("graph-import")
     import_graph.add_argument("catalog", type=Path)
+    import_graph.add_argument("sources", type=Path)
     import_graph.add_argument("nodes", type=Path)
     import_graph.add_argument("edges", type=Path)
 
@@ -187,10 +188,10 @@ def main(arguments: list[str] | None = None) -> int:
         print(json.dumps(catalog.counts(), indent=2))
         return 0
     if args.command == "graph-import":
+        graph = load_candidate_graph(args.sources, args.nodes, args.edges)
         catalog = ReferenceCatalog(args.catalog)
         catalog.initialize()
-        candidates, edges = load_candidate_graph(args.nodes, args.edges)
-        catalog.import_citation_graph(candidates, edges)
+        catalog.import_citation_graph(graph)
         print(json.dumps(catalog.counts(), indent=2))
         return 0
     if args.command == "catalog-summary":

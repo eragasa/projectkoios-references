@@ -17,8 +17,9 @@ the basename of both the reference note and local PDF. See
 [Reference identity and authority](docs/reference-identity.md),
 [Literature-review ingestion](docs/literature-review-ingestion.md),
 [PDF coverage observations](docs/coverage-observations.md), the
-[reconciliation package model](docs/reconciliation-packages.md), and the
-[reference working catalog](docs/reference-catalog.md). Deferred graph,
+[reconciliation package model](docs/reconciliation-packages.md), the
+[source-backed citation graph](docs/citation-graph.md), and the
+[reference working catalog](docs/reference-catalog.md). Remaining graph,
 metadata, review, and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
 
@@ -34,7 +35,8 @@ koios-ref bib-import .koios/references.sqlite3 references.bib \
   --source-id example --source-revision REV
 koios-ref assets-scan references.bib .koios/assets.json \
   --search-root papers=/path/to/papers
-koios-ref graph-import .koios/references.sqlite3 nodes.csv edges.csv
+koios-ref graph-import .koios/references.sqlite3 \
+  sources.csv nodes.csv edges.csv
 koios-ref review-import .koios/references.sqlite3 review-id corpus.csv
 koios-ref assets-record-plan .koios/references.sqlite3 .koios/assets.json
 koios-ref acquisition-create acquisition.csv .koios/acquisition.json \
@@ -53,16 +55,21 @@ koios-ref validate references.bib /path/to/notes /path/to/pdfs
 ```
 
 `bib-import` observes exact source entries and projects normalized,
-noncanonical candidates into the provisional local catalog. Import, asset
-matching, validation, and reconciliation do not produce accepted references;
-only replay of a valid actor-provenanced identity decision can do so.
+noncanonical candidates into the provisional local catalog. `graph-import`
+reads a bounded three-file batch, verifies content-derived source, candidate,
+and edge identities and both edge domains, then appends the complete graph in
+one transaction. Import, graph membership, asset matching, validation, and
+reconciliation do not produce accepted or relevant references; only replay of
+a valid actor-provenanced identity decision can do so.
 
-The working catalog supports owner-internal schema version 2 with a deterministic
+The working catalog supports owner-internal schema version 3 with a deterministic
 schema fingerprint and complete observation/candidate round trips, including
 URL and eprint. Existing, newer, altered, or incomplete schemas are never
 silently relabeled. Recognized synthetic version-1 layouts require an explicit
-backup-confirmed forward migration through the Python API; no operator catalog
-is migrated by these commands. See
+backup-confirmed forward migration through the Python API. The exact published
+version-2 schema is likewise recognized and preserves all rows while
+quarantining its mutable graph adapters; no operator catalog is migrated by
+these commands. See
 [Reference working catalog](docs/reference-catalog.md).
 
 `collection-reconcile` creates an immutable, replayable package containing

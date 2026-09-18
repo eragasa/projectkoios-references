@@ -58,6 +58,7 @@
     }
   ],
   "citation_graph": {
+    "sources": "collections/projectkoios-workflow/padbergHoffmann2015/sources.csv",
     "nodes": "collections/projectkoios-workflow/padbergHoffmann2015/nodes.csv",
     "edges": "collections/projectkoios-workflow/padbergHoffmann2015/edges.csv",
     "direct_reference_count": 34

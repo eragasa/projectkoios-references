@@ -19,8 +19,8 @@ The only operationally supported catalog schema is:
 
 | Field | Value |
 |---|---|
-| Owner-internal schema version | `2` |
-| Schema fingerprint | `catalog-schema:sha256:2e8db847387f06a003f56c375694000eee5be7edd32d4e7f0712267d1e3d0bc5` |
+| Owner-internal schema version | `3` |
+| Schema fingerprint | `catalog-schema:sha256:d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa` |
 | Authority boundary | `non-authoritative-rebuildable-working-projection` |
 
 The fingerprint is the SHA-256 identity of a canonical, deterministically
@@ -30,7 +30,7 @@ normalized SQL. It does not hash catalog rows. Missing or extra columns,
 indexes, views, or triggers therefore change the fingerprint.
 
 `catalog_metadata` contains exactly `schema_version` and
-`schema_fingerprint`. `ReferenceCatalog.initialize()` creates version 2 only
+`schema_fingerprint`. `ReferenceCatalog.initialize()` creates version 3 only
 for a missing or structurally empty database. For an existing database it
 verifies metadata, the actual schema fingerprint, foreign keys, canonical
 record JSON/content identities, scalar/JSON agreement, candidate-to-observation
@@ -44,7 +44,7 @@ recovery requirement.
 
 ## Lossless candidate projection
 
-Version 2 stores every currently supported
+Version 3 stores every currently supported
 `SourceBibliographyObservation` field, including parser identity, exact
 verbatim entry, source locator, asserted revision, whole-bibliography digest and
 size, and the exact canonical JSON/content identity.
@@ -80,23 +80,57 @@ sizes are unsupported and fail rather than being normalized. Rights and asset
 statuses must likewise be bounded, non-empty strings; numeric, Boolean, empty,
 or oversized caller values are rejected before SQLite can apply text affinity.
 
-Graph tables receive only conflict-aware catalog write semantics here. Stable
-graph identities, source/target domain rules, bounds, and source-backed graph
-semantics remain owned by `REF-GRAPH-INTEGRITY-01` (#17). Legacy review rows are
-append/conflict checked but are not redesigned or granted authority; typed
-actor-provenanced review transitions remain owned by `REF-REVIEW-01` (#11).
-Field-level state authority and cross-format projection remain owned by
-`REF-STATE-PROJECTION-01` (#9).
+## Citation-graph projection
+
+Citation graph writes accept only a complete, validated `CitationGraph`. Parent
+source observations are identified from source ID, asserted revision, safe
+relative path, exact SHA-256, and byte size. Candidate identity is the hash of
+that exact source-observation identity and its source-verbatim entry locator.
+Edge identity additionally covers the candidate target and direct `cites`
+relation. A changed source revision, content digest, or locator therefore
+creates new evidence instead of rewriting an older row.
+
+The catalog stores canonical JSON beside query columns for sources, candidates,
+and edges and validates their exact agreement on every open and write. Foreign
+keys cover both edge domains. Whole-graph validation additionally accepts only a wholly empty graph or a
+graph in which every candidate and source participates in exactly one
+source-consistent direct edge. It rejects duplicate identities and duplicate
+source/locator slots and
+enforces the hard source, candidate, edge, text, file, and per-source breadth
+limits defined in `GraphImportLimits`. A multi-row import inserts sources,
+candidates, and edges in one transaction. Exact replay is unchanged; a changed
+row under an existing stable identity is a conflict and rolls back the batch.
+
+Source-verbatim entry, identifier, title, authors, and locator fields remain
+separate from DOI-normalized and otherwise proposed metadata. All candidate
+rows are fixed to `unaccepted-candidate` and
+`unaccepted-normalized-proposal`; all edges are fixed to
+`source-observed-only`. These records establish only a direct citation
+observation. They do not establish review membership, relevance, reading,
+claim support, canonical identity, scientific validity, or publication use.
+Graph history is append-only. The implementation does not assert supersession
+without a separate evidence-backed relation; a later source blob simply creates
+new retained observations, candidates, and edges. The CSV contract and hard
+limits are documented in [Source-backed citation graph](citation-graph.md).
+
+Mutable version-1 and published-version-2 graph adapter rows migrate only into
+explicitly named `legacy_citation_*` quarantine tables. They are not converted
+into source-backed graph evidence. Legacy review rows are likewise
+append/conflict checked but are
+not redesigned or granted authority; typed actor-provenanced review transitions
+remain owned by `REF-REVIEW-01` (#11). Field-level state authority and
+cross-format projection remain owned by `REF-STATE-PROJECTION-01` (#9).
 
 ## Forward-only migration matrix
 
-Only two repository-known synthetic version-1 layouts are recognized:
+Three exact repository-known predecessor layouts are recognized:
 
 | Source | Fingerprint | Forward behavior |
 |---|---|---|
 | Prototype v1 | `catalog-schema:sha256:5714c33eba9eb9638c0735dff5824058d7c77115a3a5c62f97486e0da41d771b` | Preserve every legacy table row in explicitly named `legacy_*` quarantine tables. Create no observations, candidates, aliases, or accepted authority from those rows. |
-| Identity v1 | `catalog-schema:sha256:b6280d710df8e1cabdcdec99847a927135a49b9e833d3cb84c5e9bf44ce845c8` | Validate canonical observation/candidate JSON, scalar agreement, links, assets, and foreign keys; expand complete records into v2 columns; preserve all older adapter rows in `legacy_*` quarantine tables. |
-| Version 2 | Current fingerprint above | Verify and use unchanged; migration is an idempotent no-op. |
+| Identity v1 | `catalog-schema:sha256:b6280d710df8e1cabdcdec99847a927135a49b9e833d3cb84c5e9bf44ce845c8` | Validate canonical observation/candidate JSON, scalar agreement, links, assets, and foreign keys; expand complete records into v3 columns; preserve all older adapter rows in `legacy_*` quarantine tables. |
+| Published v2 | `catalog-schema:sha256:2e8db847387f06a003f56c375694000eee5be7edd32d4e7f0712267d1e3d0bc5` | Validate and preserve every complete identity/link/asset and legacy row; quarantine mutable graph adapters unchanged in `legacy_citation_*`; create no source-backed graph evidence or authority. |
+| Version 3 | Current fingerprint above | Verify and use unchanged; migration is an idempotent no-op. |
 | Unknown, altered, incomplete, or newer | Any other fingerprint/version | Refuse initialization and migration. Preserve the database for explicit recovery with a compatible implementation or separately reviewed migration. |
 
 Migration is never automatic. `initialize()` reports recognized legacy schemas

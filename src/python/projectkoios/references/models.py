@@ -113,32 +113,3 @@ class AbstractRecord:
             raise ValueError("abstract text must be non-empty")
         if len(self.content_hash) != 64:
             raise ValueError("content_hash must be a SHA-256 digest")
-
-
-@dataclass(frozen=True)
-class CitationCandidate:
-    candidate_id: str
-    proposed_citekey: str | None
-    title: str | None
-    authors: str | None
-    year: str | None
-    doi: str | None
-    metadata_status: str
-    abstract_status: str
-    abstract: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.proposed_citekey is not None:
-            validate_citekey(
-                self.proposed_citekey,
-                field="proposed citekey",
-            )
-
-
-@dataclass(frozen=True)
-class CitationEdge:
-    source_id: str
-    target_id: str
-    relation: str
-    source_locator: str
-    verification_status: str

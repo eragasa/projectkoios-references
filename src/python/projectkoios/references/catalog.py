@@ -9,20 +9,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from projectkoios.references.graph import (
+    CitationCandidate,
+    CitationEdge,
+    CitationGraph,
+    CitationGraphError,
+    CitationSourceObservation,
+)
 from projectkoios.references.identity import (
     ReferenceCandidate,
     SourceBibliographyObservation,
 )
 from projectkoios.references.models import (
     AbstractRecord,
-    CitationCandidate,
-    CitationEdge,
     ReviewMembership,
     SourceAssetRecord,
 )
 from projectkoios.references.path_safety import AuthorizedRoot
 
-CATALOG_SCHEMA_VERSION = 2
+CATALOG_SCHEMA_VERSION = 3
 SUPPORTED_CATALOG_SCHEMA_VERSIONS = (CATALOG_SCHEMA_VERSION,)
 
 _SCHEMA_METADATA_KEYS = frozenset({"schema_version", "schema_fingerprint"})
@@ -36,6 +41,10 @@ _PROTOTYPE_V1_FINGERPRINT = (
 _IDENTITY_V1_FINGERPRINT = (
     "catalog-schema:sha256:"
     "b6280d710df8e1cabdcdec99847a927135a49b9e833d3cb84c5e9bf44ce845c8"
+)
+_PUBLISHED_V2_FINGERPRINT = (
+    "catalog-schema:sha256:"
+    "2e8db847387f06a003f56c375694000eee5be7edd32d4e7f0712267d1e3d0bc5"
 )
 
 _TARGET_SCHEMA_STATEMENTS = (
@@ -199,7 +208,7 @@ _TARGET_SCHEMA_STATEMENTS = (
     )
     """,
     """
-    CREATE TABLE citation_candidates (
+    CREATE TABLE legacy_citation_candidates (
         candidate_id TEXT PRIMARY KEY,
         proposed_citekey TEXT,
         title TEXT,
@@ -212,7 +221,7 @@ _TARGET_SCHEMA_STATEMENTS = (
     )
     """,
     """
-    CREATE TABLE citation_edges (
+    CREATE TABLE legacy_citation_edges (
         source_id TEXT NOT NULL,
         target_id TEXT NOT NULL,
         relation TEXT NOT NULL,
@@ -221,22 +230,121 @@ _TARGET_SCHEMA_STATEMENTS = (
         PRIMARY KEY(source_id, target_id, relation, source_locator)
     )
     """,
+    """
+    CREATE TABLE citation_source_observations (
+        source_observation_id TEXT PRIMARY KEY,
+        record_schema_version INTEGER NOT NULL CHECK(
+            record_schema_version = 1
+        ),
+        authority_kind TEXT NOT NULL CHECK(
+            authority_kind = 'citation-source-observation'
+        ),
+        source_id TEXT NOT NULL,
+        asserted_source_revision TEXT,
+        source_path TEXT NOT NULL,
+        source_sha256 TEXT NOT NULL,
+        source_byte_size INTEGER NOT NULL CHECK(
+            typeof(source_byte_size) = 'integer'
+            AND source_byte_size > 0
+        ),
+        source_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE citation_candidates (
+        candidate_id TEXT PRIMARY KEY,
+        record_schema_version INTEGER NOT NULL CHECK(
+            record_schema_version = 1
+        ),
+        authority_kind TEXT NOT NULL CHECK(
+            authority_kind = 'citation-discovery-candidate'
+        ),
+        lifecycle_status TEXT NOT NULL CHECK(
+            lifecycle_status = 'unaccepted-candidate'
+        ),
+        proposal_status TEXT NOT NULL CHECK(
+            proposal_status = 'unaccepted-normalized-proposal'
+        ),
+        source_observation_id TEXT NOT NULL,
+        source_locator TEXT NOT NULL,
+        verbatim_entry TEXT,
+        verbatim_identifier TEXT,
+        verbatim_title TEXT,
+        verbatim_authors TEXT,
+        proposed_citekey TEXT,
+        proposed_container_or_type TEXT,
+        proposed_title TEXT,
+        proposed_authors_json TEXT NOT NULL,
+        proposed_year TEXT,
+        proposed_doi TEXT,
+        candidate_json TEXT NOT NULL,
+        UNIQUE(source_observation_id, source_locator),
+        FOREIGN KEY(source_observation_id)
+            REFERENCES citation_source_observations(source_observation_id)
+    )
+    """,
+    """
+    CREATE TABLE citation_edges (
+        edge_id TEXT PRIMARY KEY,
+        record_schema_version INTEGER NOT NULL CHECK(
+            record_schema_version = 1
+        ),
+        authority_kind TEXT NOT NULL CHECK(
+            authority_kind = 'direct-citation-observation'
+        ),
+        evidence_status TEXT NOT NULL CHECK(
+            evidence_status = 'source-observed-only'
+        ),
+        source_observation_id TEXT NOT NULL,
+        target_candidate_id TEXT NOT NULL UNIQUE,
+        relation TEXT NOT NULL CHECK(relation = 'cites'),
+        source_locator TEXT NOT NULL,
+        edge_json TEXT NOT NULL,
+        FOREIGN KEY(source_observation_id)
+            REFERENCES citation_source_observations(source_observation_id),
+        FOREIGN KEY(target_candidate_id)
+            REFERENCES citation_candidates(candidate_id)
+    )
+    """,
 )
 
-_LEGACY_TABLE_MAP = (
+_V1_TABLE_MAP = (
     ("reference_records", "legacy_reference_records"),
     ("reference_aliases", "legacy_reference_aliases"),
     ("bibliography_occurrences", "legacy_bibliography_occurrences"),
     ("source_assets", "legacy_source_assets"),
     ("review_memberships", "legacy_review_memberships"),
     ("abstracts", "legacy_abstracts"),
-    ("citation_candidates", "citation_candidates"),
-    ("citation_edges", "citation_edges"),
+    ("citation_candidates", "legacy_citation_candidates"),
+    ("citation_edges", "legacy_citation_edges"),
+)
+
+_PUBLISHED_V2_TABLE_MAP = (
+    ("legacy_reference_records", "legacy_reference_records"),
+    ("legacy_reference_aliases", "legacy_reference_aliases"),
+    (
+        "legacy_bibliography_occurrences",
+        "legacy_bibliography_occurrences",
+    ),
+    ("legacy_source_assets", "legacy_source_assets"),
+    ("legacy_review_memberships", "legacy_review_memberships"),
+    ("legacy_abstracts", "legacy_abstracts"),
+    ("citation_candidates", "legacy_citation_candidates"),
+    ("citation_edges", "legacy_citation_edges"),
 )
 
 _LEGACY_DROP_ORDER = (
     "citation_edges",
     "citation_candidates",
+    "citation_source_observations",
+    "legacy_citation_edges",
+    "legacy_citation_candidates",
+    "legacy_review_memberships",
+    "legacy_abstracts",
+    "legacy_source_assets",
+    "legacy_bibliography_occurrences",
+    "legacy_reference_aliases",
+    "legacy_reference_records",
     "abstracts",
     "review_memberships",
     "source_assets",
@@ -343,6 +451,7 @@ CATALOG_SCHEMA_FINGERPRINT = _target_schema_fingerprint()
 _KNOWN_LEGACY_SCHEMAS = {
     _PROTOTYPE_V1_FINGERPRINT: "prototype-v1",
     _IDENTITY_V1_FINGERPRINT: "identity-v1",
+    _PUBLISHED_V2_FINGERPRINT: "published-v2",
 }
 
 
@@ -398,6 +507,61 @@ def _candidate_values(candidate: ReferenceCandidate) -> tuple[object, ...]:
     )
 
 
+def _graph_source_values(
+    source: CitationSourceObservation,
+) -> tuple[object, ...]:
+    return (
+        source.source_observation_id,
+        source.schema_version,
+        source.authority_kind,
+        source.source_id,
+        source.asserted_source_revision,
+        source.source_path,
+        source.source_sha256,
+        source.source_byte_size,
+        source.to_json(),
+    )
+
+
+def _graph_candidate_values(
+    candidate: CitationCandidate,
+) -> tuple[object, ...]:
+    return (
+        candidate.candidate_id,
+        candidate.schema_version,
+        candidate.authority_kind,
+        candidate.lifecycle_status,
+        candidate.proposal_status,
+        candidate.source_observation_id,
+        candidate.source_locator,
+        candidate.verbatim_entry,
+        candidate.verbatim_identifier,
+        candidate.verbatim_title,
+        candidate.verbatim_authors,
+        candidate.proposed_citekey,
+        candidate.proposed_container_or_type,
+        candidate.proposed_title,
+        _compact_json(candidate.proposed_authors),
+        candidate.proposed_year,
+        candidate.proposed_doi,
+        candidate.to_json(),
+    )
+
+
+def _graph_edge_values(edge: CitationEdge) -> tuple[object, ...]:
+    return (
+        edge.edge_id,
+        edge.schema_version,
+        edge.authority_kind,
+        edge.evidence_status,
+        edge.source_observation_id,
+        edge.target_candidate_id,
+        edge.relation,
+        edge.source_locator,
+        edge.to_json(),
+    )
+
+
 def _asset_values(asset: SourceAssetRecord) -> tuple[object, ...]:
     return (
         asset.candidate_id,
@@ -448,6 +612,51 @@ _CANDIDATE_COLUMNS = (
     "generator_name",
     "generator_version",
     "candidate_json",
+)
+
+_GRAPH_SOURCE_COLUMNS = (
+    "source_observation_id",
+    "record_schema_version",
+    "authority_kind",
+    "source_id",
+    "asserted_source_revision",
+    "source_path",
+    "source_sha256",
+    "source_byte_size",
+    "source_json",
+)
+
+_GRAPH_CANDIDATE_COLUMNS = (
+    "candidate_id",
+    "record_schema_version",
+    "authority_kind",
+    "lifecycle_status",
+    "proposal_status",
+    "source_observation_id",
+    "source_locator",
+    "verbatim_entry",
+    "verbatim_identifier",
+    "verbatim_title",
+    "verbatim_authors",
+    "proposed_citekey",
+    "proposed_container_or_type",
+    "proposed_title",
+    "proposed_authors_json",
+    "proposed_year",
+    "proposed_doi",
+    "candidate_json",
+)
+
+_GRAPH_EDGE_COLUMNS = (
+    "edge_id",
+    "record_schema_version",
+    "authority_kind",
+    "evidence_status",
+    "source_observation_id",
+    "target_candidate_id",
+    "relation",
+    "source_locator",
+    "edge_json",
 )
 
 
@@ -730,88 +939,59 @@ class ReferenceCatalog:
                     ),
                 )
 
-    def import_citation_graph(
-        self,
-        candidates: Iterable[CitationCandidate],
-        edges: Iterable[CitationEdge],
-    ) -> None:
-        candidate_values = tuple(candidates)
-        edge_values = tuple(edges)
-        if any(
-            not isinstance(item, CitationCandidate) for item in candidate_values
-        ):
-            raise TypeError(
-                "graph candidates must contain CitationCandidate values"
-            )
-        if any(not isinstance(item, CitationEdge) for item in edge_values):
-            raise TypeError("graph edges must contain CitationEdge values")
-        candidate_columns = (
-            "candidate_id",
-            "proposed_citekey",
-            "title",
-            "authors",
-            "year",
-            "doi",
-            "metadata_status",
-            "abstract_status",
-            "abstract",
-        )
-        edge_columns = (
-            "source_id",
-            "target_id",
-            "relation",
-            "source_locator",
-            "verification_status",
+    def import_citation_graph(self, graph: CitationGraph) -> None:
+        """Append one fully validated graph batch in a single transaction."""
+        if not isinstance(graph, CitationGraph):
+            raise TypeError("graph must be a CitationGraph value")
+        # Revalidate even frozen caller data at the catalog trust boundary.
+        graph = CitationGraph.create(
+            sources=graph.sources,
+            candidates=graph.candidates,
+            edges=graph.edges,
         )
         with self._write_transaction() as connection:
-            for candidate in candidate_values:
-                candidate_row = (
-                    candidate.candidate_id,
-                    candidate.proposed_citekey,
-                    candidate.title,
-                    candidate.authors,
-                    candidate.year,
-                    candidate.doi,
-                    candidate.metadata_status,
-                    candidate.abstract_status,
-                    candidate.abstract,
+            for source in graph.sources:
+                self._insert_exact(
+                    connection,
+                    table="citation_source_observations",
+                    columns=_GRAPH_SOURCE_COLUMNS,
+                    values=_graph_source_values(source),
+                    key_columns=("source_observation_id",),
+                    key_values=(source.source_observation_id,),
+                    label=(
+                        "citation source observation "
+                        f"{source.source_observation_id}"
+                    ),
                 )
+            for candidate in graph.candidates:
                 self._insert_exact(
                     connection,
                     table="citation_candidates",
-                    columns=candidate_columns,
-                    values=candidate_row,
+                    columns=_GRAPH_CANDIDATE_COLUMNS,
+                    values=_graph_candidate_values(candidate),
                     key_columns=("candidate_id",),
                     key_values=(candidate.candidate_id,),
                     label=f"citation candidate {candidate.candidate_id}",
                 )
-            for edge in edge_values:
-                edge_row = (
-                    edge.source_id,
-                    edge.target_id,
-                    edge.relation,
-                    edge.source_locator,
-                    edge.verification_status,
-                )
+            for edge in graph.edges:
                 self._insert_exact(
                     connection,
                     table="citation_edges",
-                    columns=edge_columns,
-                    values=edge_row,
-                    key_columns=(
-                        "source_id",
-                        "target_id",
-                        "relation",
-                        "source_locator",
-                    ),
-                    key_values=(
-                        edge.source_id,
-                        edge.target_id,
-                        edge.relation,
-                        edge.source_locator,
-                    ),
-                    label="citation edge",
+                    columns=_GRAPH_EDGE_COLUMNS,
+                    values=_graph_edge_values(edge),
+                    key_columns=("edge_id",),
+                    key_values=(edge.edge_id,),
+                    label=f"citation edge {edge.edge_id}",
                 )
+            self._validate_graph_rows(connection)
+
+    def read_citation_graph(self) -> CitationGraph:
+        with self._read_transaction() as connection:
+            self._require_current_schema(connection)
+            return self._read_citation_graph(connection)
+
+    def export_citation_graph_json(self) -> str:
+        return self.read_citation_graph().to_json()
 
     def add_abstract(self, abstract: AbstractRecord) -> None:
         columns = (
@@ -856,8 +1036,14 @@ class ReferenceCatalog:
             ("unprovenanced_alias_rows", "legacy_reference_aliases"),
             ("review_memberships", "legacy_review_memberships"),
             ("abstracts", "legacy_abstracts"),
+            (
+                "citation_source_observations",
+                "citation_source_observations",
+            ),
             ("citation_candidates", "citation_candidates"),
             ("citation_edges", "citation_edges"),
+            ("legacy_citation_candidates", "legacy_citation_candidates"),
+            ("legacy_citation_edges", "legacy_citation_edges"),
         )
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
@@ -894,6 +1080,7 @@ class ReferenceCatalog:
             yield connection
             self._require_foreign_keys(connection)
             self._validate_identity_rows(connection)
+            self._validate_graph_rows(connection)
             connection.commit()
         except sqlite3.IntegrityError as error:
             connection.rollback()
@@ -986,17 +1173,28 @@ class ReferenceCatalog:
                     "migration or recovery"
                 )
             return _SchemaState(version, fingerprint, "current", metadata)
-        if version == 1:
-            if frozenset(metadata_map) != _LEGACY_METADATA_KEYS:
+        if version in {1, 2}:
+            expected_keys = (
+                _LEGACY_METADATA_KEYS if version == 1 else _SCHEMA_METADATA_KEYS
+            )
+            if frozenset(metadata_map) != expected_keys:
                 raise CatalogSchemaError(
-                    "legacy catalog metadata is incomplete or unexpected"
+                    f"version {version} catalog metadata is incomplete or "
+                    "unexpected"
+                )
+            if version == 2 and (
+                metadata_map["schema_fingerprint"] != fingerprint
+            ):
+                raise CatalogSchemaError(
+                    "version 2 catalog fingerprint metadata differs from its "
+                    "actual schema; preserve it and require explicit recovery"
                 )
             kind = _KNOWN_LEGACY_SCHEMAS.get(fingerprint)
             if kind is None:
                 raise CatalogSchemaError(
-                    "catalog claims schema version 1 but its actual schema is "
-                    "unknown or altered; preserve it and require an explicit "
-                    "reviewed migration"
+                    f"catalog claims schema version {version} but its actual "
+                    "schema is unknown or altered; preserve it and require an "
+                    "explicit reviewed migration"
                 )
             self._require_foreign_keys(connection)
             return _SchemaState(version, fingerprint, kind, metadata)
@@ -1013,12 +1211,14 @@ class ReferenceCatalog:
             raise self._migration_required(state)
         self._require_foreign_keys(connection)
         self._validate_identity_rows(connection)
+        self._validate_graph_rows(connection)
 
     @staticmethod
     def _migration_required(state: _SchemaState) -> CatalogMigrationRequired:
         return CatalogMigrationRequired(
             f"recognized {state.kind} catalog ({state.fingerprint}) requires "
-            "forward migration to schema version 2; create and verify an "
+            f"forward migration to schema version {CATALOG_SCHEMA_VERSION}; "
+            "create and verify an "
             "external backup or disposable copy, then call "
             "migrate(backup_confirmed=True)"
         )
@@ -1169,6 +1369,97 @@ class ReferenceCatalog:
             result.append(candidate)
         return tuple(result)
 
+    def _read_citation_graph(
+        self, connection: sqlite3.Connection
+    ) -> CitationGraph:
+        source_rows = connection.execute(
+            """
+            SELECT source_observation_id, record_schema_version,
+                   authority_kind, source_id, asserted_source_revision,
+                   source_path, source_sha256, source_byte_size, source_json
+            FROM citation_source_observations
+            ORDER BY source_observation_id
+            """
+        ).fetchall()
+        sources: list[CitationSourceObservation] = []
+        for row in source_rows:
+            try:
+                source = CitationSourceObservation.from_json(str(row[8]))
+            except CitationGraphError as error:
+                raise CatalogSchemaError(
+                    f"citation source row {row[0]} has invalid canonical JSON"
+                ) from error
+            if tuple(row) != _graph_source_values(source):
+                raise CatalogSchemaError(
+                    f"citation source row {row[0]} differs from canonical JSON"
+                )
+            sources.append(source)
+
+        candidate_rows = connection.execute(
+            """
+            SELECT candidate_id, record_schema_version, authority_kind,
+                   lifecycle_status, proposal_status, source_observation_id,
+                   source_locator, verbatim_entry, verbatim_identifier,
+                   verbatim_title, verbatim_authors, proposed_citekey,
+                   proposed_container_or_type, proposed_title,
+                   proposed_authors_json,
+                   proposed_year, proposed_doi, candidate_json
+            FROM citation_candidates
+            ORDER BY candidate_id
+            """
+        ).fetchall()
+        candidates: list[CitationCandidate] = []
+        for row in candidate_rows:
+            try:
+                candidate = CitationCandidate.from_json(str(row[17]))
+            except CitationGraphError as error:
+                raise CatalogSchemaError(
+                    f"citation candidate row {row[0]} has invalid "
+                    "canonical JSON"
+                ) from error
+            if tuple(row) != _graph_candidate_values(candidate):
+                raise CatalogSchemaError(
+                    f"citation candidate row {row[0]} differs from canonical "
+                    "JSON"
+                )
+            candidates.append(candidate)
+
+        edge_rows = connection.execute(
+            """
+            SELECT edge_id, record_schema_version, authority_kind,
+                   evidence_status, source_observation_id,
+                   target_candidate_id, relation, source_locator, edge_json
+            FROM citation_edges
+            ORDER BY edge_id
+            """
+        ).fetchall()
+        edges: list[CitationEdge] = []
+        for row in edge_rows:
+            try:
+                edge = CitationEdge.from_json(str(row[8]))
+            except CitationGraphError as error:
+                raise CatalogSchemaError(
+                    f"citation edge row {row[0]} has invalid canonical JSON"
+                ) from error
+            if tuple(row) != _graph_edge_values(edge):
+                raise CatalogSchemaError(
+                    f"citation edge row {row[0]} differs from canonical JSON"
+                )
+            edges.append(edge)
+        try:
+            return CitationGraph.create(
+                sources=tuple(sources),
+                candidates=tuple(candidates),
+                edges=tuple(edges),
+            )
+        except CitationGraphError as error:
+            raise CatalogSchemaError(
+                f"catalog citation graph violates graph integrity: {error}"
+            ) from error
+
+    def _validate_graph_rows(self, connection: sqlite3.Connection) -> None:
+        self._read_citation_graph(connection)
+
     @staticmethod
     def _source_asset_from_row(
         row: tuple[object, ...], *, label: str
@@ -1264,9 +1555,17 @@ class ReferenceCatalog:
     def _snapshot_legacy(
         self, connection: sqlite3.Connection, state: _SchemaState
     ) -> dict[str, Any]:
+        table_map = (
+            _PUBLISHED_V2_TABLE_MAP
+            if state.kind == "published-v2"
+            else _V1_TABLE_MAP
+        )
         snapshot: dict[str, Any] = {
-            source: self._snapshot_table(connection, source)
-            for source, _ in _LEGACY_TABLE_MAP
+            "table_map": table_map,
+            **{
+                source: self._snapshot_table(connection, source)
+                for source, _ in table_map
+            },
         }
         if state.kind == "identity-v1":
             try:
@@ -1396,6 +1695,27 @@ class ReferenceCatalog:
                     "candidate_source_assets": assets,
                 }
             )
+        elif state.kind == "published-v2":
+            self._validate_identity_rows(connection)
+            observations = self._read_observations(connection)
+            observation_ids = {
+                observation.observation_id for observation in observations
+            }
+            candidates = self._read_candidates(connection, observation_ids)
+            snapshot.update(
+                {
+                    "observations": observations,
+                    "candidates": candidates,
+                    "candidate_source_observations": self._snapshot_table(
+                        connection,
+                        "candidate_source_observations",
+                    ),
+                    "candidate_source_assets": self._snapshot_table(
+                        connection,
+                        "candidate_source_assets",
+                    ),
+                }
+            )
         else:
             snapshot.update(
                 {
@@ -1459,7 +1779,7 @@ class ReferenceCatalog:
             "candidate_source_assets",
             snapshot["candidate_source_assets"],
         )
-        for source, target in _LEGACY_TABLE_MAP:
+        for source, target in snapshot["table_map"]:
             self._restore_table(connection, target, snapshot[source])
         self._validate_identity_rows(connection)
 
