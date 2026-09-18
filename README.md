@@ -98,7 +98,9 @@ roots are resolved and identity-bound once; traversal, root replacement, and
 symlink files or directories fail closed before bytes are read, hashed, copied,
 or reported. Confined writes use no-follow directory descriptors and atomic
 same-directory publication. Provider responses are cached locally under
-`.koios/` when requested.
+`.koios/` when requested. The immutable provider observation and cache boundary
+is documented in
+[`docs/reference-metadata-providers.md`](docs/reference-metadata-providers.md).
 
 Recurring lawful acquisition uses a separate version-1 manifest. `acquisition-create` reads CSV metadata, resolves each root-relative PDF without permitting traversal, verifies a PDF header, and records its byte size and SHA-256 identity. Required CSV columns are `proposed_citekey`, `root_alias`, `relative_path`, `rights_status`, `asset_status`, and `identity_status`; optional columns are `doi`, `source_url`, and `source_version`. The only permitted identity status is `unaccepted-candidate`, so creating or verifying a manifest cannot claim accepted-reference authority. `acquisition-verify` rechecks all source bytes. Neither command downloads content, bypasses access controls, verifies license claims, edits canonical BibLaTeX, or writes a vault.
 
