@@ -172,13 +172,23 @@ def test__reconcile_collection__classifies_missing_and_extra_pdfs(
     assert records["alpha2020"].duplicate_citekeys == ("extra2023",)
     assert records["alpha2020"].citation_status is CitationStatus.CITED_DEFINED
     assert records["beta2021"].pdf_expectation is PdfExpectation.EXPECTED
-    assert records["beta2021"].pdf_status is PdfStatus.NOT_LOCATED
+    assert records["beta2021"].pdf_status is PdfStatus.NOT_YET_SEARCHED
     assert records["manual2022"].pdf_status is PdfStatus.PDF_NOT_APPLICABLE
     assert records["manual2022"].full_text_expected is False
     assert outputs.manifest.counts == {
         "references": 3,
         "managed_pdfs": 1,
         "missing_expected_pdfs": 1,
+        "not_yet_searched": 1,
+        "search_incomplete": 0,
+        "search_failed": 0,
+        "not_located": 0,
+        "located_unverified": 0,
+        "ambiguous_matches": 0,
+        "alternate_version_only": 0,
+        "cloud_placeholders": 0,
+        "access_controlled": 0,
+        "full_text_not_public": 0,
         "pdf_applicability_review": 0,
         "pdf_not_applicable": 1,
         "extra_pdfs": 1,
@@ -199,6 +209,26 @@ def test__reconcile_collection__classifies_missing_and_extra_pdfs(
     assert b"beta2021" in files["missing-pdfs.csv"]
     assert b"manual2022" not in files["missing-pdfs.csv"]
     assert b"extra2023" in files["extra-pdfs.csv"]
+
+
+def test__reconcile_collection__marks_unverified_managed_pdf_present(
+    tmp_path: Path,
+) -> None:
+    corpus, pdfs, discovery, pdf_bytes = _inputs(tmp_path)
+    del discovery, pdf_bytes
+
+    outputs = reconcile_collection(
+        _records(),
+        bibliography_bytes=b"fixture bibliography",
+        collection_id="fixture",
+        source_revision="abc123",
+        collection_rows=load_collection_rows(corpus),
+        managed_pdfs=scan_managed_pdfs(pdfs),
+        citation_closure=None,
+    )
+
+    records = {record.citekey: record for record in outputs.manifest.references}
+    assert records["alpha2020"].pdf_status is PdfStatus.MANAGED_PRESENT
 
 
 def test__reconcile_collection__distinguishes_websites_and_preprints() -> None:
@@ -247,7 +277,7 @@ def test__reconcile_collection__distinguishes_websites_and_preprints() -> None:
     )
     assert reconciled["preprint2024"].source_type == "preprint"
     assert reconciled["preprint2024"].full_text_expected is True
-    assert reconciled["preprint2024"].pdf_status is PdfStatus.NOT_LOCATED
+    assert reconciled["preprint2024"].pdf_status is PdfStatus.NOT_YET_SEARCHED
 
 
 def test__publish_reconciliation__is_immutable_and_replayable(

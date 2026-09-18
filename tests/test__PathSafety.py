@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from projectkoios.references import (
+    AmbiguityEvaluation,
     AuthorizedRoot,
     PathSafetyError,
     validate_citekey,
@@ -275,6 +276,9 @@ def test__publication__does_not_follow_output_directory_symlink(
         collection_id="fixture",
         source_revision="revision",
         bibliography_sha256=hashlib.sha256(b"fixture").hexdigest(),
+        coverage_observation_id=None,
+        coverage_state=None,
+        ambiguity_evaluation=AmbiguityEvaluation.NOT_EVALUATED,
         coverage=(),
         references=(),
         extra_pdfs=(),

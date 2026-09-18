@@ -14,6 +14,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from projectkoios.references.coverage import (
+    AmbiguityEvaluation,
+    CoverageAccessState,
+    CoverageObservation,
+    CoverageState,
+    ReferenceCoverage,
+)
 from projectkoios.references.models import ReferenceRecord
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
@@ -24,7 +31,7 @@ from projectkoios.references.path_safety import (
 )
 
 _SCHEMA_VERSION = 1
-_PROCESSOR_VERSION = "0.4.0"
+_PROCESSOR_VERSION = "0.5.0"
 _MAX_RECORDS = 10_000
 _MAX_STATUS_JSON_BYTES = 10_000_000
 _MAX_TEX_FILES = 10_000
@@ -71,6 +78,8 @@ class PdfStatus(StrEnum):
     ALTERNATE_VERSION_ONLY = "alternate-version-only"
     CLOUD_PLACEHOLDER = "cloud-placeholder"
     NOT_YET_SEARCHED = "not-yet-searched"
+    SEARCH_INCOMPLETE = "search-incomplete"
+    SEARCH_FAILED = "search-failed"
     NOT_LOCATED = "not-located"
     ACCESS_CONTROLLED = "access-controlled"
     FULL_TEXT_NOT_PUBLIC = "full-text-not-public"
@@ -177,6 +186,9 @@ class CollectionManifest:
     collection_id: str
     source_revision: str
     bibliography_sha256: str
+    coverage_observation_id: str | None
+    coverage_state: CoverageState | None
+    ambiguity_evaluation: AmbiguityEvaluation
     coverage: tuple[str, ...]
     references: tuple[CollectionReference, ...]
     extra_pdfs: tuple[ExtraPdf, ...]
@@ -430,6 +442,7 @@ def reconcile_collection(
     collection_rows: dict[str, CollectionRowEvidence],
     managed_pdfs: tuple[ManagedPdf, ...],
     citation_closure: CitationClosure | None,
+    coverage_observation: CoverageObservation | None = None,
     processing_evidence: dict[str, ProcessingEvidence] | None = None,
 ) -> ReconciliationOutputs:
     if not collection_id or not source_revision:
@@ -442,6 +455,11 @@ def reconcile_collection(
         )
     processing_supplied = processing_evidence is not None
     processing_by_citekey = processing_evidence or {}
+    coverage_by_citekey = (
+        coverage_observation.by_citekey()
+        if coverage_observation is not None
+        else {}
+    )
     ordered_records = tuple(sorted(records, key=lambda item: item.citekey))
     try:
         citekeys = tuple(
@@ -463,6 +481,25 @@ def reconcile_collection(
         raise CollectionReconciliationError(
             "bibliography contains duplicate citekeys"
         )
+    if coverage_observation is not None:
+        if coverage_observation.asserted_source_revision != source_revision:
+            raise CollectionReconciliationError(
+                "coverage observation source assertion differs"
+            )
+        extra_coverage = sorted(set(coverage_by_citekey) - set(citekeys))
+        if extra_coverage:
+            raise CollectionReconciliationError(
+                "coverage observation has references outside the "
+                f"bibliography: {extra_coverage}"
+            )
+        if coverage_observation.state is CoverageState.COMPLETE and set(
+            coverage_by_citekey
+        ) != set(citekeys):
+            missing_coverage = sorted(set(citekeys) - set(coverage_by_citekey))
+            raise CollectionReconciliationError(
+                "complete coverage omits bibliography references: "
+                f"{missing_coverage}"
+            )
     if set(collection_rows) != set(citekeys):
         missing = sorted(set(citekeys) - set(collection_rows))
         extra = sorted(set(collection_rows) - set(citekeys))
@@ -503,26 +540,13 @@ def reconcile_collection(
                 transcript_status="not-assessed",
             ),
         )
-        if matched_pdf is not None:
-            status = (
-                PdfStatus.MANAGED_VERIFIED
-                if matched_pdf.historically_verified
-                else PdfStatus.MANAGED_PRESENT
-            )
-            next_action = (
-                "verify-bibliographic-metadata-and-rights"
-                if matched_pdf.historically_verified
-                else "review-pdf-identity-rights-and-record-acquisition"
-            )
-        elif expectation is PdfExpectation.EXPECTED:
-            status = PdfStatus.NOT_LOCATED
-            next_action = "search-authorized-roots-or-record-access-status"
-        elif expectation is PdfExpectation.NOT_APPLICABLE:
-            status = PdfStatus.PDF_NOT_APPLICABLE
-            next_action = "verify-non-pdf-source-locator"
-        else:
-            status = PdfStatus.PDF_APPLICABILITY_REVIEW
-            next_action = "decide-whether-a-pdf-is-applicable"
+        coverage_item = coverage_by_citekey.get(record.citekey)
+        status, next_action = _classify_pdf_status(
+            matched_pdf=matched_pdf,
+            expectation=expectation,
+            observation=coverage_observation,
+            evidence=coverage_item,
+        )
         duplicate_citekeys = (
             tuple(
                 sorted(
@@ -569,13 +593,12 @@ def reconcile_collection(
                 discovery_evidence=(
                     matched_pdf.discovery_evidence
                     if matched_pdf is not None
-                    else ()
+                    else _coverage_evidence(coverage_item)
                 ),
                 duplicate_citekeys=duplicate_citekeys,
-                access_status=(
-                    "managed-local-access"
-                    if matched_pdf is not None
-                    else "not-assessed"
+                access_status=_access_status(
+                    matched_pdf=matched_pdf,
+                    evidence=coverage_item,
                 ),
                 rights_status="not-assessed",
                 ingestion_status=processing.ingestion_status,
@@ -611,22 +634,10 @@ def reconcile_collection(
         if pdf.citekey not in seed
     )
     counts = _counts(tuple(references), extras, citation_closure)
-    coverage = (
-        "preserved-bibliography-snapshot",
-        "collection-row-evidence",
-        "managed-pdf-directory-only",
-        "privacy-reduced-source-discovery",
-        (
-            "existing-ingestion-and-transcript-state"
-            if processing_supplied
-            else "ingestion-and-transcript-state-not-supplied"
-        ),
-        (
-            "isolated-manuscript-citation-closure"
-            if citation_closure is not None
-            else "citation-closure-not-supplied"
-        ),
-        "no-additional-filesystem-or-cloud-roots-scanned",
+    coverage = _coverage_claims(
+        coverage_observation=coverage_observation,
+        processing_supplied=processing_supplied,
+        citation_closure_supplied=citation_closure is not None,
     )
     bibliography_sha256 = hashlib.sha256(bibliography_bytes).hexdigest()
     manifest_payload = {
@@ -635,6 +646,21 @@ def reconcile_collection(
         "collection_id": collection_id,
         "source_revision": source_revision,
         "bibliography_sha256": bibliography_sha256,
+        "coverage_observation_id": (
+            coverage_observation.coverage_id
+            if coverage_observation is not None
+            else None
+        ),
+        "coverage_state": (
+            coverage_observation.state
+            if coverage_observation is not None
+            else None
+        ),
+        "ambiguity_evaluation": (
+            coverage_observation.ambiguity_evaluation
+            if coverage_observation is not None
+            else AmbiguityEvaluation.NOT_EVALUATED
+        ),
         "coverage": list(coverage),
         "references": [asdict(record) for record in references],
         "extra_pdfs": [asdict(extra) for extra in extras],
@@ -646,13 +672,32 @@ def reconcile_collection(
         collection_id=collection_id,
         source_revision=source_revision,
         bibliography_sha256=bibliography_sha256,
+        coverage_observation_id=(
+            coverage_observation.coverage_id
+            if coverage_observation is not None
+            else None
+        ),
+        coverage_state=(
+            coverage_observation.state
+            if coverage_observation is not None
+            else None
+        ),
+        ambiguity_evaluation=(
+            coverage_observation.ambiguity_evaluation
+            if coverage_observation is not None
+            else AmbiguityEvaluation.NOT_EVALUATED
+        ),
         coverage=coverage,
         references=tuple(references),
         extra_pdfs=extras,
         counts=counts,
         manifest_id=_stable_id("collection-manifest", manifest_payload),
     )
-    rendered = _render_outputs(manifest, citation_closure)
+    rendered = _render_outputs(
+        manifest,
+        citation_closure,
+        coverage_observation,
+    )
     return ReconciliationOutputs(
         manifest=manifest,
         citation_closure=citation_closure,
@@ -866,6 +911,137 @@ def _strip_latex_comment(line: str) -> str:
     return line
 
 
+def _classify_pdf_status(
+    *,
+    matched_pdf: ManagedPdf | None,
+    expectation: PdfExpectation,
+    observation: CoverageObservation | None,
+    evidence: ReferenceCoverage | None,
+) -> tuple[PdfStatus, str]:
+    if matched_pdf is not None:
+        return (
+            (
+                PdfStatus.MANAGED_VERIFIED
+                if matched_pdf.historically_verified
+                else PdfStatus.MANAGED_PRESENT
+            ),
+            (
+                "verify-bibliographic-metadata-and-rights"
+                if matched_pdf.historically_verified
+                else "review-pdf-identity-rights-and-record-acquisition"
+            ),
+        )
+    if expectation is PdfExpectation.NOT_APPLICABLE:
+        if evidence is not None and (
+            evidence.candidates
+            or evidence.access_state is not CoverageAccessState.NONE
+        ):
+            return (
+                PdfStatus.PDF_APPLICABILITY_REVIEW,
+                "resolve-source-type-and-pdf-applicability-conflict",
+            )
+        return (
+            PdfStatus.PDF_NOT_APPLICABLE,
+            "verify-non-pdf-source-locator",
+        )
+    if expectation is PdfExpectation.REVIEW:
+        return (
+            PdfStatus.PDF_APPLICABILITY_REVIEW,
+            "decide-whether-a-pdf-is-applicable",
+        )
+    if evidence is None or observation is None:
+        return (
+            PdfStatus.NOT_YET_SEARCHED,
+            "supply-typed-coverage-or-search-authorized-roots",
+        )
+    if evidence.access_state is CoverageAccessState.CLOUD_PLACEHOLDER:
+        return (
+            PdfStatus.CLOUD_PLACEHOLDER,
+            "request-explicit-placeholder-hydration-authorization",
+        )
+    if evidence.access_state is CoverageAccessState.ACCESS_CONTROLLED:
+        return (
+            PdfStatus.ACCESS_CONTROLLED,
+            "record-lawful-access-path-without-bypassing-controls",
+        )
+    if evidence.access_state is CoverageAccessState.FULL_TEXT_NOT_PUBLIC:
+        return (
+            PdfStatus.FULL_TEXT_NOT_PUBLIC,
+            "record-public-metadata-and-private-access-limits",
+        )
+    if evidence.candidates:
+        if evidence.competing_content_count > 1:
+            return (
+                PdfStatus.AMBIGUOUS_MATCHES,
+                "review-competing-candidate-identities",
+            )
+        if evidence.competing_content_count == 1:
+            return (
+                PdfStatus.LOCATED_UNVERIFIED,
+                "verify-candidate-identity-rights-and-version",
+            )
+        if evidence.alternate_content_count:
+            return (
+                PdfStatus.ALTERNATE_VERSION_ONLY,
+                "review-alternate-version-identity-and-rights",
+            )
+        raise CollectionReconciliationError(
+            "coverage candidates have no classifiable content identity"
+        )
+    if not evidence.no_match:
+        raise CollectionReconciliationError(
+            "coverage evidence has no classifiable outcome"
+        )
+    if observation.state is CoverageState.COMPLETE:
+        return (
+            PdfStatus.NOT_LOCATED,
+            "record-completed-coverage-or-authorize-new-roots",
+        )
+    if observation.state is CoverageState.INCOMPLETE:
+        return (
+            PdfStatus.SEARCH_INCOMPLETE,
+            "complete-or-supersede-the-bounded-search",
+        )
+    if observation.state is CoverageState.FAILED:
+        return (
+            PdfStatus.SEARCH_FAILED,
+            "resolve-recorded-search-failure-before-absence-claim",
+        )
+    return (
+        PdfStatus.NOT_YET_SEARCHED,
+        "search-explicitly-authorized-roots",
+    )
+
+
+def _coverage_evidence(
+    evidence: ReferenceCoverage | None,
+) -> tuple[str, ...]:
+    if evidence is None:
+        return ()
+    values = set(evidence.evidence)
+    values.update(
+        f"candidate-content:sha256:{candidate.sha256}"
+        for candidate in evidence.candidates
+    )
+    return tuple(sorted(values))
+
+
+def _access_status(
+    *,
+    matched_pdf: ManagedPdf | None,
+    evidence: ReferenceCoverage | None,
+) -> str:
+    if matched_pdf is not None:
+        return "managed-local-access"
+    if evidence is None:
+        return "not-assessed"
+    if evidence.access_state is not CoverageAccessState.NONE:
+        return evidence.access_state.value
+    if evidence.candidates:
+        return "candidate-access-unverified"
+    return "searched-no-access-evidence"
+
+
 def _pdf_expectation(record: ReferenceRecord) -> PdfExpectation:
     source_type = _source_type(record)
     if record.entry_type.lower() in _EXPECTED_PDF_TYPES:
@@ -911,6 +1087,50 @@ def _full_text_expected(expectation: PdfExpectation) -> bool | None:
     return None
 
 
+def _coverage_claims(
+    *,
+    coverage_observation: CoverageObservation | None,
+    processing_supplied: bool,
+    citation_closure_supplied: bool,
+) -> tuple[str, ...]:
+    values = {
+        "preserved-bibliography-bytes",
+        "collection-row-evidence",
+        "managed-pdf-directory",
+        (
+            "processing-evidence:supplied"
+            if processing_supplied
+            else "processing-evidence:not-supplied"
+        ),
+        (
+            "citation-closure:supplied"
+            if citation_closure_supplied
+            else "citation-closure:not-supplied"
+        ),
+    }
+    if coverage_observation is None:
+        values.update(
+            {
+                "pdf-coverage:not-supplied",
+                "ambiguity:not-evaluated",
+            }
+        )
+    else:
+        values.update(
+            {
+                f"pdf-coverage:{coverage_observation.state.value}",
+                f"pdf-coverage-id:{coverage_observation.coverage_id}",
+                "source-revision:asserted-not-verified",
+                f"ambiguity:{coverage_observation.ambiguity_evaluation.value}",
+                "authorized-roots:"
+                + ",".join(coverage_observation.authorized_root_aliases),
+                f"coverage-exclusions:{len(coverage_observation.exclusions)}",
+                f"coverage-failures:{len(coverage_observation.failures)}",
+            }
+        )
+    return tuple(sorted(values))
+
+
 def _counts(
     references: tuple[CollectionReference, ...],
     extras: tuple[ExtraPdf, ...],
@@ -926,13 +1146,51 @@ def _counts(
             and record.managed_pdf is None
             for record in references
         ),
+        "not_yet_searched": sum(
+            record.pdf_status is PdfStatus.NOT_YET_SEARCHED
+            for record in references
+        ),
+        "search_incomplete": sum(
+            record.pdf_status is PdfStatus.SEARCH_INCOMPLETE
+            for record in references
+        ),
+        "search_failed": sum(
+            record.pdf_status is PdfStatus.SEARCH_FAILED
+            for record in references
+        ),
+        "not_located": sum(
+            record.pdf_status is PdfStatus.NOT_LOCATED for record in references
+        ),
+        "located_unverified": sum(
+            record.pdf_status is PdfStatus.LOCATED_UNVERIFIED
+            for record in references
+        ),
+        "ambiguous_matches": sum(
+            record.pdf_status is PdfStatus.AMBIGUOUS_MATCHES
+            for record in references
+        ),
+        "alternate_version_only": sum(
+            record.pdf_status is PdfStatus.ALTERNATE_VERSION_ONLY
+            for record in references
+        ),
+        "cloud_placeholders": sum(
+            record.pdf_status is PdfStatus.CLOUD_PLACEHOLDER
+            for record in references
+        ),
+        "access_controlled": sum(
+            record.pdf_status is PdfStatus.ACCESS_CONTROLLED
+            for record in references
+        ),
+        "full_text_not_public": sum(
+            record.pdf_status is PdfStatus.FULL_TEXT_NOT_PUBLIC
+            for record in references
+        ),
         "pdf_applicability_review": sum(
-            record.pdf_expectation is PdfExpectation.REVIEW
-            and record.managed_pdf is None
+            record.pdf_status is PdfStatus.PDF_APPLICABILITY_REVIEW
             for record in references
         ),
         "pdf_not_applicable": sum(
-            record.pdf_expectation is PdfExpectation.NOT_APPLICABLE
+            record.pdf_status is PdfStatus.PDF_NOT_APPLICABLE
             for record in references
         ),
         "extra_pdfs": len(extras),
@@ -983,6 +1241,7 @@ def _counts(
 def _render_outputs(
     manifest: CollectionManifest,
     closure: CitationClosure | None,
+    coverage_observation: CoverageObservation | None,
 ) -> dict[str, bytes]:
     missing_rows = [
         record
@@ -1005,6 +1264,17 @@ def _render_outputs(
                     "schema_version": _SCHEMA_VERSION,
                     "status": "not-supplied",
                     "source_revision": manifest.source_revision,
+                }
+            ).encode("utf-8")
+        ),
+        "coverage-observation.json": (
+            coverage_observation.to_json().encode("utf-8")
+            if coverage_observation is not None
+            else _pretty_json(
+                {
+                    "schema_version": 1,
+                    "status": "not-supplied",
+                    "ambiguity_evaluation": "not-evaluated",
                 }
             ).encode("utf-8")
         ),

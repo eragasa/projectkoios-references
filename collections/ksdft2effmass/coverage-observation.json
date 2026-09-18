@@ -1,0 +1,1009 @@
+{
+  "ambiguity_evaluation": "not-evaluated",
+  "asserted_source_revision": "64e28463a909777771f4f74b59ed4508911b63d4",
+  "authorized_root_aliases": [
+    "dlsu-projectkoios-vault",
+    "dlsu-teaching-vault",
+    "dropbox-notes",
+    "dropbox-references",
+    "dropbox-research-notes"
+  ],
+  "coverage_id": "pdf-coverage:sha256:5467b90829b7dad5decb04cd908ae00fddad3ab0ef0fecd8064507fc8fb169a3",
+  "exclusions": [
+    "ambiguity-candidate-inventory-not-retained",
+    "cloud-placeholder-state-not-evaluated",
+    "legacy-root-completion-not-attested",
+    "personal-and-finance-vaults-not-searched"
+  ],
+  "failures": [],
+  "references": [
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "angelone2024",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "baldereschiLipari1973",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "bect2021discretization",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "bertotCasteran2004",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "bjork1973",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 1769846,
+          "relative_path": "references_dft/blochl1994_paw.pdf",
+          "root_alias": "dropbox-references",
+          "sha256": "5c2079e451c4a2e95f6dfb945c0ff331875d88905c6480e7405d025f303c4c02",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "blochl1994paw",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "bonneau2001",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "bornOppenheimer1927",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "brouder2007",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 2107315,
+          "relative_path": "03_references/articles/burt1992.pdf",
+          "root_alias": "dlsu-teaching-vault",
+          "sha256": "f9d71310259366874009b2c1f85b9ef65eca67798b464cdf3f648cf84ff097aa",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "burt1992",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 354633,
+          "relative_path": "03_references/articles/burt1999.pdf",
+          "root_alias": "dlsu-teaching-vault",
+          "sha256": "5409e076717b73ae20cd16997515f095e3565853f0c67ba7cc6db7231ab7d328",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "burt1999",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "carnimeo2023",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "cawley2010",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "coveney2021reliability",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "davis1970",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "deeptbProject2024",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "demouraUllrich2021",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 9811983,
+          "relative_path": "03_references/articles/Ermoneit2026.pdf",
+          "root_alias": "dlsu-teaching-vault",
+          "sha256": "3b5438898e03a4d40c702c6974b8f41b0e86632a108f103f02112259d37926f9",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "ermoneit2026",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "feshbach1958",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "feshbach1962",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "foreman1993",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "foreman2005",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "freysoldt2009",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "freysoldt2014",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "fried2025pointDefects",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 1415975,
+          "relative_path": "references_dft/gianozzi2009_quantumespresso.pdf",
+          "root_alias": "dropbox-references",
+          "sha256": "1f2702616d1fc269af1e94d5a440c49d661d6a46a0028210cd5eac81ad486843",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "giannozzi2009",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "giannozzi2017",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "giannozzi2020",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "groen2021vecmatk",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "gu2024deeptb",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "hamann2013",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "higham1986",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "hilbert1902",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 838879,
+          "relative_path": "dft/hohenberg1964_dft.pdf",
+          "root_alias": "dropbox-notes",
+          "sha256": "d241218df9578242dd461101f369c4a7d3ed58388567897a53f2e885a1be8a97",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "hohenberg1964",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 10415515,
+          "relative_path": "03_references/textbooks/Kato2Ed.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "ec4a79bbbcd6e94097c04a5cd2e324c00ca776349c3b9559e779e79cfbc8bdf3",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "kato1995",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 6914153,
+          "relative_path": "03_references/textbooks/kittel2004_solidstate_8th.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "7c177d8ce281eeb1a1e0897e8d711bd908c2657ec42abd690ff1105533b7a6ed",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "kittel2004",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "kohn1959",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 530221,
+          "relative_path": "dft/kohn1965_ksequations.pdf",
+          "root_alias": "dropbox-notes",
+          "sha256": "99685aebe6c51a23ffe4288394f8b8fa5dfe9fd33956348851d1a0354155c83b",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "kohn1965",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "kohnLuttinger1955donor",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "komsa2012",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "li2022deeph",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "li2025mlreview",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "lowdin1982",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 1411440,
+          "relative_path": "03_references/articles/luttingerkhon1955.pdf",
+          "root_alias": "dlsu-teaching-vault",
+          "sha256": "0f9e4d89833fe90acdbe69569bcded984139a5dc64f3f29425c880f1862b5e17",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "luttingerKohn1955",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 19016486,
+          "relative_path": "03_references/textbooks/dokumen.pub_electronic-structure-basic-theory-and-practical-methods-2nd-edition-2nbsped-9781108429900-9781108555586.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "3c491ea46a7c8ddcd940c957a297e56fd6165b75f7952c5ba293c0fb2b1d5220",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "martin2020",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 503139,
+          "relative_path": "03_references/articles/marzari1997.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "56bee626804d3f0959b64e1c22b5e74cde8c8ee79a1ca140e0a8b5427e8137e8",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "marzari1997",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "marzari2012",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "mathlib2020",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "mclachlan1947",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "monkhorst1976",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 5294014,
+          "relative_path": "_notes_VVUQ/NRC_VVUQ.pdf",
+          "root_alias": "dropbox-research-notes",
+          "sha256": "6a732766adb7af43eb6f585a46f1795e56130dae2672c1da490bd71033b5efc3",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "nationalResearchCouncil2012",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "neumaier2004",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 6067602,
+          "relative_path": "03_references/textbooks/NielsenChuang2Ed.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "d7a7e784cad22e6a039ddd215be6fff27098e5997e9f33a15ed4c9994839949a",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "nielsenchuang2010",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "nipkowPaulsonWenzel2002",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "paier2006",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 154271,
+          "relative_path": "references_dft/perdew1996_gga_pbe.pdf",
+          "root_alias": "dropbox-references",
+          "sha256": "fa60ddfeb4bc6c2eebc5037cf04dcc802bb6757e98fedcfc0129029fa8dbee91",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "perdew1996",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "perdewLevy1983",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "pizzi2020",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "prodanKohn2005",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "pseudodojoRepository",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "quantumEspressoDocumentation",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "quantumEspressoPwInput",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 12714345,
+          "relative_path": "03_references/textbooks/reed1975_MathematicalPhysicsII.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "860c253c1801841fc10ff3fccde9db647924ad70ad92e91dab9f5bb4eedda405",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "reedSimon1975",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 381561,
+          "relative_path": "03_references/articles/Rostgaard2009.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "323846b3c7455d61b75a6aaecd300d850fae9ce36864f5e28d66aeecb3741a02",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "rostgaard2009",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "rubel2021effectiveMass",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "sandve2013",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "schattauer2022defects",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "schmudgen2012",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "schonemann1966",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "shamSchluter1983",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 7220706,
+          "relative_path": "03_references/textbooks/Shankar2Ed.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "80fde605baa846ac67d752e208e53bd546cff4ff4121ae8d5e3df0ae778bcd94",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "shankar1994",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "simon2005",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 5627954,
+          "relative_path": "03_references/textbooks/SimonSS1Ed.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "46807198536b8672000463b8d9c8ae555f4955ba0ad0e80cec19b01671030be2",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "simon2013",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "slater1954",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 3934630,
+          "relative_path": "03_references/articles/souza2001.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "212c45940705cbff3609926b112e1223eae97dce26c5ca44fc416a862ddb5463",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "souza2001",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "strikwerda2004",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 20143593,
+          "relative_path": "03_references/textbooks/SzeLee3Ed.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "539257eb20229bee438dbd628e017bcf8ba6bb6348198ce1e9000cd685d7263e",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "szeLee2012",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "tantardini2024",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "teschl2014",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "vansetten2018",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "vogl1983",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "wannier1937",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "wannier90Website",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "yates2007",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "ye2021uqPatterns",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [
+        {
+          "byte_size": 9995980,
+          "relative_path": "03_references/textbooks/YuCardona4Ed.pdf",
+          "root_alias": "dlsu-projectkoios-vault",
+          "sha256": "acfc317504ba1e20a14686c9cbf66b542fb844b4d29b9cc66307598961963f30",
+          "version_relation": "primary-or-unknown"
+        }
+      ],
+      "citekey": "yuCardona2010",
+      "evidence": [
+        "legacy-source-discovery-match"
+      ],
+      "no_match": false
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "yuan2024deephr",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "yuan2026deephr",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "zhang2024selfConsistency",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    },
+    {
+      "access_state": "none",
+      "candidates": [],
+      "citekey": "zou2026mltbReview",
+      "evidence": [
+        "legacy-source-discovery-unmatched-list"
+      ],
+      "no_match": true
+    }
+  ],
+  "schema_version": 1,
+  "state": "incomplete"
+}

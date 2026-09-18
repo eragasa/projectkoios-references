@@ -38,6 +38,15 @@ from projectkoios.references.collection_reconciliation import (
     scan_managed_pdfs,
     scan_processing_evidence,
 )
+from projectkoios.references.coverage import (
+    AmbiguityEvaluation,
+    CandidateVersionRelation,
+    CoverageAccessState,
+    CoverageCandidate,
+    CoverageObservation,
+    CoverageState,
+    ReferenceCoverage,
+)
 from projectkoios.references.models import (
     AbstractRecord,
     BibliographyOccurrence,
@@ -60,6 +69,7 @@ from projectkoios.references.path_safety import (
 
 __all__ = [
     "AbstractRecord",
+    "AmbiguityEvaluation",
     "AcquisitionEntry",
     "AcquisitionManifest",
     "AssetCandidate",
@@ -71,11 +81,16 @@ __all__ = [
     "CitationCandidate",
     "CitationClosure",
     "CitationEdge",
+    "CandidateVersionRelation",
     "CitationStatus",
     "CollectionManifest",
     "CollectionReconciliationError",
     "CollectionReference",
     "CollectionRowEvidence",
+    "CoverageAccessState",
+    "CoverageCandidate",
+    "CoverageObservation",
+    "CoverageState",
     "ManagedPdf",
     "PdfExpectation",
     "PathSafetyError",
@@ -84,6 +99,7 @@ __all__ = [
     "PublicationResult",
     "ReconciliationOutputs",
     "ReferenceAlias",
+    "ReferenceCoverage",
     "ReferenceCatalog",
     "ReferenceFilenames",
     "ReferenceRecord",

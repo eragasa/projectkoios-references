@@ -14,7 +14,8 @@ promoted into an availability, rights, relevance, or scientific claim.
 The canonical reference convention uses one accepted BibLaTeX citation key as
 the basename of both the reference note and local PDF. See
 [Reference object convention](docs/reference-object-convention.md),
-[Literature-review ingestion](docs/literature-review-ingestion.md), and the
+[Literature-review ingestion](docs/literature-review-ingestion.md),
+[PDF coverage observations](docs/coverage-observations.md), and the
 [reference working catalog](docs/reference-catalog.md). Deferred graph,
 metadata, review, and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
@@ -43,6 +44,7 @@ koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
   .koios/references/example/reconciliation-0.4.0 \
   --collection-id example --source-revision REV \
   --source-discovery source-discovery.json \
+  --coverage-observation coverage-observation.json \
   --manuscript-root /isolated/source/docs/publications \
   --ingestion-root /managed/workspace/.koios/ingestion
 koios-ref validate references.bib /path/to/notes /path/to/pdfs
@@ -54,10 +56,11 @@ koios-ref validate references.bib /path/to/notes /path/to/pdfs
 managed PDFs, ignores commented LaTeX citations and macro placeholders,
 classifies source/PDF applicability conservatively, and records metadata,
 access, rights, ingestion, and transcript status without changing source
-bibliographies or assets. Its absence claims are limited to the supplied
-managed directory and privacy-reduced discovery evidence; it does not scan
-other roots, hydrate cloud placeholders, download sources, verify rights, or
-promote bibliography records.
+bibliographies or assets. Absence and discovery statuses require a typed,
+content-identified coverage observation: no coverage produces
+`not-yet-searched`, and incomplete or failed coverage cannot produce
+`not-located`. The command does not scan additional roots, hydrate cloud
+placeholders, download sources, verify rights, or promote bibliography records.
 
 Asset scans store only search-root aliases and relative paths. Applying a
 candidate requires a separate command and rechecks its planned hash. Authorized

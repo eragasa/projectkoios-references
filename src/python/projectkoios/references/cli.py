@@ -28,6 +28,7 @@ from projectkoios.references.collection_reconciliation import (
     scan_managed_pdfs,
     scan_processing_evidence,
 )
+from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
 from projectkoios.references.graph import load_candidate_graph
 from projectkoios.references.models import (
@@ -102,6 +103,7 @@ def _parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--collection-id", required=True)
     reconcile.add_argument("--source-revision", required=True)
     reconcile.add_argument("--source-discovery", type=Path)
+    reconcile.add_argument("--coverage-observation", type=Path)
     reconcile.add_argument("--manuscript-root", type=Path)
     reconcile.add_argument("--ingestion-root", type=Path)
 
@@ -265,6 +267,16 @@ def main(arguments: list[str] | None = None) -> int:
             if args.ingestion_root is not None
             else None
         )
+        coverage_observation = (
+            CoverageObservation.from_json(
+                read_path_text(
+                    args.coverage_observation,
+                    label="coverage observation",
+                )
+            )
+            if args.coverage_observation is not None
+            else None
+        )
         outputs = reconcile_collection(
             imported.records,
             bibliography_bytes=bibliography_bytes,
@@ -273,6 +285,7 @@ def main(arguments: list[str] | None = None) -> int:
             collection_rows=load_collection_rows(args.corpus),
             managed_pdfs=managed_pdfs,
             citation_closure=citation_closure,
+            coverage_observation=coverage_observation,
             processing_evidence=processing_evidence,
         )
         publication = publish_reconciliation(

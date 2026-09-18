@@ -3,6 +3,12 @@ import json
 import re
 from pathlib import Path
 
+from projectkoios.references import (
+    AmbiguityEvaluation,
+    CoverageObservation,
+    CoverageState,
+)
+
 _PROJECT_ROOT = Path(__file__).parent.parent
 _COLLECTION = _PROJECT_ROOT / "collections/ksdft2effmass"
 
@@ -46,3 +52,17 @@ def test__source_discovery__contains_privacy_reduced_paths() -> None:
         assert not Path(match["source_relative_path"]).is_absolute()
         assert Path(match["vault_asset"]).name == (f"{match['citekey']}.pdf")
         assert re.fullmatch(r"[0-9a-f]{64}", match["sha256"])
+
+
+def test__coverage_observation__marks_legacy_search_incomplete() -> None:
+    observation = CoverageObservation.from_json(
+        (_COLLECTION / "coverage-observation.json").read_text(encoding="utf-8")
+    )
+
+    assert observation.state is CoverageState.INCOMPLETE
+    assert observation.ambiguity_evaluation is AmbiguityEvaluation.NOT_EVALUATED
+    assert len(observation.references) == 90
+    assert {item.citekey for item in observation.references} == set(
+        _seed_keys()
+    )
+    assert sum(item.no_match for item in observation.references) == 68

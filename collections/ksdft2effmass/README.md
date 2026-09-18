@@ -19,14 +19,19 @@ were not changed.
   trees, active Obsidian vaults, and Downloads.
 - 22 strong local PDF matches were copied into the private Project Koios
   working vault under the matching citation-key filenames.
-- 68 PDFs were not located with sufficient confidence.
+- 68 references had no retained strong match in the incomplete legacy pass.
+  This is not a definitive `not-located` result.
 - 90 reference-note stubs were created in the private working vault.
 
 ## Files
 
 - `seed.bib` — read-only bibliography snapshot;
 - `corpus.csv` — review queue and note/PDF status;
-- `source-discovery.json` — privacy-reduced discovery evidence and checksums.
+- `source-discovery.json` — preserved privacy-reduced legacy discovery evidence
+  and checksums;
+- `coverage-observation.json` — content-identified typed projection of that
+  legacy evidence, explicitly classified as `incomplete` with ambiguity not
+  evaluated.
 
 Tracked reports use aliases and paths relative to searched source roots. They do
 not disclose absolute home-directory paths. Personal and finance vault areas
