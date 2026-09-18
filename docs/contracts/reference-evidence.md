@@ -1,5 +1,18 @@
 # Reference evidence contracts
 
+## Contract metadata
+
+| Field | Value |
+|---|---|
+| Contract ID | `projectkoios.references.reference-evidence` |
+| Owner | `projectkoios-references` |
+| Status | Proposed |
+| Contract version | Unassigned |
+| Architecture record | [`ADR20260918`](https://github.com/eragasa/projectkoios/blob/main/docs/adr.20260918.evidence-grounded-scientific-rag.md) |
+| Task | [`REF-RAG-01`](https://github.com/eragasa/projectkoios-references/issues/1) |
+| Supersedes | None |
+| Consumers | `projectkoios-search`, `projectkoios-research` |
+
 ## Status
 
 Proposed under
