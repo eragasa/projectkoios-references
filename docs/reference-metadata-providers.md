@@ -31,7 +31,8 @@ containing:
 - original retrieval time with a UTC offset;
 - source URL;
 - exact response byte length and SHA-256 digest;
-- parser and observation-generator versions; and
+- parser and observation-generator versions;
+- the effective response-byte ceiling and complete I/O-profile identity; and
 - original cache-publication status.
 
 The core envelope accepts bounded safe provider/parser identifiers and bounded,
@@ -60,8 +61,10 @@ or generated text can receive provider-abstract status.
 
 ## Bounded cache
 
-Crossref observations use content-addressed files beneath the explicitly
-configured cache root. A request may retain multiple observations. Refreshing a
+Crossref schema-2 observations use `v2-` content-addressed files beneath the
+explicitly configured cache root. A request-scoped legacy `v1-` entry is treated
+as incompatible and blocks transport fallback rather than being ignored or
+silently upgraded. A request may retain multiple observations. Refreshing a
 changed response creates another file and never overwrites an earlier
 observation. Normal replay chooses the uniquely latest original retrieval time;
 an equal-time conflict fails closed rather than choosing implicitly.
@@ -75,17 +78,23 @@ base64 validity, byte length, response hash, and content-addressed filename.
 Malformed, partial, oversized, incompatible, conflicting, symlinked, or
 otherwise unsafe entries are not repaired or overwritten.
 
-Current bounds are 2,000,000 provider-response bytes and 3,000,000 serialized
-cache bytes, with additional list and field limits in the Crossref parser. A
+Current bounds are 2,000,000 provider-response bytes, 3,000,000 serialized
+cache bytes, 1,000 cache files, 2,000 cache-directory entries, 500,000,000
+serialized cache bytes per request replay, and JSON depth 64, with additional
+list and field limits in the Crossref parser. The effective
+profile is content-identified in every observation; incompatible replay limits
+fail closed. A
 Crossref response must explicitly report `status: "ok"` before its `message` can
 be interpreted; failed or partial responses cannot become metadata absence.
 Unknown Crossref response fields remain preserved in the exact response bytes
 and do not prevent parsing known fields. Unknown cache-envelope fields are
 rejected because cache interpretation must be versioned explicitly.
 
-Deeper parser-nesting and decompression-wide resource policy remains deferred to
-REF-METADATA parser-hardening issue #24. The current byte, item, and field bounds
-remain enforced until that policy is defined.
+The transport reads at most one byte beyond the response ceiling, JSON nesting
+is checked before parser allocation, and directory cardinality is checked before
+sorting. Crossref does not accept content encoding that requires a repository-
+owned decompression step; any future compressed transport requires a separately
+bounded decompression policy.
 
 ## Status vocabulary
 

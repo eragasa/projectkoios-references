@@ -20,7 +20,8 @@ the basename of both the reference note and local PDF. See
 [reconciliation package model](docs/reconciliation-packages.md), the
 [ingestion reference-evidence consumer](docs/ingestion-reference-evidence.md),
 the [source-backed citation graph](docs/citation-graph.md), and the
-[reference working catalog](docs/reference-catalog.md). Remaining metadata,
+[reference working catalog](docs/reference-catalog.md), and the
+[bounded reference-I/O policy](docs/reference-io-bounds.md). Remaining metadata,
 review, and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
 
@@ -96,8 +97,10 @@ content-identified coverage observation: no coverage produces
 `not-located`. The command does not scan additional roots, hydrate cloud
 placeholders, download sources, verify rights, or promote bibliography records.
 
-Asset scans store only search-root aliases and relative paths. Plans bind the
-candidate identity and its explicit noncanonical statuses. Applying a candidate
+Asset scans store only search-root aliases and relative paths. Version-2 plans
+bind the complete effective I/O profile, complete-coverage status, candidate
+identity, and explicit noncanonical statuses. A limit diagnostic remains
+`incomplete` and is never serialized as a partial plan. Applying a candidate
 requires a separate command, rechecks its planned hash, and writes a
 candidate-suffixed filename rather than manufacturing a canonical reference
 object. Authorized
@@ -109,7 +112,20 @@ same-directory publication. Provider responses are cached locally under
 is documented in
 [`docs/reference-metadata-providers.md`](docs/reference-metadata-providers.md).
 
-Recurring lawful acquisition uses a separate version-1 manifest. `acquisition-create` reads CSV metadata, resolves each root-relative PDF without permitting traversal, verifies a PDF header, and records its byte size and SHA-256 identity. Required CSV columns are `proposed_citekey`, `root_alias`, `relative_path`, `rights_status`, `asset_status`, and `identity_status`; optional columns are `doi`, `source_url`, and `source_version`. The only permitted identity status is `unaccepted-candidate`, so creating or verifying a manifest cannot claim accepted-reference authority. `acquisition-verify` rechecks all source bytes. Neither command downloads content, bypasses access controls, verifies license claims, edits canonical BibLaTeX, or writes a vault.
+Recurring lawful acquisition uses a separate version-2 manifest. The manifest
+records complete-coverage status and the exact effective I/O-limit profile.
+Version-1 manifests do not contain that evidence and are rejected rather than
+silently relabeled or assigned inferred limits.
+`acquisition-create` reads bounded CSV metadata, resolves each root-relative PDF
+without permitting traversal, streams one size/hash/header observation per
+unique source, and records its byte size and SHA-256 identity. Required CSV
+columns are `proposed_citekey`, `root_alias`, `relative_path`, `rights_status`,
+`asset_status`, and `identity_status`; optional columns are `doi`, `source_url`,
+and `source_version`. The only permitted identity status is
+`unaccepted-candidate`, so creating or verifying a manifest cannot claim
+accepted-reference authority. `acquisition-verify` streams and rechecks every
+source. Neither command downloads content, bypasses access controls, verifies
+license claims, edits canonical BibLaTeX, or writes a vault.
 
 Repository routing is documented in `projectkoios-bootstrap/maps/repositories.md`.
 

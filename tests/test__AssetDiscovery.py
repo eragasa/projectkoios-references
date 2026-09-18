@@ -83,5 +83,11 @@ def test__materialize_asset__checks_planned_hash_and_never_overwrites(
         materialize_asset(
             candidate,
             roots=roots,
+            destination_directory=tmp_path / "assets",
+        )
+    with pytest.raises(ValueError, match="hash changed"):
+        materialize_asset(
+            candidate,
+            roots=roots,
             destination_directory=tmp_path / "other-assets",
         )

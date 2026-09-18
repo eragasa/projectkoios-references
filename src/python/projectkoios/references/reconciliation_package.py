@@ -10,8 +10,14 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Self, cast
 
+from projectkoios.references.io_limits import (
+    RECONCILIATION_PACKAGE_IO_LIMITS,
+    ReferenceIOLimitError,
+    bounded_utf8_size,
+)
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
+    PathLimitError,
     PathSafetyError,
     validate_relative_path,
 )
@@ -22,12 +28,21 @@ PACKAGE_ARTIFACT_KIND = "projectkoios.references.reconciliation-package"
 PACKAGE_DISTRIBUTION = "projectkoios-references"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_PACKAGE_FILES = 100_000
-_MAX_PACKAGE_FILE_BYTES = 4_000_000_000
+_MAX_PACKAGE_FILE_BYTES = 50_000_000
+_MAX_PACKAGE_TOTAL_BYTES = 100_000_000
 _MAX_PACKAGE_MANIFEST_BYTES = 20_000_000
+_MAX_JSON_DEPTH = 64
 
 
 class ReconciliationPackageError(RuntimeError):
     """Raised when a reconciliation package is malformed or differs."""
+
+
+class ReconciliationPackageLimitError(
+    ReferenceIOLimitError,
+    ReconciliationPackageError,
+):
+    """Raised when package verification reaches a declared I/O bound."""
 
 
 @dataclass(frozen=True, slots=True, init=False, eq=False)
@@ -315,6 +330,20 @@ class ReconciliationPackageManifest:
 
     @classmethod
     def from_json(cls, text: str) -> Self:
+        if (
+            bounded_utf8_size(
+                text,
+                max_bytes=_MAX_PACKAGE_MANIFEST_BYTES,
+            )
+            > _MAX_PACKAGE_MANIFEST_BYTES
+        ):
+            raise _limit_error(
+                resource="reconciliation package manifest",
+                limit_name="max_json_bytes",
+                limit=_MAX_PACKAGE_MANIFEST_BYTES,
+                observed=_MAX_PACKAGE_MANIFEST_BYTES + 1,
+            )
+        _validate_json_nesting(text)
         try:
             value = json.loads(text)
         except json.JSONDecodeError as error:
@@ -347,10 +376,27 @@ class ReconciliationPackageManifest:
                 raise ValueError(f"package {field} must be a string")
         if not isinstance(data["components"], list):
             raise ValueError("package components must be an array")
+        if len(data["components"]) > _MAX_PACKAGE_FILES:
+            raise _limit_error(
+                resource="reconciliation package components",
+                limit_name="max_files",
+                limit=_MAX_PACKAGE_FILES,
+                observed=len(data["components"]),
+            )
         if not isinstance(data["inputs"], list) or not isinstance(
             data["outputs"], list
         ):
             raise ValueError("package inputs and outputs must be arrays")
+        if (
+            len(data["inputs"]) > _MAX_PACKAGE_FILES
+            or len(data["outputs"]) > _MAX_PACKAGE_FILES
+        ):
+            raise _limit_error(
+                resource="reconciliation package evidence",
+                limit_name="max_entries",
+                limit=_MAX_PACKAGE_FILES,
+                observed=max(len(data["inputs"]), len(data["outputs"])),
+            )
         source = data["verified_source_tree"]
         manifest = cls(
             schema_version=cast(int, data["schema_version"]),
@@ -452,14 +498,44 @@ def verify_package_files(
 def parse_package_files(
     files: Mapping[str, bytes],
 ) -> LoadedReconciliationPackage:
+    if len(files) > _MAX_PACKAGE_FILES:
+        raise _limit_error(
+            resource="reconciliation package files",
+            limit_name="max_files",
+            limit=_MAX_PACKAGE_FILES,
+            observed=len(files),
+        )
+    oversized = [
+        name
+        for name, content in files.items()
+        if len(content) > _MAX_PACKAGE_FILE_BYTES
+    ]
+    if oversized:
+        raise _limit_error(
+            resource=("reconciliation package file " + sorted(oversized)[0]),
+            limit_name="max_file_bytes",
+            limit=_MAX_PACKAGE_FILE_BYTES,
+            observed=max(len(files[name]) for name in oversized),
+        )
+    total_bytes = sum(len(content) for content in files.values())
+    if total_bytes > _MAX_PACKAGE_TOTAL_BYTES:
+        raise _limit_error(
+            resource="reconciliation package",
+            limit_name="max_total_bytes",
+            limit=_MAX_PACKAGE_TOTAL_BYTES,
+            observed=total_bytes,
+        )
     manifest_bytes = files.get(PACKAGE_MANIFEST_FILENAME)
     if manifest_bytes is None:
         raise ReconciliationPackageError(
             "reconciliation package manifest is missing"
         )
     if len(manifest_bytes) > _MAX_PACKAGE_MANIFEST_BYTES:
-        raise ReconciliationPackageError(
-            "reconciliation package manifest is too large"
+        raise _limit_error(
+            resource="reconciliation package manifest",
+            limit_name="max_json_bytes",
+            limit=_MAX_PACKAGE_MANIFEST_BYTES,
+            observed=len(manifest_bytes),
         )
     try:
         manifest = ReconciliationPackageManifest.from_json(
@@ -491,21 +567,65 @@ def load_reconciliation_package(
             suffix="",
             recursive=False,
             reject_directories=True,
+            max_files=_MAX_PACKAGE_FILES,
+            max_entries=_MAX_PACKAGE_FILES,
+            max_depth=1,
         )
-        if len(relative_files) > _MAX_PACKAGE_FILES:
-            raise ReconciliationPackageError(
-                "reconciliation package file count exceeds limit"
-            )
-        files = {
-            item.name: root.read_bytes(
+        files: dict[str, bytes] = {}
+        total_bytes = 0
+        for item in relative_files:
+            content = root.read_bytes(
                 item,
                 max_bytes=_MAX_PACKAGE_FILE_BYTES,
             )
-            for item in relative_files
-        }
+            total_bytes += len(content)
+            if total_bytes > _MAX_PACKAGE_TOTAL_BYTES:
+                raise _limit_error(
+                    resource="reconciliation package",
+                    limit_name="max_total_bytes",
+                    limit=_MAX_PACKAGE_TOTAL_BYTES,
+                    observed=total_bytes,
+                )
+            files[item.name] = content
+    except PathLimitError as error:
+        raise _limit_error(
+            resource=error.resource,
+            limit_name=error.limit_name,
+            limit=error.limit,
+            observed=error.observed,
+        ) from error
     except PathSafetyError as error:
         raise ReconciliationPackageError(str(error)) from error
     return parse_package_files(files)
+
+
+def _validate_json_nesting(text: str) -> None:
+    depth = 0
+    quoted = False
+    escaped = False
+    for character in text:
+        if escaped:
+            escaped = False
+            continue
+        if quoted and character == "\\":
+            escaped = True
+            continue
+        if character == '"':
+            quoted = not quoted
+            continue
+        if quoted:
+            continue
+        if character in "[{":
+            depth += 1
+            if depth > _MAX_JSON_DEPTH:
+                raise _limit_error(
+                    resource="reconciliation package manifest",
+                    limit_name="max_json_depth",
+                    limit=_MAX_JSON_DEPTH,
+                    observed=depth,
+                )
+        elif character in "]}":
+            depth = max(0, depth - 1)
 
 
 def _jsonable(value: object) -> Any:
@@ -535,7 +655,12 @@ def _validate_evidence(
     ):
         raise ValueError(f"{label} must be a content-evidence tuple")
     if len(values) > _MAX_PACKAGE_FILES:
-        raise ValueError(f"{label} exceeds the hard limit")
+        raise _limit_error(
+            resource=label,
+            limit_name="max_entries",
+            limit=_MAX_PACKAGE_FILES,
+            observed=len(values),
+        )
     _validate_sorted_unique(values, key=_evidence_key, label=label)
     names = tuple(item.filename for item in values)
     if len(names) != len(set(names)):
@@ -555,6 +680,22 @@ def _validate_sorted_unique(
 
 def _evidence_key(value: ContentEvidence) -> tuple[str, str, int, str]:
     return (value.role, value.filename, value.byte_size, value.sha256)
+
+
+def _limit_error(
+    *,
+    resource: str,
+    limit_name: str,
+    limit: int,
+    observed: int,
+) -> ReconciliationPackageLimitError:
+    return ReconciliationPackageLimitError(
+        resource=resource,
+        limit_name=limit_name,
+        limit=limit,
+        observed=observed,
+        limits=RECONCILIATION_PACKAGE_IO_LIMITS,
+    )
 
 
 def _exact_object(

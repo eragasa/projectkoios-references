@@ -7,6 +7,10 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Self, cast
 
+from projectkoios.references.io_limits import (
+    RECONCILIATION_IO_LIMITS,
+    validate_json_text_nesting,
+)
 from projectkoios.references.path_safety import (
     validate_citekey,
     validate_relative_path,
@@ -362,6 +366,11 @@ class CoverageObservation:
 
     @classmethod
     def from_json(cls, text: str) -> Self:
+        validate_json_text_nesting(
+            text,
+            limits=RECONCILIATION_IO_LIMITS,
+            resource="coverage observation JSON",
+        )
         value = json.loads(text)
         data = _exact_object(
             value,

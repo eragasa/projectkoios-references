@@ -37,12 +37,22 @@ from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput,
     load_ingestion_reference_evidence,
 )
+from projectkoios.references.io_limits import (
+    ACQUISITION_IO_LIMITS,
+    ASSET_DISCOVERY_IO_LIMITS,
+    RECONCILIATION_IO_LIMITS,
+    ReferenceIOLimitError,
+    ReferenceIOLimits,
+    bounded_csv_field_size,
+    bounded_utf8_size,
+)
 from projectkoios.references.models import (
     ReviewMembership,
     ReviewStatus,
     SourceAssetRecord,
 )
 from projectkoios.references.path_safety import (
+    PathLimitError,
     read_path_bytes,
     read_path_text,
     write_path_bytes,
@@ -198,26 +208,46 @@ def main(arguments: list[str] | None = None) -> int:
         ReferenceCatalog(args.catalog).initialize()
         return 0
     if args.command == "bib-import":
-        catalog = ReferenceCatalog(args.catalog)
-        catalog.initialize()
         imported = load_bibliography(
             args.bibliography,
             source_id=args.source_id,
             source_revision=args.source_revision,
             source_path=args.source_path,
         )
+        catalog = ReferenceCatalog(args.catalog)
+        catalog.initialize()
         catalog.import_candidates(
             imported.candidates,
             imported.observations,
         )
-        print(json.dumps(catalog.counts(), indent=2))
+        print(
+            json.dumps(
+                {
+                    "catalog_counts": catalog.counts(),
+                    "coverage_status": "complete",
+                    "effective_limits": imported.effective_limits.to_dict(),
+                    "effective_limits_id": imported.effective_limits_id,
+                },
+                indent=2,
+            )
+        )
         return 0
     if args.command == "graph-import":
         graph = load_candidate_graph(args.sources, args.nodes, args.edges)
         catalog = ReferenceCatalog(args.catalog)
         catalog.initialize()
         catalog.import_citation_graph(graph)
-        print(json.dumps(catalog.counts(), indent=2))
+        print(
+            json.dumps(
+                {
+                    "catalog_counts": catalog.counts(),
+                    "coverage_status": "complete",
+                    "effective_limits": asdict(graph.effective_limits),
+                    "effective_limits_id": graph.effective_limits.evidence_id,
+                },
+                indent=2,
+            )
+        )
         return 0
     if args.command == "catalog-summary":
         print(json.dumps(ReferenceCatalog(args.catalog).counts(), indent=2))
@@ -235,13 +265,11 @@ def main(arguments: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "review-import":
-        catalog = ReferenceCatalog(args.catalog)
-        catalog.initialize()
-        stream = io.StringIO(
-            read_path_text(args.corpus, label="review corpus"),
-            newline="",
+        rows = _bounded_csv_rows(
+            args.corpus,
+            label="review corpus",
+            limits=RECONCILIATION_IO_LIMITS,
         )
-        rows = tuple(csv.DictReader(stream))
         memberships: list[ReviewMembership] = []
         for row in rows:
             citekey = row.get("citekey")
@@ -256,18 +284,17 @@ def main(arguments: list[str] | None = None) -> int:
                     status=ReviewStatus(args.status),
                 )
             )
+        catalog = ReferenceCatalog(args.catalog)
+        catalog.initialize()
         catalog.set_review_memberships(tuple(memberships))
         return 0
     if args.command == "collection-reconcile":
-        bibliography_bytes = read_path_bytes(
-            args.bibliography,
-            label="bibliography",
-        )
         imported = load_bibliography(
             args.bibliography,
             source_id=args.collection_id,
             source_revision=args.source_revision,
         )
+        bibliography_bytes = imported.bibliography_bytes
         citation_closure = (
             build_citation_closure(
                 args.manuscript_root,
@@ -298,6 +325,10 @@ def main(arguments: list[str] | None = None) -> int:
             read_path_bytes(
                 args.coverage_observation,
                 label="coverage observation",
+                max_bytes=_required_limit(
+                    RECONCILIATION_IO_LIMITS.max_json_bytes,
+                    "max_json_bytes",
+                ),
             )
             if args.coverage_observation is not None
             else None
@@ -358,7 +389,14 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
     if args.command == "assets-apply":
         plan = AssetDiscoveryPlan.from_json(
-            read_path_text(args.plan, label="asset discovery plan")
+            read_path_text(
+                args.plan,
+                label="asset discovery plan",
+                max_bytes=_required_limit(
+                    ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
+                    "max_json_bytes",
+                ),
+            )
         )
         matches = [
             item
@@ -400,10 +438,15 @@ def main(arguments: list[str] | None = None) -> int:
         print(destination)
         return 0
     if args.command == "assets-record-plan":
-        catalog = ReferenceCatalog(args.catalog)
-        catalog.initialize()
         plan = AssetDiscoveryPlan.from_json(
-            read_path_text(args.plan, label="asset discovery plan")
+            read_path_text(
+                args.plan,
+                label="asset discovery plan",
+                max_bytes=_required_limit(
+                    ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
+                    "max_json_bytes",
+                ),
+            )
         )
         assets = tuple(
             SourceAssetRecord(
@@ -421,20 +464,15 @@ def main(arguments: list[str] | None = None) -> int:
             for candidate in plan.candidates
             if candidate.recommendation == "strong-candidate"
         )
+        catalog = ReferenceCatalog(args.catalog)
+        catalog.initialize()
         catalog.record_source_assets(assets)
         return 0
     if args.command == "acquisition-create":
-        stream = io.StringIO(
-            read_path_text(args.metadata, label="acquisition metadata"),
-            newline="",
-        )
-        rows = tuple(
-            {
-                str(key): str(value)
-                for key, value in row.items()
-                if key is not None and value is not None
-            }
-            for row in csv.DictReader(stream)
+        rows = _bounded_csv_rows(
+            args.metadata,
+            label="acquisition metadata",
+            limits=ACQUISITION_IO_LIMITS,
         )
         manifest = create_acquisition_manifest(
             source_id=args.source_id,
@@ -456,7 +494,14 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
     if args.command == "acquisition-verify":
         manifest = AcquisitionManifest.from_json(
-            read_path_text(args.manifest, label="acquisition manifest")
+            read_path_text(
+                args.manifest,
+                label="acquisition manifest",
+                max_bytes=_required_limit(
+                    ACQUISITION_IO_LIMITS.max_json_bytes,
+                    "max_json_bytes",
+                ),
+            )
         )
         verify_acquisition_manifest(
             manifest,
@@ -468,6 +513,9 @@ def main(arguments: list[str] | None = None) -> int:
                     "schema_version": manifest.schema_version,
                     "source_id": manifest.source_id,
                     "verified": len(manifest.entries),
+                    "coverage_status": "complete",
+                    "effective_limits": ACQUISITION_IO_LIMITS.to_dict(),
+                    "effective_limits_id": (ACQUISITION_IO_LIMITS.evidence_id),
                 },
                 indent=2,
             )
@@ -494,3 +542,82 @@ def main(arguments: list[str] | None = None) -> int:
             print(f"{issue.code}: {issue.path}: {issue.message}")
         return 1 if issues else 0
     raise AssertionError(f"unhandled command: {args.command}")
+
+
+def _bounded_csv_rows(
+    path: Path,
+    *,
+    label: str,
+    limits: ReferenceIOLimits,
+) -> tuple[dict[str, str], ...]:
+    max_csv_bytes = _required_limit(limits.max_csv_bytes, "max_csv_bytes")
+    try:
+        text = read_path_text(
+            path,
+            label=label,
+            max_bytes=max_csv_bytes,
+        )
+    except PathLimitError as error:
+        raise ReferenceIOLimitError(
+            resource=error.resource,
+            limit_name="max_csv_bytes",
+            limit=max_csv_bytes,
+            observed=error.observed,
+            limits=limits,
+        ) from error
+    max_rows = _required_limit(limits.max_rows, "max_rows")
+    max_text_bytes = _required_limit(
+        limits.max_text_bytes,
+        "max_text_bytes",
+    )
+    rows: list[dict[str, str]] = []
+    try:
+        with bounded_csv_field_size(max_text_bytes):
+            reader = csv.DictReader(io.StringIO(text, newline=""))
+            for row_number, row in enumerate(reader, start=1):
+                if row_number > max_rows:
+                    raise ReferenceIOLimitError(
+                        resource=label,
+                        limit_name="max_rows",
+                        limit=max_rows,
+                        observed=row_number,
+                        limits=limits,
+                    )
+                normalized = {
+                    str(key): str(value)
+                    for key, value in row.items()
+                    if key is not None and value is not None
+                }
+                for field_name, field_value in normalized.items():
+                    field_bytes = bounded_utf8_size(
+                        field_value,
+                        max_bytes=max_text_bytes,
+                    )
+                    if field_bytes > max_text_bytes:
+                        raise ReferenceIOLimitError(
+                            resource=(
+                                f"{label} row {row_number} field {field_name}"
+                            ),
+                            limit_name="max_text_bytes",
+                            limit=max_text_bytes,
+                            observed=field_bytes,
+                            limits=limits,
+                        )
+                rows.append(normalized)
+    except csv.Error as error:
+        if "field larger than field limit" in str(error):
+            raise ReferenceIOLimitError(
+                resource=f"{label} CSV field",
+                limit_name="max_text_bytes",
+                limit=max_text_bytes,
+                observed=max_text_bytes + 1,
+                limits=limits,
+            ) from error
+        raise ValueError(f"{label} CSV is malformed") from error
+    return tuple(rows)
+
+
+def _required_limit(value: int | None, name: str) -> int:
+    if value is None:
+        raise ValueError(f"command I/O profile must define {name}")
+    return value

@@ -35,6 +35,7 @@ from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput,
     load_ingestion_reference_evidence,
 )
+from projectkoios.references.io_limits import ReferenceIOLimitError
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,
     FrozenCounts,
@@ -251,6 +252,7 @@ def test__package_manifest__covers_all_payload_outputs_and_bound_inputs(
         "ingestion-reference-evidence",
         "processing-observation",
         "normalized-reconciliation-input",
+        "effective-io-limits",
     } <= roles
     evidence_input = next(
         item
@@ -270,6 +272,7 @@ def test__package_manifest__covers_all_payload_outputs_and_bound_inputs(
         "bibliography-parser",
         "collection-reconciliation",
         "latex-citation-parser",
+        "reference-io-limits",
     }
     assert str(tmp_path) not in package.to_json()
     assert "projectkoios.ingestion.reference-evidence" in (
@@ -409,6 +412,17 @@ def test__package_publication__rejects_incomplete_or_extra_destination(
     (complete / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
     with pytest.raises(CollectionReconciliationError, match="incomplete"):
         publish_reconciliation(outputs, output_directory=complete)
+
+    over_limit = tmp_path / "over-limit"
+    publish_reconciliation(outputs, output_directory=over_limit)
+    oversized = over_limit / "missing-pdfs.csv"
+    oversized.write_bytes(b"")
+    with oversized.open("r+b") as stream:
+        stream.truncate(50_000_001)
+    with pytest.raises(ReferenceIOLimitError) as caught:
+        publish_reconciliation(outputs, output_directory=over_limit)
+    assert caught.value.coverage_status == "incomplete"
+    assert caught.value.limit_name == "max_file_bytes"
 
 
 def test__content_identified_records__have_immutable_nested_state(

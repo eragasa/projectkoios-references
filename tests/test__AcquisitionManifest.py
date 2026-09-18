@@ -150,8 +150,10 @@ def test__acquisition_cli__creates_and_verifies_manifest(
         == 0
     )
     report = json.loads(capsys.readouterr().out)
-    assert report == {
-        "schema_version": 1,
-        "source_id": "operator-recommendation-2026",
-        "verified": 1,
-    }
+    assert report["schema_version"] == 2
+    assert report["source_id"] == "operator-recommendation-2026"
+    assert report["verified"] == 1
+    assert report["coverage_status"] == "complete"
+    assert report["effective_limits_id"].startswith(
+        "reference-io-limits:sha256:"
+    )

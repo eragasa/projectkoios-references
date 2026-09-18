@@ -35,6 +35,8 @@ binds:
   source-bound status projections, and adapter observations under logical names
   rather than producer paths;
 - a normalized immutable record of all reconciliation inputs;
+- canonical `effective-io-limits` bytes containing the complete profile,
+  complete-coverage status, and content-derived profile identity;
 - the package distribution version and the reconciliation, bibliography,
   collection-row, discovery, processing, and citation-parser versions; and
 - every payload output filename, byte size, and SHA-256 digest.

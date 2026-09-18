@@ -7,6 +7,10 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import StrEnum
 from typing import Any, Self, cast
 
+from projectkoios.references.io_limits import (
+    IDENTITY_IO_LIMITS,
+    validate_json_text_nesting,
+)
 from projectkoios.references.models import normalize_doi
 from projectkoios.references.path_safety import (
     validate_citekey,
@@ -1760,6 +1764,11 @@ def _jsonable(value: object) -> Any:
 
 def _canonical_object(text: str, *, label: str) -> dict[str, object]:
     try:
+        validate_json_text_nesting(
+            text,
+            limits=IDENTITY_IO_LIMITS,
+            resource=f"{label} JSON",
+        )
         value = json.loads(text)
     except json.JSONDecodeError as error:
         raise IdentityRecordError(f"{label} is not valid JSON") from error

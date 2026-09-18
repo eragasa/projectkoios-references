@@ -1,15 +1,24 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from projectkoios.references.identity import ReferenceCandidate
+from projectkoios.references.io_limits import (
+    ASSET_DISCOVERY_IO_LIMITS,
+    ReferenceIOLimitError,
+    ReferenceIOLimits,
+    bounded_utf8_size,
+    validate_json_text_nesting,
+)
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
+    PathLimitError,
+    PathSafetyError,
     validate_citekey,
     validate_relative_path,
     validate_root_alias,
@@ -67,6 +76,21 @@ class AssetCandidate:
             raise ValueError("asset candidate citekey must be noncanonical")
         validate_root_alias(self.root_alias)
         validate_relative_path(self.relative_path)
+        if not isinstance(self.score, float) or not 0.0 <= self.score <= 1.0:
+            raise ValueError("asset candidate score must be finite in [0, 1]")
+        if (
+            not isinstance(self.evidence, tuple)
+            or len(self.evidence) > 32
+            or any(
+                not isinstance(item, str)
+                or not item
+                or bounded_utf8_size(item, max_bytes=4_096) > 4_096
+                for item in self.evidence
+            )
+        ):
+            raise ValueError("asset candidate evidence is invalid or unbounded")
+        if self.recommendation not in {"strong-candidate", "manual-review"}:
+            raise ValueError("asset candidate recommendation is unsupported")
         if re.fullmatch(r"[0-9a-f]{64}", self.sha256) is None:
             raise ValueError("asset candidate SHA-256 must be lowercase hex")
         if type(self.byte_size) is not int or self.byte_size <= 0:
@@ -81,18 +105,113 @@ class AssetCandidate:
 @dataclass(frozen=True)
 class AssetDiscoveryPlan:
     schema_version: int
+    coverage_status: str
+    effective_limits: ReferenceIOLimits
+    effective_limits_id: str
     candidates: tuple[AssetCandidate, ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 2:
+            raise ValueError("unsupported asset-plan schema version")
+        if self.coverage_status != "complete":
+            raise ValueError(
+                "published asset plans must have complete coverage"
+            )
+        if self.effective_limits.profile != ASSET_DISCOVERY_IO_LIMITS.profile:
+            raise ValueError("asset-plan I/O-limit profile is incompatible")
+        if self.effective_limits_id != self.effective_limits.evidence_id:
+            raise ValueError("asset-plan I/O-limit identity conflicts")
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2) + "\n"
 
     @classmethod
-    def from_json(cls, text: str) -> AssetDiscoveryPlan:
+    def from_json(
+        cls,
+        text: str,
+        *,
+        limits: ReferenceIOLimits = ASSET_DISCOVERY_IO_LIMITS,
+    ) -> AssetDiscoveryPlan:
+        validate_json_text_nesting(
+            text,
+            limits=limits,
+            resource="asset discovery plan JSON",
+        )
         data = json.loads(text)
-        if data.get("schema_version") != 1:
+        _validate_json_depth(data, limits=limits)
+        if not isinstance(data, dict):
+            raise ValueError("asset plan must be an object")
+        expected_fields = {
+            "schema_version",
+            "coverage_status",
+            "effective_limits",
+            "effective_limits_id",
+            "candidates",
+        }
+        if set(data) != expected_fields:
+            raise ValueError("asset-plan fields are incomplete or unknown")
+        if data.get("schema_version") != 2:
             raise ValueError("unsupported asset-plan schema version")
+        candidates_data = data.get("candidates")
+        if not isinstance(candidates_data, list):
+            raise ValueError("asset-plan candidates must be an array")
+        max_candidates = _required_limit(
+            limits.max_candidates,
+            "max_candidates",
+        )
+        if len(candidates_data) > max_candidates:
+            raise ReferenceIOLimitError(
+                resource="asset discovery plan candidates",
+                limit_name="max_candidates",
+                limit=max_candidates,
+                observed=len(candidates_data),
+                limits=limits,
+            )
+        limits_data = data.get("effective_limits")
+        if not isinstance(limits_data, dict):
+            raise ValueError("asset-plan effective limits are missing")
+        try:
+            recorded_limits = ReferenceIOLimits(**limits_data)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "asset-plan effective limits are malformed"
+            ) from error
+        candidate_fields = {
+            "candidate_id",
+            "proposed_citekey",
+            "identity_status",
+            "citekey_status",
+            "root_alias",
+            "relative_path",
+            "score",
+            "evidence",
+            "recommendation",
+            "sha256",
+            "byte_size",
+        }
+        string_fields = candidate_fields - {
+            "score",
+            "evidence",
+            "byte_size",
+        }
+        if any(
+            not isinstance(item, dict)
+            or set(item) != candidate_fields
+            or any(not isinstance(item[field], str) for field in string_fields)
+            or type(item["score"]) not in {int, float}
+            or type(item["byte_size"]) is not int
+            or not isinstance(item["evidence"], list)
+            or any(not isinstance(value, str) for value in item["evidence"])
+            for item in candidates_data
+        ):
+            raise ValueError(
+                "asset-plan candidate fields differ or are invalid"
+            )
         return cls(
-            schema_version=1,
+            schema_version=2,
+            coverage_status=data["coverage_status"],
+            effective_limits=recorded_limits,
+            effective_limits_id=data["effective_limits_id"],
             candidates=tuple(
                 AssetCandidate(
                     candidate_id=item["candidate_id"],
@@ -107,7 +226,7 @@ class AssetDiscoveryPlan:
                     sha256=item["sha256"],
                     byte_size=int(item["byte_size"]),
                 )
-                for item in data["candidates"]
+                for item in candidates_data
             ),
         )
 
@@ -119,24 +238,115 @@ class AssetDiscoveryPlanner:
         self,
         records: tuple[ReferenceCandidate, ...],
         roots: tuple[SearchRoot, ...],
+        *,
+        limits: ReferenceIOLimits = ASSET_DISCOVERY_IO_LIMITS,
     ) -> AssetDiscoveryPlan:
+        max_files = _required_limit(limits.max_files, "max_files")
+        max_entries = _required_limit(limits.max_entries, "max_entries")
+        max_file_bytes = _required_limit(
+            limits.max_file_bytes,
+            "max_file_bytes",
+        )
+        max_total_bytes = _required_limit(
+            limits.max_total_bytes,
+            "max_total_bytes",
+        )
+        max_candidates = _required_limit(
+            limits.max_candidates,
+            "max_candidates",
+        )
+        max_match_evaluations = _required_limit(
+            limits.max_match_evaluations,
+            "max_match_evaluations",
+        )
+        if len(records) > max_entries:
+            raise ReferenceIOLimitError(
+                resource="reference candidates",
+                limit_name="max_entries",
+                limit=max_entries,
+                observed=len(records),
+                limits=limits,
+            )
+        if len(roots) > min(max_files, max_entries):
+            raise ReferenceIOLimitError(
+                resource="asset search roots",
+                limit_name="max_entries",
+                limit=min(max_files, max_entries),
+                observed=len(roots),
+                limits=limits,
+            )
         candidates: list[AssetCandidate] = []
         authorized = _authorized_roots(roots)
+        match_index = _MatchIndex(records)
+        files_seen = 0
+        observed_bytes = 0
+        match_evaluations = 0
+        entries_per_root = max_entries // len(roots)
         for root in roots:
             safe_root = authorized[root.alias]
-            for relative in safe_root.iter_files(suffix=".pdf", recursive=True):
+            remaining_files = max_files - files_seen
+            if remaining_files <= 0:
+                raise ReferenceIOLimitError(
+                    resource="asset search",
+                    limit_name="max_files",
+                    limit=max_files,
+                    observed=files_seen + 1,
+                    limits=limits,
+                )
+            try:
+                relative_files = safe_root.iter_files(
+                    suffix=".pdf",
+                    recursive=True,
+                    max_files=remaining_files,
+                    max_entries=entries_per_root,
+                    max_depth=64,
+                )
+            except PathLimitError as error:
+                raise _limit_error(error, limits) from error
+            files_seen += len(relative_files)
+            for relative in relative_files:
                 path = safe_root.child_path(relative)
                 matches: list[
                     tuple[ReferenceCandidate, float, tuple[str, ...]]
                 ] = []
-                for record in records:
+                for record in match_index.potential_matches(path.stem):
+                    match_evaluations += 1
+                    if match_evaluations > max_match_evaluations:
+                        raise ReferenceIOLimitError(
+                            resource="asset match evaluations",
+                            limit_name="max_match_evaluations",
+                            limit=max_match_evaluations,
+                            observed=match_evaluations,
+                            limits=limits,
+                        )
                     score, evidence = self._score(record, path)
                     if score >= 0.5:
                         matches.append((record, score, evidence))
                 if not matches:
                     continue
-                content = safe_root.read_bytes(relative)
-                digest = hashlib.sha256(content).hexdigest()
+                try:
+                    observation = safe_root.observe_file(
+                        relative,
+                        max_bytes=max_file_bytes,
+                        prefix_bytes=4,
+                    )
+                except PathLimitError as error:
+                    raise _limit_error(error, limits) from error
+                if observation.byte_size <= 0:
+                    raise ValueError("asset candidate is empty")
+                if observation.prefix != b"%PDF":
+                    raise ValueError(
+                        f"asset candidate is not a PDF: {relative.as_posix()}"
+                    )
+                observed_bytes += observation.byte_size
+                if observed_bytes > max_total_bytes:
+                    raise ReferenceIOLimitError(
+                        resource="asset discovery",
+                        limit_name="max_total_bytes",
+                        limit=max_total_bytes,
+                        observed=observed_bytes,
+                        limits=limits,
+                    )
                 for record, score, evidence in matches:
                     candidates.append(
                         AssetCandidate(
@@ -153,10 +363,18 @@ class AssetDiscoveryPlanner:
                                 if score >= 0.9
                                 else "manual-review"
                             ),
-                            sha256=digest,
-                            byte_size=len(content),
+                            sha256=observation.sha256,
+                            byte_size=observation.byte_size,
                         )
                     )
+                    if len(candidates) > max_candidates:
+                        raise ReferenceIOLimitError(
+                            resource="asset candidates",
+                            limit_name="max_candidates",
+                            limit=max_candidates,
+                            observed=len(candidates),
+                            limits=limits,
+                        )
         ordered = tuple(
             sorted(
                 candidates,
@@ -169,7 +387,13 @@ class AssetDiscoveryPlanner:
                 ),
             )
         )
-        return AssetDiscoveryPlan(schema_version=1, candidates=ordered)
+        return AssetDiscoveryPlan(
+            schema_version=2,
+            coverage_status="complete",
+            effective_limits=limits,
+            effective_limits_id=limits.evidence_id,
+            candidates=ordered,
+        )
 
     @staticmethod
     def _score(
@@ -212,6 +436,7 @@ def materialize_asset(
     *,
     roots: tuple[SearchRoot, ...],
     destination_directory: Path,
+    limits: ReferenceIOLimits = ASSET_DISCOVERY_IO_LIMITS,
 ) -> Path:
     """Copy one explicitly selected strong candidate and verify its hash."""
     if candidate.recommendation != "strong-candidate":
@@ -220,11 +445,18 @@ def materialize_asset(
     if candidate.root_alias not in root_paths:
         raise ValueError("candidate search-root alias was not supplied")
     relative = validate_relative_path(candidate.relative_path)
-    content = root_paths[candidate.root_alias].read_bytes(relative)
-    if hashlib.sha256(content).hexdigest() != candidate.sha256:
-        raise ValueError("candidate source hash changed after planning")
-    if len(content) != candidate.byte_size:
-        raise ValueError("candidate source size changed after planning")
+    max_file_bytes = _required_limit(
+        limits.max_file_bytes,
+        "max_file_bytes",
+    )
+    if candidate.byte_size > max_file_bytes:
+        raise ReferenceIOLimitError(
+            resource="asset candidate",
+            limit_name="max_file_bytes",
+            limit=max_file_bytes,
+            observed=candidate.byte_size,
+            limits=limits,
+        )
 
     destination_root = AuthorizedRoot.create(
         destination_directory,
@@ -234,9 +466,25 @@ def materialize_asset(
     state = destination_root.state(filename)
     destination = destination_root.child_path(filename)
     if state == "regular":
+        try:
+            source_observation = root_paths[candidate.root_alias].observe_file(
+                relative,
+                max_bytes=max_file_bytes,
+            )
+        except PathLimitError as error:
+            raise _limit_error(error, limits) from error
         if (
-            hashlib.sha256(destination_root.read_bytes(filename)).hexdigest()
-            == candidate.sha256
+            source_observation.sha256 != candidate.sha256
+            or source_observation.byte_size != candidate.byte_size
+        ):
+            raise ValueError("candidate source hash changed after planning")
+        destination_observation = destination_root.observe_file(
+            filename,
+            max_bytes=max_file_bytes,
+        )
+        if (
+            destination_observation.sha256 == candidate.sha256
+            and destination_observation.byte_size == candidate.byte_size
         ):
             return destination
         raise FileExistsError(
@@ -244,7 +492,122 @@ def materialize_asset(
         )
     if state != "missing":
         raise FileExistsError(f"destination is not a file: {destination}")
-    return destination_root.write_bytes(filename, content, replace=False)
+    try:
+        return destination_root.copy_file_from(
+            root_paths[candidate.root_alias],
+            relative,
+            filename,
+            max_bytes=max_file_bytes,
+            expected_sha256=candidate.sha256,
+            expected_size=candidate.byte_size,
+        )
+    except PathLimitError as error:
+        raise _limit_error(error, limits) from error
+    except PathSafetyError as error:
+        if "source identity changed" in str(error):
+            raise ValueError(
+                "candidate source hash changed after planning"
+            ) from error
+        raise
+
+
+class _MatchIndex:
+    """Bound filename matching independently of bibliography cardinality."""
+
+    _END = ""
+
+    def __init__(self, records: tuple[ReferenceCandidate, ...]) -> None:
+        self._records = {record.candidate_id: record for record in records}
+        self._title_words: dict[str, set[str]] = {}
+        self._citekey_trie: dict[str, Any] = {}
+        for record in records:
+            key = "".join(_normalized_words(record.proposed_citekey))
+            node = self._citekey_trie
+            for character in key:
+                node = node.setdefault(character, {})
+            node.setdefault(self._END, set()).add(record.candidate_id)
+            for word in _normalized_words(record.title or ""):
+                if len(word) >= 4:
+                    self._title_words.setdefault(word, set()).add(
+                        record.candidate_id
+                    )
+
+    def potential_matches(self, stem: str) -> tuple[ReferenceCandidate, ...]:
+        words = _normalized_words(stem)
+        joined = "".join(words)
+        candidate_ids: set[str] = set()
+        for word in words:
+            candidate_ids.update(self._title_words.get(word, ()))
+        for start in range(len(joined)):
+            node = self._citekey_trie
+            for character in joined[start:]:
+                child = node.get(character)
+                if not isinstance(child, dict):
+                    break
+                node = child
+                terminal = node.get(self._END)
+                if isinstance(terminal, set):
+                    candidate_ids.update(terminal)
+        return tuple(
+            self._records[candidate_id]
+            for candidate_id in sorted(candidate_ids)
+        )
+
+
+def _required_limit(value: int | None, name: str) -> int:
+    if value is None:
+        raise ValueError(f"asset-discovery I/O profile must define {name}")
+    return value
+
+
+def _limit_error(
+    error: PathLimitError,
+    limits: ReferenceIOLimits,
+) -> ReferenceIOLimitError:
+    return ReferenceIOLimitError(
+        resource=error.resource,
+        limit_name=error.limit_name,
+        limit=error.limit,
+        observed=error.observed,
+        limits=limits,
+    )
+
+
+def _validate_json_depth(
+    value: object,
+    *,
+    limits: ReferenceIOLimits,
+) -> None:
+    max_depth = _required_limit(limits.max_json_depth, "max_json_depth")
+    pending: list[tuple[object, int]] = [(value, 1)]
+    while pending:
+        item, depth = pending.pop()
+        if depth > max_depth:
+            raise ReferenceIOLimitError(
+                resource="asset discovery plan JSON",
+                limit_name="max_json_depth",
+                limit=max_depth,
+                observed=depth,
+                limits=limits,
+            )
+        if isinstance(item, dict):
+            pending.extend((child, depth + 1) for child in item.values())
+        elif isinstance(item, list):
+            pending.extend((child, depth + 1) for child in item)
+        elif isinstance(item, str):
+            maximum_text = _required_limit(
+                limits.max_text_bytes,
+                "max_text_bytes",
+            )
+            observed = bounded_utf8_size(item, max_bytes=maximum_text)
+            if observed > maximum_text:
+                raise ReferenceIOLimitError(
+                    resource="asset discovery plan JSON text",
+                    limit_name="max_text_bytes",
+                    limit=maximum_text,
+                    observed=observed,
+                    limits=limits,
+                )
 
 
 def _authorized_roots(

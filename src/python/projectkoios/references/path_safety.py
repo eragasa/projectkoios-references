@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import os
 import secrets
 import stat
@@ -10,6 +11,10 @@ from pathlib import Path, PurePosixPath
 from typing import Literal, Never
 
 _CITEKEY_MAX_LENGTH = 200
+_DEFAULT_READ_MAX_BYTES = 50_000_000
+_MAX_STREAMED_FILE_BYTES = 4_000_000_000
+_MAX_DIRECTORY_ENTRIES = 100_000
+_MAX_DIRECTORY_DEPTH = 128
 _WINDOWS_RESERVED = frozenset(
     {
         "CON",
@@ -37,6 +42,38 @@ _FILE_FLAGS = (
 
 class PathSafetyError(ValueError):
     """Raised when a path cannot be used within an authorized root."""
+
+
+class PathLimitError(PathSafetyError):
+    """Raised before a bounded filesystem observation can become partial."""
+
+    coverage_status = "incomplete"
+
+    def __init__(
+        self,
+        *,
+        resource: str,
+        limit_name: str,
+        limit: int,
+        observed: int,
+    ) -> None:
+        self.resource = resource
+        self.limit_name = limit_name
+        self.limit = limit
+        self.observed = observed
+        super().__init__(
+            f"{resource} exceeds {limit_name}: observed {observed}, "
+            f"limit {limit}; coverage remains incomplete"
+        )
+
+
+@dataclass(frozen=True)
+class FileObservation:
+    """One streaming observation of a confined regular file."""
+
+    byte_size: int
+    sha256: str
+    prefix: bytes
 
 
 def validate_citekey(value: object, *, field: str = "citekey") -> str:
@@ -207,7 +244,7 @@ class AuthorizedRoot:
         self,
         relative: str | PurePosixPath,
         *,
-        max_bytes: int | None = None,
+        max_bytes: int = _DEFAULT_READ_MAX_BYTES,
     ) -> bytes:
         """Read one regular file through no-follow directory descriptors."""
         safe = validate_relative_path(relative)
@@ -226,17 +263,29 @@ class AuthorizedRoot:
                 raise PathSafetyError(
                     f"{self.label} child is not a regular file: {safe}"
                 )
-            if max_bytes is not None and (
-                max_bytes < 0 or metadata.st_size > max_bytes
+            if (
+                type(max_bytes) is not int
+                or not 0 <= max_bytes <= _DEFAULT_READ_MAX_BYTES
             ):
-                raise PathSafetyError(
-                    f"{self.label} child exceeds its byte limit: {safe}"
+                raise ValueError(
+                    "max_bytes must be a nonnegative integer within the "
+                    "bounded-read ceiling"
+                )
+            if metadata.st_size > max_bytes:
+                raise PathLimitError(
+                    resource=f"{self.label} child {safe}",
+                    limit_name="max_file_bytes",
+                    limit=max_bytes,
+                    observed=metadata.st_size,
                 )
             with os.fdopen(descriptor, "rb", closefd=False) as stream:
-                data = stream.read(None if max_bytes is None else max_bytes + 1)
-            if max_bytes is not None and len(data) > max_bytes:
-                raise PathSafetyError(
-                    f"{self.label} child exceeds its byte limit: {safe}"
+                data = stream.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise PathLimitError(
+                    resource=f"{self.label} child {safe}",
+                    limit_name="max_file_bytes",
+                    limit=max_bytes,
+                    observed=len(data),
                 )
             return data
         finally:
@@ -249,10 +298,96 @@ class AuthorizedRoot:
         relative: str | PurePosixPath,
         *,
         encoding: str = "utf-8",
-        max_bytes: int | None = None,
+        max_bytes: int = _DEFAULT_READ_MAX_BYTES,
     ) -> str:
         """Read and decode one confined regular file."""
         return self.read_bytes(relative, max_bytes=max_bytes).decode(encoding)
+
+    def observe_file(
+        self,
+        relative: str | PurePosixPath,
+        *,
+        max_bytes: int,
+        prefix_bytes: int = 0,
+        chunk_bytes: int = 1_048_576,
+    ) -> FileObservation:
+        """Hash and size one file in bounded memory through one descriptor."""
+        if (
+            not 0 <= max_bytes <= _MAX_STREAMED_FILE_BYTES
+            or not 0 <= prefix_bytes <= 1_000_000
+            or not 0 < chunk_bytes <= 8_000_000
+        ):
+            raise ValueError("file observation limits are invalid")
+        safe = validate_relative_path(relative)
+        parent = self._open_parent(safe.parts[:-1])
+        descriptor = -1
+        try:
+            try:
+                descriptor = os.open(safe.parts[-1], _FILE_FLAGS, dir_fd=parent)
+            except OSError as error:
+                _raise_path_error(
+                    error,
+                    f"cannot safely open {self.label} child: {safe}",
+                )
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise PathSafetyError(
+                    f"{self.label} child is not a regular file: {safe}"
+                )
+            if before.st_size > max_bytes:
+                raise PathLimitError(
+                    resource=f"{self.label} child {safe}",
+                    limit_name="max_file_bytes",
+                    limit=max_bytes,
+                    observed=before.st_size,
+                )
+            digest = hashlib.sha256()
+            prefix = bytearray()
+            total = 0
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                while True:
+                    block = stream.read(chunk_bytes)
+                    if not block:
+                        break
+                    total += len(block)
+                    if total > max_bytes:
+                        raise PathLimitError(
+                            resource=f"{self.label} child {safe}",
+                            limit_name="max_file_bytes",
+                            limit=max_bytes,
+                            observed=total,
+                        )
+                    digest.update(block)
+                    if len(prefix) < prefix_bytes:
+                        prefix.extend(block[: prefix_bytes - len(prefix)])
+            after = os.fstat(descriptor)
+            before_identity = (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+            after_identity = (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+            if before_identity != after_identity or total != after.st_size:
+                raise PathSafetyError(
+                    f"{self.label} child changed while it was observed: {safe}"
+                )
+            return FileObservation(
+                byte_size=total,
+                sha256=digest.hexdigest(),
+                prefix=bytes(prefix),
+            )
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            os.close(parent)
 
     def iter_files(
         self,
@@ -260,11 +395,35 @@ class AuthorizedRoot:
         suffix: str,
         recursive: bool,
         reject_directories: bool = False,
+        max_files: int | None = None,
+        max_entries: int | None = None,
+        max_depth: int | None = None,
     ) -> tuple[PurePosixPath, ...]:
         """List regular files deterministically without following symlinks."""
+        for name, value in (
+            ("max_files", max_files),
+            ("max_entries", max_entries),
+            ("max_depth", max_depth),
+        ):
+            ceiling = (
+                _MAX_DIRECTORY_DEPTH
+                if name == "max_depth"
+                else _MAX_DIRECTORY_ENTRIES
+            )
+            if value is not None and not 0 < value <= ceiling:
+                raise ValueError(
+                    f"{name} must be positive, no greater than {ceiling}, "
+                    "or null"
+                )
+        max_files = _MAX_DIRECTORY_ENTRIES if max_files is None else max_files
+        max_entries = (
+            _MAX_DIRECTORY_ENTRIES if max_entries is None else max_entries
+        )
+        max_depth = _MAX_DIRECTORY_DEPTH if max_depth is None else max_depth
         root = self._open_root()
         try:
             found: list[PurePosixPath] = []
+            entries_seen = [0]
             self._walk(
                 root,
                 prefix=(),
@@ -272,6 +431,10 @@ class AuthorizedRoot:
                 recursive=recursive,
                 reject_directories=reject_directories,
                 found=found,
+                entries_seen=entries_seen,
+                max_files=max_files,
+                max_entries=max_entries,
+                max_depth=max_depth,
             )
         finally:
             os.close(root)
@@ -424,6 +587,172 @@ class AuthorizedRoot:
             os.close(parent)
         return self.child_path(safe)
 
+    def copy_file_from(
+        self,
+        source_root: AuthorizedRoot,
+        source: str | PurePosixPath,
+        destination: str | PurePosixPath,
+        *,
+        max_bytes: int,
+        expected_sha256: str,
+        expected_size: int,
+        chunk_bytes: int = 1_048_576,
+    ) -> Path:
+        """Stream a verified source into a new atomic destination file."""
+        if (
+            not 0 <= max_bytes <= _MAX_STREAMED_FILE_BYTES
+            or expected_size < 0
+            or not 0 < chunk_bytes <= 8_000_000
+            or len(expected_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_sha256
+            )
+        ):
+            raise ValueError(
+                "file-copy limits or expected identity are invalid"
+            )
+        if expected_size > max_bytes:
+            raise PathLimitError(
+                resource=f"{source_root.label} expected source",
+                limit_name="max_file_bytes",
+                limit=max_bytes,
+                observed=expected_size,
+            )
+        safe_source = validate_relative_path(source, field="source")
+        safe_destination = validate_relative_path(
+            destination,
+            field="destination",
+        )
+        source_parent = source_root._open_parent(safe_source.parts[:-1])
+        destination_parent = self._open_parent(safe_destination.parts[:-1])
+        source_descriptor = -1
+        destination_descriptor = -1
+        temporary = (
+            f".koios-{safe_destination.parts[-1]}-{secrets.token_hex(12)}.tmp"
+        )
+        try:
+            try:
+                existing = os.stat(
+                    safe_destination.parts[-1],
+                    dir_fd=destination_parent,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                existing = None
+            if existing is not None:
+                raise FileExistsError(self.child_path(safe_destination))
+            try:
+                source_descriptor = os.open(
+                    safe_source.parts[-1],
+                    _FILE_FLAGS,
+                    dir_fd=source_parent,
+                )
+            except OSError as error:
+                _raise_path_error(
+                    error,
+                    f"cannot safely open {source_root.label} child: "
+                    f"{safe_source}",
+                )
+            before = os.fstat(source_descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise PathSafetyError(
+                    f"{source_root.label} child is not a regular file: "
+                    f"{safe_source}"
+                )
+            if before.st_size > max_bytes:
+                raise PathLimitError(
+                    resource=f"{source_root.label} child {safe_source}",
+                    limit_name="max_file_bytes",
+                    limit=max_bytes,
+                    observed=before.st_size,
+                )
+            destination_descriptor = os.open(
+                temporary,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+                0o600,
+                dir_fd=destination_parent,
+            )
+            digest = hashlib.sha256()
+            total = 0
+            with (
+                os.fdopen(source_descriptor, "rb", closefd=False) as reader,
+                os.fdopen(
+                    destination_descriptor,
+                    "wb",
+                    closefd=False,
+                ) as writer,
+            ):
+                while True:
+                    block = reader.read(chunk_bytes)
+                    if not block:
+                        break
+                    total += len(block)
+                    if total > max_bytes:
+                        raise PathLimitError(
+                            resource=(
+                                f"{source_root.label} child {safe_source}"
+                            ),
+                            limit_name="max_file_bytes",
+                            limit=max_bytes,
+                            observed=total,
+                        )
+                    digest.update(block)
+                    writer.write(block)
+                writer.flush()
+                os.fsync(writer.fileno())
+            after = os.fstat(source_descriptor)
+            if (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            ) != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ) or total != after.st_size:
+                raise PathSafetyError(
+                    f"{source_root.label} child changed while copied: "
+                    f"{safe_source}"
+                )
+            if total != expected_size or digest.hexdigest() != expected_sha256:
+                raise PathSafetyError(
+                    "source identity changed after its recorded observation"
+                )
+            os.close(destination_descriptor)
+            destination_descriptor = -1
+            os.link(
+                temporary,
+                safe_destination.parts[-1],
+                src_dir_fd=destination_parent,
+                dst_dir_fd=destination_parent,
+                follow_symlinks=False,
+            )
+            os.unlink(temporary, dir_fd=destination_parent)
+            os.fsync(destination_parent)
+        except BaseException:
+            if destination_descriptor >= 0:
+                os.close(destination_descriptor)
+            try:
+                os.unlink(temporary, dir_fd=destination_parent)
+            except FileNotFoundError:
+                pass
+            raise
+        finally:
+            if source_descriptor >= 0:
+                os.close(source_descriptor)
+            os.close(source_parent)
+            os.close(destination_parent)
+        return self.child_path(safe_destination)
+
     def _open_root(self) -> int:
         descriptor = _open_directory(self.path, label=self.label)
         metadata = os.fstat(descriptor)
@@ -462,9 +791,31 @@ class AuthorizedRoot:
         recursive: bool,
         reject_directories: bool,
         found: list[PurePosixPath],
+        entries_seen: list[int],
+        max_files: int | None,
+        max_entries: int | None,
+        max_depth: int | None,
     ) -> None:
+        if max_depth is not None and len(prefix) > max_depth:
+            raise PathLimitError(
+                resource=self.label,
+                limit_name="max_depth",
+                limit=max_depth,
+                observed=len(prefix),
+            )
+        ordered: list[os.DirEntry[str]] = []
         with os.scandir(descriptor) as entries:
-            ordered = sorted(entries, key=lambda item: item.name)
+            for entry in entries:
+                entries_seen[0] += 1
+                if max_entries is not None and entries_seen[0] > max_entries:
+                    raise PathLimitError(
+                        resource=self.label,
+                        limit_name="max_entries",
+                        limit=max_entries,
+                        observed=entries_seen[0],
+                    )
+                ordered.append(entry)
+        ordered.sort(key=lambda item: item.name)
         for entry in ordered:
             relative = PurePosixPath(*prefix, entry.name)
             if entry.is_symlink():
@@ -496,6 +847,10 @@ class AuthorizedRoot:
                         recursive=True,
                         reject_directories=reject_directories,
                         found=found,
+                        entries_seen=entries_seen,
+                        max_files=max_files,
+                        max_entries=max_entries,
+                        max_depth=max_depth,
                     )
                 finally:
                     os.close(child)
@@ -503,6 +858,13 @@ class AuthorizedRoot:
             if entry.is_file(follow_symlinks=False):
                 if entry.name.endswith(suffix):
                     found.append(relative)
+                    if max_files is not None and len(found) > max_files:
+                        raise PathLimitError(
+                            resource=self.label,
+                            limit_name="max_files",
+                            limit=max_files,
+                            observed=len(found),
+                        )
                 continue
             raise PathSafetyError(
                 f"{self.label} contains an unsupported filesystem object: "
@@ -514,7 +876,7 @@ def read_path_bytes(
     path: Path,
     *,
     label: str,
-    max_bytes: int | None = None,
+    max_bytes: int = _DEFAULT_READ_MAX_BYTES,
 ) -> bytes:
     """Read an explicit file through an authorized parent directory."""
     root = AuthorizedRoot.existing(
@@ -523,12 +885,30 @@ def read_path_bytes(
     return root.read_bytes(path.name, max_bytes=max_bytes)
 
 
+def observe_path_file(
+    path: Path,
+    *,
+    label: str,
+    max_bytes: int,
+    prefix_bytes: int = 0,
+) -> FileObservation:
+    """Observe an explicit file without loading its content into memory."""
+    root = AuthorizedRoot.existing(
+        path.expanduser().parent, label=f"{label} parent"
+    )
+    return root.observe_file(
+        path.name,
+        max_bytes=max_bytes,
+        prefix_bytes=prefix_bytes,
+    )
+
+
 def read_path_text(
     path: Path,
     *,
     label: str,
     encoding: str = "utf-8",
-    max_bytes: int | None = None,
+    max_bytes: int = _DEFAULT_READ_MAX_BYTES,
 ) -> str:
     """Read and decode an explicit file without following symlinks."""
     return read_path_bytes(path, label=label, max_bytes=max_bytes).decode(

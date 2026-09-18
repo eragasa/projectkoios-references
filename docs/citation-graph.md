@@ -84,8 +84,13 @@ Default hard import ceilings are:
 | Ordinary field | 4,096 UTF-8 bytes |
 | Verbatim entry | 262,144 UTF-8 bytes |
 | Proposed authors per candidate | 256 |
+| Embedded JSON depth | 64 |
 
-`GraphImportLimits` can tighten but cannot raise these ceilings. The CLI
+`GraphImportLimits` can tighten but cannot raise these ceilings. Complete graph
+batch JSON schema 2 and CLI success reports record the effective values and
+their content identity; the source, candidate, and edge record schemas remain
+version 1. Limit failures are typed as incomplete coverage and cannot be treated
+as evidence that no direct citation exists. The CLI
 finishes CSV parsing and whole-graph validation before opening or initializing
 a catalog, so invalid input cannot create an otherwise absent catalog.
 `ReferenceCatalog.import_citation_graph()` then inserts all sources, candidates,

@@ -9,14 +9,20 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Self
 
+from projectkoios.references.io_limits import (
+    bounded_csv_field_size,
+    bounded_utf8_size,
+)
 from projectkoios.references.models import normalize_doi
 from projectkoios.references.path_safety import (
+    PathLimitError,
     read_path_bytes,
     validate_citekey,
     validate_relative_path,
 )
 
 _GRAPH_SCHEMA_VERSION = 1
+_GRAPH_BATCH_SCHEMA_VERSION = 2
 _MAX_TEXT_BYTES = 4_096
 _MAX_VERBATIM_BYTES = 262_144
 _MAX_AUTHORS = 256
@@ -60,6 +66,64 @@ class CitationGraphError(ValueError):
     """Raised when graph evidence is malformed, orphaned, or unbounded."""
 
 
+class CitationGraphLimitError(CitationGraphError):
+    """Typed graph-limit diagnostic that cannot imply absent citations."""
+
+    code = "citation-graph-limit-exceeded"
+    coverage_status = "incomplete"
+
+    def __init__(
+        self,
+        *,
+        resource: str,
+        limit_name: str,
+        limit: int,
+        observed: int,
+        limits: GraphImportLimits,
+    ) -> None:
+        self.resource = resource
+        self.limit_name = limit_name
+        self.limit = limit
+        self.observed = observed
+        self.limits = limits
+        description = (
+            "text byte limit"
+            if limit_name in {"max_text_bytes", "max_verbatim_bytes"}
+            else "total byte limit"
+            if limit_name == "max_total_bytes"
+            else "byte limit"
+            if limit_name == "max_file_bytes"
+            else limit_name
+        )
+        super().__init__(
+            f"{resource} exceeds {description}: observed {observed}, "
+            f"limit {limit}; coverage remains incomplete"
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "coverage_status": self.coverage_status,
+            "resource": self.resource,
+            "limit_name": self.limit_name,
+            "limit": self.limit,
+            "observed": self.observed,
+            "effective_limits": asdict(self.limits),
+            "effective_limits_id": self.limits.evidence_id,
+        }
+
+    def to_json(self) -> str:
+        return (
+            json.dumps(
+                self.to_dict(),
+                ensure_ascii=True,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+
+
 @dataclass(frozen=True)
 class GraphImportLimits:
     """Caller-tightenable limits for one three-file direct graph import."""
@@ -72,6 +136,7 @@ class GraphImportLimits:
     max_breadth_per_source: int = 2_000
     max_text_bytes: int = _MAX_TEXT_BYTES
     max_verbatim_bytes: int = _MAX_VERBATIM_BYTES
+    max_json_depth: int = 64
 
     def __post_init__(self) -> None:
         hard_limits = {
@@ -83,6 +148,7 @@ class GraphImportLimits:
             "max_breadth_per_source": 2_000,
             "max_text_bytes": _MAX_TEXT_BYTES,
             "max_verbatim_bytes": _MAX_VERBATIM_BYTES,
+            "max_json_depth": 64,
         }
         for field, hard_limit in hard_limits.items():
             value = getattr(self, field)
@@ -91,6 +157,17 @@ class GraphImportLimits:
                     f"{field} must be a positive integer no greater than "
                     f"{hard_limit}"
                 )
+
+    @property
+    def evidence_id(self) -> str:
+        rendered = json.dumps(
+            asdict(self),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        return (
+            "graph-import-limits:sha256:" + hashlib.sha256(rendered).hexdigest()
+        )
 
 
 @dataclass(frozen=True)
@@ -617,13 +694,14 @@ class CitationGraph:
     sources: tuple[CitationSourceObservation, ...]
     candidates: tuple[CitationCandidate, ...]
     edges: tuple[CitationEdge, ...]
+    effective_limits: GraphImportLimits = GraphImportLimits()
 
     def __post_init__(self) -> None:
         _validate_graph(
             sources=self.sources,
             candidates=self.candidates,
             edges=self.edges,
-            limits=GraphImportLimits(),
+            limits=self.effective_limits,
         )
         if self.sources != tuple(
             sorted(
@@ -671,6 +749,7 @@ class CitationGraph:
                 sorted(candidates, key=lambda item: item.candidate_id)
             ),
             edges=tuple(sorted(edges, key=lambda item: item.edge_id)),
+            effective_limits=active_limits,
         )
 
     def to_json(self) -> str:
@@ -678,7 +757,10 @@ class CitationGraph:
             "authority_boundary": (
                 "citation-observation-only-no-membership-or-acceptance-authority"
             ),
-            "schema_version": _GRAPH_SCHEMA_VERSION,
+            "schema_version": _GRAPH_BATCH_SCHEMA_VERSION,
+            "coverage_status": "complete",
+            "effective_limits": asdict(self.effective_limits),
+            "effective_limits_id": self.effective_limits.evidence_id,
             "sources": [json.loads(item.to_json()) for item in self.sources],
             "candidates": [
                 json.loads(item.to_json()) for item in self.candidates
@@ -713,9 +795,11 @@ def _validate_graph(
         )
     if any(not isinstance(item, CitationEdge) for item in edges):
         raise CitationGraphError("edges must contain CitationEdge values")
-    _row_limit("source", len(sources), limits.max_sources)
-    _row_limit("candidate", len(candidates), limits.max_candidates)
-    _row_limit("edge", len(edges), limits.max_edges)
+    _row_limit("source", len(sources), limits.max_sources, limits=limits)
+    _row_limit(
+        "candidate", len(candidates), limits.max_candidates, limits=limits
+    )
+    _row_limit("edge", len(edges), limits.max_edges, limits=limits)
     if not sources and (candidates or edges):
         raise CitationGraphError("graph rows require a source observation")
     if sources and not candidates:
@@ -799,9 +883,12 @@ def _validate_graph(
         if count > limits.max_breadth_per_source
     )
     if oversized:
-        raise CitationGraphError(
-            "graph breadth exceeds max_breadth_per_source for sources: "
-            f"{oversized}"
+        raise CitationGraphLimitError(
+            resource="citation graph breadth",
+            limit_name="max_breadth_per_source",
+            limit=limits.max_breadth_per_source,
+            observed=max(breadth[source_id] for source_id in oversized),
+            limits=limits,
         )
 
 
@@ -828,28 +915,66 @@ def load_candidate_graph(
                 label=label,
                 max_bytes=active_limits.max_file_bytes,
             )
+        except PathLimitError as error:
+            raise CitationGraphLimitError(
+                resource=label,
+                limit_name="max_file_bytes",
+                limit=active_limits.max_file_bytes,
+                observed=error.observed,
+                limits=active_limits,
+            ) from error
         except (OSError, UnicodeError, ValueError) as error:
             raise CitationGraphError(
                 f"cannot read bounded {label} CSV: {error}"
             ) from error
         total_bytes += len(raw)
         if total_bytes > active_limits.max_total_bytes:
-            raise CitationGraphError(
-                "citation graph files exceed total byte limit"
+            raise CitationGraphLimitError(
+                resource="citation graph files",
+                limit_name="max_total_bytes",
+                limit=active_limits.max_total_bytes,
+                observed=total_bytes,
+                limits=active_limits,
             )
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as error:
             raise CitationGraphError(f"{label} CSV is not UTF-8") from error
-        rows = _csv_rows(text, expected_fields=expected_fields, label=label)
+        row_limit = {
+            "citation sources": active_limits.max_sources,
+            "citation candidates": active_limits.max_candidates,
+            "citation edges": active_limits.max_edges,
+        }[label]
+        rows = _csv_rows(
+            text,
+            expected_fields=expected_fields,
+            label=label,
+            max_rows=row_limit,
+            limits=active_limits,
+        )
         contents.append((label, rows))
 
     source_rows = contents[0][1]
     candidate_rows = contents[1][1]
     edge_rows = contents[2][1]
-    _row_limit("source", len(source_rows), active_limits.max_sources)
-    _row_limit("candidate", len(candidate_rows), active_limits.max_candidates)
-    _row_limit("edge", len(edge_rows), active_limits.max_edges)
+    _row_limit(
+        "source",
+        len(source_rows),
+        active_limits.max_sources,
+        limits=active_limits,
+    )
+    _row_limit(
+        "candidate",
+        len(candidate_rows),
+        active_limits.max_candidates,
+        limits=active_limits,
+    )
+    _row_limit(
+        "edge",
+        len(edge_rows),
+        active_limits.max_edges,
+        limits=active_limits,
+    )
 
     sources = tuple(
         _source_from_csv(row, limits=active_limits) for row in source_rows
@@ -892,6 +1017,16 @@ def _source_from_csv(
 def _candidate_from_csv(
     row: dict[str, str], *, limits: GraphImportLimits
 ) -> CitationCandidate:
+    _check_csv_text_limits(
+        row,
+        limits=limits,
+        verbatim_fields=frozenset({"verbatim_entry"}),
+    )
+    _check_json_nesting(
+        row["proposed_authors_json"],
+        limits=limits,
+        resource="proposed_authors_json",
+    )
     try:
         authors_value = json.loads(row["proposed_authors_json"])
     except json.JSONDecodeError as error:
@@ -904,11 +1039,6 @@ def _candidate_from_csv(
         raise CitationGraphError(
             "proposed_authors_json must be an array of strings"
         )
-    _check_csv_text_limits(
-        row,
-        limits=limits,
-        verbatim_fields=frozenset({"verbatim_entry"}),
-    )
     candidate = CitationCandidate.create(
         source_observation_id=row["source_observation_id"],
         source_locator=row["source_locator"],
@@ -951,25 +1081,52 @@ def _edge_from_csv(
 
 
 def _csv_rows(
-    text: str, *, expected_fields: tuple[str, ...], label: str
+    text: str,
+    *,
+    expected_fields: tuple[str, ...],
+    label: str,
+    max_rows: int,
+    limits: GraphImportLimits,
 ) -> tuple[dict[str, str], ...]:
     if not text or "\x00" in text:
         raise CitationGraphError(f"{label} CSV is empty or contains NUL")
     try:
-        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
-        if tuple(reader.fieldnames or ()) != expected_fields:
-            raise CitationGraphError(
-                f"{label} CSV header must be exactly {expected_fields!r}"
+        with bounded_csv_field_size(limits.max_verbatim_bytes):
+            reader = csv.DictReader(
+                io.StringIO(text, newline=""),
+                strict=True,
             )
-        result: list[dict[str, str]] = []
-        for row_number, row in enumerate(reader, start=2):
-            if None in row or any(value is None for value in row.values()):
+            if tuple(reader.fieldnames or ()) != expected_fields:
                 raise CitationGraphError(
-                    f"{label} CSV row {row_number} has the wrong field count"
+                    f"{label} CSV header must be exactly {expected_fields!r}"
                 )
-            result.append({key: str(value) for key, value in row.items()})
-        return tuple(result)
+            result: list[dict[str, str]] = []
+            for row_number, row in enumerate(reader, start=2):
+                observed_rows = row_number - 1
+                if observed_rows > max_rows:
+                    raise CitationGraphLimitError(
+                        resource=f"{label} CSV",
+                        limit_name="max_rows",
+                        limit=max_rows,
+                        observed=observed_rows,
+                        limits=limits,
+                    )
+                if None in row or any(value is None for value in row.values()):
+                    raise CitationGraphError(
+                        f"{label} CSV row {row_number} has the wrong field "
+                        "count"
+                    )
+                result.append({key: str(value) for key, value in row.items()})
+            return tuple(result)
     except csv.Error as error:
+        if "field larger than field limit" in str(error):
+            raise CitationGraphLimitError(
+                resource=f"{label} CSV field",
+                limit_name="max_verbatim_bytes",
+                limit=limits.max_verbatim_bytes,
+                observed=limits.max_verbatim_bytes + 1,
+                limits=limits,
+            ) from error
         raise CitationGraphError(
             f"{label} CSV is malformed: {error}"
         ) from error
@@ -987,8 +1144,54 @@ def _check_csv_text_limits(
             if field in verbatim_fields
             else limits.max_text_bytes
         )
-        if len(value.encode("utf-8")) > maximum:
-            raise CitationGraphError(f"{field} exceeds its text byte limit")
+        observed = bounded_utf8_size(value, max_bytes=maximum)
+        if observed > maximum:
+            raise CitationGraphLimitError(
+                resource=f"citation graph field {field}",
+                limit_name=(
+                    "max_verbatim_bytes"
+                    if field in verbatim_fields
+                    else "max_text_bytes"
+                ),
+                limit=maximum,
+                observed=observed,
+                limits=limits,
+            )
+
+
+def _check_json_nesting(
+    text: str,
+    *,
+    limits: GraphImportLimits,
+    resource: str,
+) -> None:
+    depth = 0
+    quoted = False
+    escaped = False
+    for character in text:
+        if escaped:
+            escaped = False
+            continue
+        if quoted and character == "\\":
+            escaped = True
+            continue
+        if character == '"':
+            quoted = not quoted
+            continue
+        if quoted:
+            continue
+        if character in "[{":
+            depth += 1
+            if depth > limits.max_json_depth:
+                raise CitationGraphLimitError(
+                    resource=resource,
+                    limit_name="max_json_depth",
+                    limit=limits.max_json_depth,
+                    observed=depth,
+                    limits=limits,
+                )
+        elif character in "]}":
+            depth = max(0, depth - 1)
 
 
 def _unique_by_id[T](
@@ -1005,10 +1208,20 @@ def _unique_by_id[T](
     return result
 
 
-def _row_limit(label: str, count: int, maximum: int) -> None:
+def _row_limit(
+    label: str,
+    count: int,
+    maximum: int,
+    *,
+    limits: GraphImportLimits,
+) -> None:
     if count > maximum:
-        raise CitationGraphError(
-            f"citation graph {label} rows exceed limit {maximum}"
+        raise CitationGraphLimitError(
+            resource=f"citation graph {label} rows",
+            limit_name="max_rows",
+            limit=maximum,
+            observed=count,
+            limits=limits,
         )
 
 
@@ -1093,6 +1306,20 @@ def _pretty_json(
 
 
 def _canonical_object(text: str, *, label: str) -> dict[str, object]:
+    limits = GraphImportLimits()
+    observed_bytes = bounded_utf8_size(
+        text,
+        max_bytes=limits.max_file_bytes,
+    )
+    if observed_bytes > limits.max_file_bytes:
+        raise CitationGraphLimitError(
+            resource=f"{label} JSON",
+            limit_name="max_file_bytes",
+            limit=limits.max_file_bytes,
+            observed=observed_bytes,
+            limits=limits,
+        )
+    _check_json_nesting(text, limits=limits, resource=f"{label} JSON")
     try:
         value = json.loads(text)
     except (json.JSONDecodeError, TypeError) as error:

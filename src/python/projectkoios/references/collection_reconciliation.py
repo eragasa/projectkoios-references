@@ -24,8 +24,18 @@ from projectkoios.references.coverage import (
     ReferenceCoverage,
 )
 from projectkoios.references.identity import ReferenceCandidate
+from projectkoios.references.io_limits import (
+    RECONCILIATION_IO_LIMITS,
+    RECONCILIATION_PACKAGE_IO_LIMITS,
+    ReferenceIOLimitError,
+    ReferenceIOLimits,
+    bounded_csv_field_size,
+    bounded_utf8_size,
+    validate_json_text_nesting,
+)
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
+    PathLimitError,
     PathSafetyError,
     read_path_bytes,
     validate_citekey,
@@ -47,7 +57,7 @@ from projectkoios.references.reconciliation_package import (
 )
 
 _SCHEMA_VERSION = 2
-_PROCESSOR_VERSION = "0.6.0"
+_PROCESSOR_VERSION = "0.7.0"
 _CITATION_PARSER_VERSION = "1"
 _COLLECTION_ROWS_PARSER_VERSION = "1"
 _SOURCE_DISCOVERY_PARSER_VERSION = "1"
@@ -423,50 +433,113 @@ class PublicationResult:
 
 def load_collection_rows(
     path: Path,
+    *,
+    limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> EvidenceMapping[CollectionRowEvidence]:
-    content = read_path_bytes(
-        path,
-        label="collection rows",
-        max_bytes=_MAX_COLLECTION_ROWS_BYTES,
-    )
+    max_csv_bytes = _required_limit(limits.max_csv_bytes, "max_csv_bytes")
+    try:
+        content = read_path_bytes(
+            path,
+            label="collection rows",
+            max_bytes=max_csv_bytes,
+        )
+    except PathLimitError as error:
+        raise _limit_error(error, limits) from error
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise CollectionReconciliationError(
             "collection rows are not UTF-8"
         ) from error
-    rows = tuple(csv.DictReader(io.StringIO(text, newline="")))
-    if len(rows) > _MAX_RECORDS:
-        raise CollectionReconciliationError("collection rows exceed hard limit")
+    max_rows = _required_limit(limits.max_rows, "max_rows")
+    max_text_bytes = _required_limit(
+        limits.max_text_bytes,
+        "max_text_bytes",
+    )
     result: dict[str, CollectionRowEvidence] = {}
-    for row in rows:
-        citekey = (row.get("citekey") or "").strip()
-        if not citekey:
-            raise CollectionReconciliationError(
-                "collection row has an empty citekey"
-            )
-        try:
-            validate_citekey(citekey)
-        except PathSafetyError as error:
-            raise CollectionReconciliationError(
-                f"collection row has an unsafe citekey: {citekey}"
+    try:
+        with bounded_csv_field_size(max_text_bytes):
+            rows = csv.DictReader(io.StringIO(text, newline=""))
+            for row_number, row in enumerate(rows, start=1):
+                if row_number > max_rows:
+                    raise ReferenceIOLimitError(
+                        resource="collection rows",
+                        limit_name="max_rows",
+                        limit=max_rows,
+                        observed=row_number,
+                        limits=limits,
+                    )
+                for field_name, field_value in row.items():
+                    if field_value is None:
+                        continue
+                    field_bytes = bounded_utf8_size(
+                        field_value,
+                        max_bytes=max_text_bytes,
+                    )
+                    if field_bytes > max_text_bytes:
+                        raise ReferenceIOLimitError(
+                            resource=(
+                                f"collection row {row_number} field "
+                                f"{field_name}"
+                            ),
+                            limit_name="max_text_bytes",
+                            limit=max_text_bytes,
+                            observed=field_bytes,
+                            limits=limits,
+                        )
+                citekey = (row.get("citekey") or "").strip()
+                if not citekey:
+                    raise CollectionReconciliationError(
+                        "collection row has an empty citekey"
+                    )
+                try:
+                    validate_citekey(citekey)
+                except PathSafetyError as error:
+                    raise CollectionReconciliationError(
+                        f"collection row has an unsafe citekey: {citekey}"
+                    ) from error
+                if citekey in result:
+                    raise CollectionReconciliationError(
+                        f"duplicate collection row: {citekey}"
+                    )
+                sources = tuple(
+                    item
+                    for item in (row.get("source_bibliographies") or "").split(
+                        ";"
+                    )
+                    if item
+                )
+                max_sources = _required_limit(
+                    limits.max_candidates,
+                    "max_candidates",
+                )
+                if len(sources) > max_sources:
+                    raise ReferenceIOLimitError(
+                        resource=(f"collection row {row_number} source list"),
+                        limit_name="max_candidates",
+                        limit=max_sources,
+                        observed=len(sources),
+                        limits=limits,
+                    )
+                result[citekey] = CollectionRowEvidence(
+                    source_bibliographies=sources,
+                    bibliographic_status=(
+                        row.get("bibliographic_status") or "unrecorded"
+                    ),
+                    reading_status=row.get("reading_status") or "unrecorded",
+                )
+    except csv.Error as error:
+        if "field larger than field limit" in str(error):
+            raise ReferenceIOLimitError(
+                resource="collection rows CSV field",
+                limit_name="max_text_bytes",
+                limit=max_text_bytes,
+                observed=max_text_bytes + 1,
+                limits=limits,
             ) from error
-        if citekey in result:
-            raise CollectionReconciliationError(
-                f"duplicate collection row: {citekey}"
-            )
-        sources = tuple(
-            item
-            for item in (row.get("source_bibliographies") or "").split(";")
-            if item
-        )
-        result[citekey] = CollectionRowEvidence(
-            source_bibliographies=sources,
-            bibliographic_status=(
-                row.get("bibliographic_status") or "unrecorded"
-            ),
-            reading_status=row.get("reading_status") or "unrecorded",
-        )
+        raise CollectionReconciliationError(
+            "collection rows CSV is malformed"
+        ) from error
     return EvidenceMapping(
         entries=tuple(sorted(result.items())),
         input_evidence=(
@@ -483,27 +556,64 @@ def scan_managed_pdfs(
     directory: Path,
     *,
     source_discovery: Path | None = None,
+    limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> ManagedPdfScan:
     try:
         root = AuthorizedRoot.existing(directory, label="managed PDF root")
-        relative_files = root.iter_files(suffix=".pdf", recursive=False)
+        relative_files = root.iter_files(
+            suffix=".pdf",
+            recursive=False,
+            max_files=_required_limit(limits.max_files, "max_files"),
+            max_entries=_required_limit(limits.max_entries, "max_entries"),
+            max_depth=1,
+        )
+    except PathLimitError as error:
+        raise _limit_error(error, limits) from error
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
-    historical, discovery_evidence = _load_source_discovery(source_discovery)
+    historical, discovery_evidence = _load_source_discovery(
+        source_discovery,
+        limits=limits,
+    )
     pdfs: list[ManagedPdf] = []
     asset_evidence: list[ContentEvidence] = []
+    total_bytes = 0
+    max_file_bytes = _required_limit(limits.max_file_bytes, "max_file_bytes")
+    max_total_bytes = _required_limit(
+        limits.max_total_bytes,
+        "max_total_bytes",
+    )
     for relative in relative_files:
         try:
             citekey = validate_citekey(Path(relative.name).stem)
-            content = root.read_bytes(relative, max_bytes=_MAX_PDF_BYTES)
+            observation = root.observe_file(
+                relative,
+                max_bytes=max_file_bytes,
+                prefix_bytes=5,
+            )
+        except PathLimitError as error:
+            raise _limit_error(error, limits) from error
         except PathSafetyError as error:
             raise CollectionReconciliationError(str(error)) from error
-        byte_size = len(content)
+        byte_size = observation.byte_size
         if byte_size <= 0:
             raise CollectionReconciliationError(
                 f"managed PDF size is outside bounds: {relative.name}"
             )
-        digest = _hash_pdf(content, filename=relative.name)
+        if observation.prefix != b"%PDF-":
+            raise CollectionReconciliationError(
+                f"managed file lacks PDF header: {relative.name}"
+            )
+        total_bytes += byte_size
+        if total_bytes > max_total_bytes:
+            raise ReferenceIOLimitError(
+                resource="managed PDFs",
+                limit_name="max_total_bytes",
+                limit=max_total_bytes,
+                observed=total_bytes,
+                limits=limits,
+            )
+        digest = observation.sha256
         asset_evidence.append(
             ContentEvidence(
                 role="managed-asset",
@@ -545,17 +655,24 @@ def build_citation_closure(
     *,
     bibliography_keys: tuple[str, ...],
     source_revision: str,
+    limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> CitationClosure:
     try:
         root = AuthorizedRoot.existing(
             manuscript_root,
             label="manuscript root",
         )
-        source_files = root.iter_files(suffix=".tex", recursive=True)
+        source_files = root.iter_files(
+            suffix=".tex",
+            recursive=True,
+            max_files=_required_limit(limits.max_files, "max_files"),
+            max_entries=_required_limit(limits.max_entries, "max_entries"),
+            max_depth=64,
+        )
+    except PathLimitError as error:
+        raise _limit_error(error, limits) from error
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
-    if len(source_files) > _MAX_TEX_FILES:
-        raise CollectionReconciliationError("TeX source count exceeds limit")
 
     uses: dict[str, set[str]] = defaultdict(set)
     nocite_all = False
@@ -566,16 +683,31 @@ def build_citation_closure(
         try:
             content = root.read_bytes(
                 relative_path,
-                max_bytes=_MAX_TEX_BYTES,
+                max_bytes=_required_limit(
+                    limits.max_text_file_bytes,
+                    "max_text_file_bytes",
+                ),
             )
             text = content.decode("utf-8")
+        except PathLimitError as error:
+            raise _limit_error(error, limits) from error
         except (PathSafetyError, UnicodeDecodeError) as error:
             raise CollectionReconciliationError(
                 f"cannot safely read TeX source: {relative_path}"
             ) from error
         total_bytes += len(content)
-        if total_bytes > _MAX_TEX_BYTES:
-            raise CollectionReconciliationError("TeX source bytes exceed limit")
+        max_text_bytes = _required_limit(
+            limits.max_text_total_bytes,
+            "max_text_total_bytes",
+        )
+        if total_bytes > max_text_bytes:
+            raise ReferenceIOLimitError(
+                resource="TeX sources",
+                limit_name="max_text_total_bytes",
+                limit=max_text_bytes,
+                observed=total_bytes,
+                limits=limits,
+            )
         relative = relative_path.as_posix()
         relative_files.append(relative)
         source_file_evidence.append(
@@ -679,6 +811,7 @@ def reconcile_collection(
     coverage_observation_bytes: bytes | None = None,
     processing_evidence: Mapping[str, ProcessingEvidence] | None = None,
     bibliography_parser: str = "caller-supplied-records",
+    limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> ReconciliationOutputs:
     if not collection_id or not source_revision:
         raise CollectionReconciliationError(
@@ -705,9 +838,57 @@ def reconcile_collection(
             raise CollectionReconciliationError(
                 "coverage observation bytes differ from parsed evidence"
             )
-    if not records or len(records) > _MAX_RECORDS:
-        raise CollectionReconciliationError(
-            "bibliography record count is outside bounds"
+    max_records = _required_limit(limits.max_candidates, "max_candidates")
+    if not records:
+        raise CollectionReconciliationError("bibliography has no records")
+    if len(records) > max_records:
+        raise ReferenceIOLimitError(
+            resource="bibliography records",
+            limit_name="max_candidates",
+            limit=max_records,
+            observed=len(records),
+            limits=limits,
+        )
+    max_files = _required_limit(limits.max_files, "max_files")
+    if len(managed_pdfs) > max_files:
+        raise ReferenceIOLimitError(
+            resource="managed PDF observations",
+            limit_name="max_files",
+            limit=max_files,
+            observed=len(managed_pdfs),
+            limits=limits,
+        )
+    max_rows = _required_limit(limits.max_rows, "max_rows")
+    if len(collection_rows) > max_rows:
+        raise ReferenceIOLimitError(
+            resource="collection row observations",
+            limit_name="max_rows",
+            limit=max_rows,
+            observed=len(collection_rows),
+            limits=limits,
+        )
+    if (
+        processing_evidence is not None
+        and len(processing_evidence) > max_records
+    ):
+        raise ReferenceIOLimitError(
+            resource="processing evidence observations",
+            limit_name="max_candidates",
+            limit=max_records,
+            observed=len(processing_evidence),
+            limits=limits,
+        )
+    max_bibliography_bytes = _required_limit(
+        limits.max_bibliography_bytes,
+        "max_bibliography_bytes",
+    )
+    if len(bibliography_bytes) > max_bibliography_bytes:
+        raise ReferenceIOLimitError(
+            resource="bibliography bytes",
+            limit_name="max_bibliography_bytes",
+            limit=max_bibliography_bytes,
+            observed=len(bibliography_bytes),
+            limits=limits,
         )
     processing_supplied = processing_evidence is not None
     processing_by_citekey = processing_evidence or {}
@@ -978,6 +1159,7 @@ def reconcile_collection(
         coverage_observation=coverage_observation,
         coverage_observation_bytes=coverage_observation_bytes,
         processing_evidence=processing_evidence,
+        limits=limits,
     )
     package_manifest = ReconciliationPackageManifest.create(
         collection_id=collection_id,
@@ -1011,6 +1193,10 @@ def reconcile_collection(
             SoftwareIdentity(
                 name="bibliography-parser",
                 version=bibliography_parser,
+            ),
+            SoftwareIdentity(
+                name="reference-io-limits",
+                version="1",
             ),
         ),
         inputs=inputs,
@@ -1068,23 +1254,49 @@ def publish_reconciliation(
                 parent.child_path(output_name),
                 label="reconciliation output directory",
             )
+            directory_limit = min(
+                _required_limit(
+                    RECONCILIATION_PACKAGE_IO_LIMITS.max_entries,
+                    "max_entries",
+                ),
+                len(expected) + 1,
+            )
             actual_names = {
                 path.name
                 for path in existing.iter_files(
                     suffix="",
                     recursive=False,
                     reject_directories=True,
+                    max_files=directory_limit,
+                    max_entries=directory_limit,
+                    max_depth=1,
                 )
             }
             if actual_names != set(expected):
                 raise CollectionReconciliationError(
                     "existing reconciliation output is incomplete or unexpected"
                 )
+            max_package_file_bytes = _required_limit(
+                RECONCILIATION_PACKAGE_IO_LIMITS.max_file_bytes,
+                "max_file_bytes",
+            )
             for name, content in expected.items():
-                if existing.read_bytes(name) != content:
+                observation = existing.observe_file(
+                    name,
+                    max_bytes=max_package_file_bytes,
+                )
+                if (
+                    observation.byte_size != len(content)
+                    or observation.sha256 != hashlib.sha256(content).hexdigest()
+                ):
                     raise CollectionReconciliationError(
                         "existing reconciliation output differs"
                     )
+        except PathLimitError as error:
+            raise _limit_error(
+                error,
+                RECONCILIATION_PACKAGE_IO_LIMITS,
+            ) from error
         except PathSafetyError as error:
             raise CollectionReconciliationError(str(error)) from error
         return PublicationResult(
@@ -1156,13 +1368,26 @@ def _bound_input_evidence(
     coverage_observation: CoverageObservation | None,
     coverage_observation_bytes: bytes | None,
     processing_evidence: Mapping[str, ProcessingEvidence] | None,
+    limits: ReferenceIOLimits,
 ) -> tuple[ContentEvidence, ...]:
     evidence = [
         ContentEvidence.from_bytes(
             role="bibliography",
             filename="inputs/bibliography.bib",
             content=bibliography_bytes,
-        )
+        ),
+        ContentEvidence.from_bytes(
+            role="effective-io-limits",
+            filename="inputs/effective-io-limits.json",
+            content=canonical_json_bytes(
+                {
+                    "schema_version": 1,
+                    "coverage_status": "complete",
+                    "effective_limits": limits.to_dict(),
+                    "effective_limits_id": limits.evidence_id,
+                }
+            ),
+        ),
     ]
     evidence.extend(_retained_input_evidence(collection_rows))
     if not _retained_input_evidence(collection_rows):
@@ -1308,31 +1533,55 @@ def _verify_source_tree(
 
 def _load_source_discovery(
     path: Path | None,
+    *,
+    limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> tuple[
     dict[str, tuple[str, tuple[str, ...]]],
     tuple[ContentEvidence, ...],
 ]:
     if path is None:
         return {}, ()
-    content = read_path_bytes(
-        path,
-        label="source-discovery document",
-        max_bytes=_MAX_INPUT_JSON_BYTES,
-    )
     try:
-        data = json.loads(content.decode("utf-8"))
+        content = read_path_bytes(
+            path,
+            label="source-discovery document",
+            max_bytes=_required_limit(
+                limits.max_json_bytes,
+                "max_json_bytes",
+            ),
+        )
+    except PathLimitError as error:
+        raise _limit_error(error, limits) from error
+    try:
+        text = content.decode("utf-8")
+        validate_json_text_nesting(
+            text,
+            limits=limits,
+            resource="source discovery JSON",
+        )
+        data = json.loads(text)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise CollectionReconciliationError(
             "source-discovery document is invalid"
         ) from error
+    _validate_json_depth(data, limits=limits, resource="source discovery")
     if not isinstance(data, dict) or data.get("schema_version") != 1:
         raise CollectionReconciliationError(
             "unsupported source-discovery document"
         )
     matches = data.get("matches")
-    if not isinstance(matches, list) or len(matches) > _MAX_RECORDS:
+    if not isinstance(matches, list):
         raise CollectionReconciliationError(
-            "source-discovery matches are invalid or unbounded"
+            "source-discovery matches are invalid"
+        )
+    max_records = _required_limit(limits.max_candidates, "max_candidates")
+    if len(matches) > max_records:
+        raise ReferenceIOLimitError(
+            resource="source-discovery matches",
+            limit_name="max_candidates",
+            limit=max_records,
+            observed=len(matches),
+            limits=limits,
         )
     result: dict[str, tuple[str, tuple[str, ...]]] = {}
     for item in matches:
@@ -1347,12 +1596,28 @@ def _load_source_discovery(
             not isinstance(citekey, str)
             or not citekey
             or not isinstance(digest, str)
-            or not digest
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
             or not isinstance(basis, str)
             or not basis
         ):
             raise CollectionReconciliationError(
                 "source-discovery match identity is incomplete"
+            )
+        maximum_text = _required_limit(
+            limits.max_text_bytes,
+            "max_text_bytes",
+        )
+        basis_bytes = bounded_utf8_size(
+            basis,
+            max_bytes=maximum_text,
+        )
+        if basis_bytes > maximum_text:
+            raise ReferenceIOLimitError(
+                resource="source-discovery match basis",
+                limit_name="max_text_bytes",
+                limit=maximum_text,
+                observed=basis_bytes,
+                limits=limits,
             )
         try:
             validate_citekey(citekey, field="source-discovery citekey")
@@ -1372,12 +1637,49 @@ def _load_source_discovery(
     )
 
 
-def _hash_pdf(content: bytes, *, filename: str) -> str:
-    if not content.startswith(b"%PDF-"):
-        raise CollectionReconciliationError(
-            f"managed file lacks PDF header: {filename}"
+def _required_limit(value: int | None, name: str) -> int:
+    if value is None:
+        raise ValueError(
+            f"collection-reconciliation I/O profile must define {name}"
         )
-    return hashlib.sha256(content).hexdigest()
+    return value
+
+
+def _limit_error(
+    error: PathLimitError,
+    limits: ReferenceIOLimits,
+) -> ReferenceIOLimitError:
+    return ReferenceIOLimitError(
+        resource=error.resource,
+        limit_name=error.limit_name,
+        limit=error.limit,
+        observed=error.observed,
+        limits=limits,
+    )
+
+
+def _validate_json_depth(
+    value: object,
+    *,
+    limits: ReferenceIOLimits,
+    resource: str,
+) -> None:
+    max_depth = _required_limit(limits.max_json_depth, "max_json_depth")
+    pending: list[tuple[object, int]] = [(value, 1)]
+    while pending:
+        item, depth = pending.pop()
+        if depth > max_depth:
+            raise ReferenceIOLimitError(
+                resource=resource,
+                limit_name="max_json_depth",
+                limit=max_depth,
+                observed=depth,
+                limits=limits,
+            )
+        if isinstance(item, dict):
+            pending.extend((child, depth + 1) for child in item.values())
+        elif isinstance(item, list):
+            pending.extend((child, depth + 1) for child in item)
 
 
 def _strip_latex_comment(line: str) -> str:

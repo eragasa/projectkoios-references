@@ -15,12 +15,21 @@ from typing import Protocol, cast, runtime_checkable
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
+from projectkoios.references.io_limits import (
+    METADATA_IO_LIMITS,
+    ReferenceIOLimitError,
+    ReferenceIOLimits,
+)
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import AuthorizedRoot, PathSafetyError
+from projectkoios.references.path_safety import (
+    AuthorizedRoot,
+    PathLimitError,
+    PathSafetyError,
+)
 
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2
 CROSSREF_PARSER_VERSION = "crossref-metadata-v1"
-OBSERVATION_GENERATOR_VERSION = "projectkoios-response-observation-v1"
+OBSERVATION_GENERATOR_VERSION = "projectkoios-response-observation-v2"
 MAX_RESPONSE_BYTES = 2_000_000
 MAX_CACHE_BYTES = 3_000_000
 _MAX_IDENTIFIER_LENGTH = 512
@@ -34,7 +43,7 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 _IDENTIFIER_SCHEME = re.compile(r"[a-z][a-z0-9+.-]{0,31}")
 _SAFE_COMPONENT = re.compile(r"[a-z][a-z0-9._+-]{0,127}")
 _SAFE_HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
-_CACHE_NAME = re.compile(r"v1-([0-9a-f]{64})-([0-9a-f]{64})\.json")
+_CACHE_NAME = re.compile(r"v2-([0-9a-f]{64})-([0-9a-f]{64})\.json")
 
 
 class ProviderError(ValueError):
@@ -51,6 +60,17 @@ class ProviderCacheError(ProviderError):
 
 class ProviderCacheConflictError(ProviderCacheError):
     """Raised when cache publication or deterministic replay conflicts."""
+
+
+class ProviderResponseLimitError(
+    ReferenceIOLimitError,
+    ProviderResponseError,
+):
+    """Typed incomplete-coverage diagnostic for provider response limits."""
+
+
+class ProviderCacheLimitError(ReferenceIOLimitError, ProviderCacheError):
+    """Typed incomplete-coverage diagnostic for provider cache limits."""
 
 
 class CacheStatus(StrEnum):
@@ -131,6 +151,9 @@ class ResponseObservationEnvelope:
     parser_version: str
     generator_version: str
     cache_status: CacheStatus
+    max_response_bytes: int = MAX_RESPONSE_BYTES
+    effective_limits: ReferenceIOLimits = METADATA_IO_LIMITS
+    effective_limits_id: str = METADATA_IO_LIMITS.evidence_id
 
     def __post_init__(self) -> None:
         if (
@@ -175,6 +198,33 @@ class ResponseObservationEnvelope:
         ):
             raise ProviderCacheError(
                 "observation generator version is not a safe identifier"
+            )
+        if (
+            type(self.max_response_bytes) is not int
+            or self.max_response_bytes <= 0
+            or self.response_bytes > self.max_response_bytes
+            or self.max_response_bytes > MAX_RESPONSE_BYTES
+        ):
+            raise ProviderCacheError(
+                "observation response limit is out of bounds"
+            )
+        if not isinstance(self.effective_limits, ReferenceIOLimits):
+            raise ProviderCacheError("observation I/O limits are malformed")
+        if (
+            self.effective_limits.max_response_bytes != self.max_response_bytes
+            or self.effective_limits_id != self.effective_limits.evidence_id
+        ):
+            raise ProviderCacheError("observation I/O-limit evidence conflicts")
+        if (
+            not isinstance(self.effective_limits_id, str)
+            or re.fullmatch(
+                r"reference-io-limits:sha256:[0-9a-f]{64}",
+                self.effective_limits_id,
+            )
+            is None
+        ):
+            raise ProviderCacheError(
+                "observation I/O-limit identity is invalid"
             )
         if not isinstance(
             self.cache_status, CacheStatus
@@ -334,6 +384,7 @@ class TransportRequest:
     headers: tuple[tuple[str, str], ...]
     timeout_seconds: float
     max_response_bytes: int
+    effective_limits: ReferenceIOLimits = METADATA_IO_LIMITS
 
 
 @dataclass(frozen=True)
@@ -379,8 +430,12 @@ class HttpsMetadataTransport:
         ) as response:
             body = response.read(request.max_response_bytes + 1)
         if len(body) > request.max_response_bytes:
-            raise ProviderResponseError(
-                "provider response exceeds its byte limit"
+            raise ProviderResponseLimitError(
+                resource="provider response",
+                limit_name="max_response_bytes",
+                limit=request.max_response_bytes,
+                observed=len(body),
+                limits=request.effective_limits,
             )
         return TransportResponse(
             body=body, retrieved_at=self._clock().isoformat()
@@ -398,6 +453,7 @@ class CrossrefClient:
         cache_directory: Path | None = None,
         timeout_seconds: float = 20.0,
         transport: MetadataTransport | None = None,
+        limits: ReferenceIOLimits = METADATA_IO_LIMITS,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("provider timeout must be positive")
@@ -405,6 +461,9 @@ class CrossrefClient:
         self.cache_directory = cache_directory
         self.timeout_seconds = timeout_seconds
         self.transport = transport or HttpsMetadataTransport()
+        if limits.profile != METADATA_IO_LIMITS.profile:
+            raise ValueError("metadata I/O-limit profile is incompatible")
+        self.limits = limits
         self._cache_root: AuthorizedRoot | None = None
         if cache_directory is not None:
             root = AuthorizedRoot.create(
@@ -454,18 +513,29 @@ class CrossrefClient:
         request_identity: NormalizedRequestIdentity,
     ) -> MetadataEnrichment:
         source_url = _crossref_url(request_identity)
+        max_response_bytes = _required_limit(
+            self.limits.max_response_bytes,
+            "max_response_bytes",
+        )
+        if max_response_bytes > MAX_RESPONSE_BYTES:
+            raise ValueError("metadata response limit exceeds the hard ceiling")
         request = TransportRequest(
             url=source_url,
             headers=(("User-Agent", self._user_agent()),),
             timeout_seconds=self.timeout_seconds,
-            max_response_bytes=MAX_RESPONSE_BYTES,
+            max_response_bytes=max_response_bytes,
+            effective_limits=self.limits,
         )
         response = self.transport.get(request)
         if not isinstance(response.body, bytes):
             raise ProviderResponseError("transport response body must be bytes")
-        if len(response.body) > MAX_RESPONSE_BYTES:
-            raise ProviderResponseError(
-                "provider response exceeds its byte limit"
+        if len(response.body) > max_response_bytes:
+            raise ProviderResponseLimitError(
+                resource="provider response",
+                limit_name="max_response_bytes",
+                limit=max_response_bytes,
+                observed=len(response.body),
+                limits=self.limits,
             )
         _parse_timestamp(response.retrieved_at)
         cache_status = (
@@ -484,6 +554,9 @@ class CrossrefClient:
             parser_version=self.parser_version,
             generator_version=OBSERVATION_GENERATOR_VERSION,
             cache_status=cache_status,
+            max_response_bytes=max_response_bytes,
+            effective_limits=self.limits,
+            effective_limits_id=self.limits.evidence_id,
         )
         result = self._parse_response(
             request_identity,
@@ -502,34 +575,62 @@ class CrossrefClient:
         if self._cache_root is None:
             return None
         request_digest = _request_digest(request_identity)
-        prefix = f"v1-{request_digest}-"
+        prefix = f"v2-{request_digest}-"
+        legacy_prefix = f"v1-{request_digest}-"
         try:
             names = self._cache_root.iter_files(
                 suffix=".json",
                 recursive=False,
                 reject_directories=True,
+                max_files=_required_limit(self.limits.max_files, "max_files"),
+                max_entries=_required_limit(
+                    self.limits.max_entries,
+                    "max_entries",
+                ),
+                max_depth=1,
             )
+        except PathLimitError as error:
+            raise _limit_error(error, self.limits) from error
         except PathSafetyError as error:
             raise ProviderCacheError("provider cache is unsafe") from error
+        if any(item.name.startswith(legacy_prefix) for item in names):
+            raise ProviderCacheError(
+                "legacy provider cache cannot be safely read or replayed"
+            )
         matches = [item for item in names if item.name.startswith(prefix)]
-        loaded: list[tuple[ResponseObservationEnvelope, bytes]] = []
-        for name in matches:
-            loaded.append(self._load_entry(name.name, request_identity))
-        if not loaded:
-            return None
-        latest_time = max(
-            _parse_timestamp(item[0].retrieved_at) for item in loaded
+        latest: tuple[ResponseObservationEnvelope, bytes, int] | None = None
+        latest_time: datetime | None = None
+        latest_time_conflict = False
+        total_cache_bytes = 0
+        max_total_bytes = _required_limit(
+            self.limits.max_total_bytes,
+            "max_total_bytes",
         )
-        latest = [
-            item
-            for item in loaded
-            if _parse_timestamp(item[0].retrieved_at) == latest_time
-        ]
-        if len(latest) != 1:
+        for name in matches:
+            loaded = self._load_entry(name.name, request_identity)
+            total_cache_bytes += loaded[2]
+            if total_cache_bytes > max_total_bytes:
+                raise ProviderCacheLimitError(
+                    resource="provider cache observations",
+                    limit_name="max_total_bytes",
+                    limit=max_total_bytes,
+                    observed=total_cache_bytes,
+                    limits=self.limits,
+                )
+            loaded_time = _parse_timestamp(loaded[0].retrieved_at)
+            if latest_time is None or loaded_time > latest_time:
+                latest = loaded
+                latest_time = loaded_time
+                latest_time_conflict = False
+            elif loaded_time == latest_time:
+                latest_time_conflict = True
+        if latest is None:
+            return None
+        if latest_time_conflict:
             raise ProviderCacheConflictError(
                 "cache has multiple observations at the latest retrieval time"
             )
-        observation, body = latest[0]
+        observation, body, _ = latest
         return self._parse_response(
             request_identity,
             body,
@@ -545,17 +646,43 @@ class CrossrefClient:
         if self._cache_root is None:
             raise AssertionError("cache publication requires a cache root")
         content = _cache_entry_bytes(observation, body)
+        max_cache_bytes = _required_limit(
+            self.limits.max_cache_bytes,
+            "max_cache_bytes",
+        )
+        if len(content) > max_cache_bytes:
+            raise ProviderCacheLimitError(
+                resource="provider cache entry",
+                limit_name="max_cache_bytes",
+                limit=max_cache_bytes,
+                observed=len(content),
+                limits=self.limits,
+            )
+        max_total_bytes = _required_limit(
+            self.limits.max_total_bytes,
+            "max_total_bytes",
+        )
+        if len(content) > max_total_bytes:
+            raise ProviderCacheLimitError(
+                resource="provider cache publication",
+                limit_name="max_total_bytes",
+                limit=max_total_bytes,
+                observed=len(content),
+                limits=self.limits,
+            )
         request_digest = _request_digest(observation.request_identity)
         content_digest = hashlib.sha256(content).hexdigest()
-        name = f"v1-{request_digest}-{content_digest}.json"
+        name = f"v2-{request_digest}-{content_digest}.json"
         try:
             self._cache_root.write_bytes(name, content, replace=False)
         except FileExistsError:
             try:
                 existing = self._cache_root.read_bytes(
                     name,
-                    max_bytes=MAX_CACHE_BYTES,
+                    max_bytes=max_cache_bytes,
                 )
+            except PathLimitError as error:
+                raise _limit_error(error, self.limits) from error
             except (OSError, UnicodeError, PathSafetyError) as error:
                 raise ProviderCacheError(
                     "existing cache entry cannot be safely verified"
@@ -569,7 +696,7 @@ class CrossrefClient:
         self,
         name: str,
         expected_request: NormalizedRequestIdentity,
-    ) -> tuple[ResponseObservationEnvelope, bytes]:
+    ) -> tuple[ResponseObservationEnvelope, bytes, int]:
         if self._cache_root is None:
             raise AssertionError("cache loading requires a cache root")
         name_match = _CACHE_NAME.fullmatch(name)
@@ -581,8 +708,14 @@ class CrossrefClient:
             )
         try:
             content = self._cache_root.read_bytes(
-                name, max_bytes=MAX_CACHE_BYTES
+                name,
+                max_bytes=_required_limit(
+                    self.limits.max_cache_bytes,
+                    "max_cache_bytes",
+                ),
             )
+        except PathLimitError as error:
+            raise _limit_error(error, self.limits) from error
         except (OSError, UnicodeError, PathSafetyError) as error:
             raise ProviderCacheError(
                 "cache entry cannot be safely read"
@@ -591,7 +724,11 @@ class CrossrefClient:
             raise ProviderCacheConflictError(
                 "cache filename content hash conflicts"
             )
-        data = _decode_json_object(content, source="cache entry")
+        data = _decode_json_object(
+            content,
+            source="cache entry",
+            limits=self.limits,
+        )
         if set(data) != {"schema_version", "observation", "response_base64"}:
             raise ProviderCacheError(
                 "cache entry fields are incomplete or unknown"
@@ -614,6 +751,16 @@ class CrossrefClient:
             raise ProviderCacheError("cached parser version is incompatible")
         if observation.generator_version != OBSERVATION_GENERATOR_VERSION:
             raise ProviderCacheError("cached generator version is incompatible")
+        if (
+            observation.effective_limits != self.limits
+            or observation.effective_limits_id != self.limits.evidence_id
+            or observation.max_response_bytes
+            != _required_limit(
+                self.limits.max_response_bytes,
+                "max_response_bytes",
+            )
+        ):
+            raise ProviderCacheError("cached I/O limits are incompatible")
         if observation.source_url != _crossref_url(expected_request):
             raise ProviderCacheConflictError("cached source URL conflicts")
         if observation.cache_status != CacheStatus.PUBLISHED:
@@ -637,7 +784,7 @@ class CrossrefClient:
             )
         if hashlib.sha256(body).hexdigest() != observation.response_sha256:
             raise ProviderCacheConflictError("cached response hash conflicts")
-        return observation, body
+        return observation, body, len(content)
 
     def _parse_response(
         self,
@@ -647,7 +794,11 @@ class CrossrefClient:
         *,
         delivery_status: DeliveryStatus,
     ) -> MetadataEnrichment:
-        payload = _decode_json_object(body, source="Crossref response")
+        payload = _decode_json_object(
+            body,
+            source="Crossref response",
+            limits=self.limits,
+        )
         status = payload.get("status")
         if not isinstance(status, str):
             raise ProviderResponseError(
@@ -924,11 +1075,32 @@ def _reject_nonstandard_constant(value: str) -> object:
     )
 
 
-def _decode_json_object(content: bytes, *, source: str) -> dict[str, object]:
-    if len(content) > MAX_RESPONSE_BYTES and source == "Crossref response":
-        raise ProviderResponseError("Crossref response exceeds its byte limit")
+def _decode_json_object(
+    content: bytes,
+    *,
+    source: str,
+    limits: ReferenceIOLimits = METADATA_IO_LIMITS,
+) -> dict[str, object]:
+    maximum = (
+        _required_limit(limits.max_response_bytes, "max_response_bytes")
+        if source == "Crossref response"
+        else _required_limit(limits.max_cache_bytes, "max_cache_bytes")
+    )
+    if len(content) > maximum:
+        raise _json_limit_error(
+            source=source,
+            limit_name=(
+                "max_response_bytes"
+                if source == "Crossref response"
+                else "max_cache_bytes"
+            ),
+            limit=maximum,
+            observed=len(content),
+            limits=limits,
+        )
     try:
         decoded = content.decode("utf-8")
+        _validate_json_nesting(decoded, source=source, limits=limits)
         value = json.loads(
             decoded,
             object_pairs_hook=_reject_duplicate_keys,
@@ -956,6 +1128,83 @@ def _decode_json_object(content: bytes, *, source: str) -> dict[str, object]:
     return value
 
 
+def _required_limit(value: int | None, name: str) -> int:
+    if value is None:
+        raise ValueError(f"metadata I/O profile must define {name}")
+    return value
+
+
+def _limit_error(
+    error: PathLimitError,
+    limits: ReferenceIOLimits,
+) -> ProviderCacheLimitError:
+    return ProviderCacheLimitError(
+        resource=f"provider cache cannot be safely read: {error.resource}",
+        limit_name=error.limit_name,
+        limit=error.limit,
+        observed=error.observed,
+        limits=limits,
+    )
+
+
+def _validate_json_nesting(
+    text: str,
+    *,
+    source: str,
+    limits: ReferenceIOLimits,
+) -> None:
+    maximum = _required_limit(limits.max_json_depth, "max_json_depth")
+    depth = 0
+    quoted = False
+    escaped = False
+    for character in text:
+        if escaped:
+            escaped = False
+            continue
+        if quoted and character == "\\":
+            escaped = True
+            continue
+        if character == '"':
+            quoted = not quoted
+            continue
+        if quoted:
+            continue
+        if character in "[{":
+            depth += 1
+            if depth > maximum:
+                raise _json_limit_error(
+                    source=source,
+                    limit_name="max_json_depth",
+                    limit=maximum,
+                    observed=depth,
+                    limits=limits,
+                )
+        elif character in "]}":
+            depth = max(0, depth - 1)
+
+
+def _json_limit_error(
+    *,
+    source: str,
+    limit_name: str,
+    limit: int,
+    observed: int,
+    limits: ReferenceIOLimits,
+) -> ReferenceIOLimitError:
+    error_type = (
+        ProviderResponseLimitError
+        if source == "Crossref response"
+        else ProviderCacheLimitError
+    )
+    return error_type(
+        resource=source,
+        limit_name=limit_name,
+        limit=limit,
+        observed=observed,
+        limits=limits,
+    )
+
+
 def _observation_to_mapping(
     observation: ResponseObservationEnvelope,
 ) -> dict[str, object]:
@@ -973,6 +1222,9 @@ def _observation_to_mapping(
         "parser_version": observation.parser_version,
         "generator_version": observation.generator_version,
         "cache_status": observation.cache_status.value,
+        "max_response_bytes": observation.max_response_bytes,
+        "effective_limits": observation.effective_limits.to_dict(),
+        "effective_limits_id": observation.effective_limits_id,
     }
 
 
@@ -990,12 +1242,24 @@ def _observation_from_mapping(
         "parser_version",
         "generator_version",
         "cache_status",
+        "max_response_bytes",
+        "effective_limits",
+        "effective_limits_id",
     }
     if set(data) != expected:
         raise ProviderCacheError(
             "cache observation fields are incomplete or unknown"
         )
     request_data = data["request_identity"]
+    effective_limits_data = data["effective_limits"]
+    if not isinstance(effective_limits_data, dict):
+        raise ProviderCacheError("cached effective limits are malformed")
+    try:
+        effective_limits = ReferenceIOLimits(**effective_limits_data)
+    except (TypeError, ValueError) as error:
+        raise ProviderCacheError(
+            "cached effective limits are malformed"
+        ) from error
     if not isinstance(request_data, dict) or set(request_data) != {
         "scheme",
         "value",
@@ -1011,6 +1275,8 @@ def _observation_from_mapping(
         "parser_version": str,
         "generator_version": str,
         "cache_status": str,
+        "max_response_bytes": int,
+        "effective_limits_id": str,
     }
     if any(
         type(data[name]) is not expected
@@ -1040,6 +1306,9 @@ def _observation_from_mapping(
             parser_version=cast(str, data["parser_version"]),
             generator_version=cast(str, data["generator_version"]),
             cache_status=cache_status,
+            max_response_bytes=cast(int, data["max_response_bytes"]),
+            effective_limits=effective_limits,
+            effective_limits_id=cast(str, data["effective_limits_id"]),
         )
     except (TypeError, ValueError) as error:
         raise ProviderCacheError("cached observation is malformed") from error
@@ -1049,7 +1318,7 @@ def _cache_entry_bytes(
     observation: ResponseObservationEnvelope,
     body: bytes,
 ) -> bytes:
-    if len(body) > MAX_RESPONSE_BYTES:
+    if len(body) > observation.max_response_bytes:
         raise ProviderResponseError("provider response exceeds its byte limit")
     data = {
         "schema_version": CACHE_SCHEMA_VERSION,

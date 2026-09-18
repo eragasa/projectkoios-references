@@ -123,8 +123,10 @@ def _replace_cache_payload(path: Path, payload: object) -> Path:
         )
         + "\n"
     ).encode()
+    cache_generation = path.name.split("-")[0]
     replacement = path.with_name(
-        f"v1-{request_digest}-{hashlib.sha256(content).hexdigest()}.json"
+        f"{cache_generation}-{request_digest}-"
+        f"{hashlib.sha256(content).hexdigest()}.json"
     )
     path.unlink()
     replacement.write_bytes(content)
@@ -196,6 +198,14 @@ def test__crossref__normalizes_request_and_keeps_verbatim_fields_separate(
         result.observation.response_sha256 == hashlib.sha256(body).hexdigest()
     )
     assert result.observation.response_bytes == len(body)
+    assert (
+        result.observation.effective_limits
+        == transport.requests[0].effective_limits
+    )
+    assert (
+        result.observation.effective_limits_id
+        == result.observation.effective_limits.evidence_id
+    )
     assert result.delivery_status == DeliveryStatus.PROVIDER_RESPONSE
     assert result.title == "A Synthetic Study"
     assert result.authors == ("Ada Example", "Bo Test")
@@ -418,12 +428,31 @@ def test__crossref__malformed_or_partial_cache_fails_closed(
     cache = tmp_path / "cache" / "crossref"
     cache.mkdir(parents=True)
     path = cache / (
-        f"v1-{request_digest}-{hashlib.sha256(content).hexdigest()}.json"
+        f"v2-{request_digest}-{hashlib.sha256(content).hexdigest()}.json"
     )
     path.write_bytes(content)
 
     replay, transport = _client(tmp_path)
     with pytest.raises(ProviderCacheError):
+        replay.fetch("10.1234/example.one")
+    assert transport.requests == []
+    assert path.read_bytes() == content
+
+
+def test__crossref__legacy_request_cache_blocks_transport_fallback(
+    tmp_path: Path,
+) -> None:
+    request_digest = hashlib.sha256(b"doi:10.1234/example.one").hexdigest()
+    cache = tmp_path / "cache" / "crossref"
+    cache.mkdir(parents=True)
+    content = b"{}"
+    path = cache / (
+        f"v1-{request_digest}-{hashlib.sha256(content).hexdigest()}.json"
+    )
+    path.write_bytes(content)
+
+    replay, transport = _client(tmp_path)
+    with pytest.raises(ProviderCacheError, match="legacy"):
         replay.fetch("10.1234/example.one")
     assert transport.requests == []
     assert path.read_bytes() == content
@@ -457,7 +486,7 @@ def test__crossref__oversized_cache_fails_closed_without_transport(
     cache.mkdir(parents=True)
     content = b"x" * (MAX_CACHE_BYTES + 1)
     path = cache / (
-        f"v1-{request_digest}-{hashlib.sha256(content).hexdigest()}.json"
+        f"v2-{request_digest}-{hashlib.sha256(content).hexdigest()}.json"
     )
     path.write_bytes(content)
 
