@@ -2,6 +2,15 @@
 
 Reference management and citation handling for Project Koios.
 
+## Prototype status
+
+The integrated command set remains a pre-release prototype under adversarial
+remediation. It is not yet a safe generic scanner, final missing-PDF census,
+canonical-promotion gate, accepted ingestion interface, or complete
+content-addressed reconciliation package. Each use must follow the open owner
+issues and supplied-root limitations; failed or absent evidence must not be
+promoted into an availability, rights, relevance, or scientific claim.
+
 The canonical reference convention uses one accepted BibLaTeX citation key as
 the basename of both the reference note and local PDF. See
 [Reference object convention](docs/reference-object-convention.md),
@@ -50,7 +59,13 @@ managed directory and privacy-reduced discovery evidence; it does not scan
 other roots, hydrate cloud placeholders, download sources, verify rights, or
 promote bibliography records.
 
-Asset scans store only search-root aliases and relative paths. Applying a candidate requires a separate command and rechecks its planned hash. Provider responses are cached locally under `.koios/` when requested.
+Asset scans store only search-root aliases and relative paths. Applying a
+candidate requires a separate command and rechecks its planned hash. Authorized
+roots are resolved and identity-bound once; traversal, root replacement, and
+symlink files or directories fail closed before bytes are read, hashed, copied,
+or reported. Confined writes use no-follow directory descriptors and atomic
+same-directory publication. Provider responses are cached locally under
+`.koios/` when requested.
 
 Recurring lawful acquisition uses a separate version-1 manifest. `acquisition-create` reads CSV metadata, resolves each root-relative PDF without permitting traversal, verifies a PDF header, and records its byte size and SHA-256 identity. Required CSV columns are `proposed_citekey`, `root_alias`, `relative_path`, `rights_status`, `asset_status`, and `identity_status`; optional columns are `doi`, `source_url`, and `source_version`. Identity status is either `accepted-reference` or `unaccepted-candidate`, so creating or verifying a manifest never promotes a candidate. `acquisition-verify` rechecks all source bytes. Neither command downloads content, bypasses access controls, verifies license claims, edits canonical BibLaTeX, or writes a vault.
 

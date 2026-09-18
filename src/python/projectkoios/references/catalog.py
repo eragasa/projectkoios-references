@@ -15,6 +15,7 @@ from projectkoios.references.models import (
     ReviewMembership,
     SourceAssetRecord,
 )
+from projectkoios.references.path_safety import AuthorizedRoot
 
 _SCHEMA_VERSION = 1
 _SCHEMA = """
@@ -111,7 +112,7 @@ class ReferenceCatalog:
         self.path = path
 
     def initialize(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._safe_path(create_parent=True)
         with self._connect() as connection:
             connection.executescript(_SCHEMA)
             connection.execute(
@@ -316,6 +317,24 @@ class ReferenceCatalog:
             }
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path)
+        path = self._safe_path(create_parent=False)
+        connection = sqlite3.connect(path)
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
+
+    def _safe_path(self, *, create_parent: bool) -> Path:
+        root = (
+            AuthorizedRoot.create(
+                self.path.parent,
+                label="reference catalog parent",
+            )
+            if create_parent
+            else AuthorizedRoot.existing(
+                self.path.parent,
+                label="reference catalog parent",
+            )
+        )
+        state = root.state(self.path.name)
+        if state == "directory":
+            raise ValueError("reference catalog path is a directory")
+        return root.child_path(self.path.name)

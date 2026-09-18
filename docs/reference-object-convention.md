@@ -19,13 +19,21 @@ luttingerKohn1955.pdf
 
 Directories are deployment concerns. A vault may place the two files in
 separate configured directories while preserving their common basename.
+Authorized roots are resolved and identity-bound before use. Root-relative
+reads and writes reject traversal, non-normalized paths, symlink components,
+and root replacement rather than following them.
 
 ## Key rules
 
 Keys must start with an ASCII letter and contain only ASCII letters, numbers,
-periods, underscores, or hyphens. Once accepted, a key is stable. A key change
-requires an explicit migration of the bibliography entry, note, source asset,
-and inbound citations.
+periods, underscores, or hyphens. They are limited to 200 characters, must not
+end with a period, and must not equal a reserved portable filename such as
+`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, or `LPT1`–`LPT9`. The shared
+filesystem validator applies these rules before deriving a note, PDF, ingestion,
+or output path.
+
+Once accepted, a key is stable. A key change requires an explicit migration of
+the bibliography entry, note, source asset, and inbound citations.
 
 Multiple source artifacts use suffixes without changing the reference identity:
 

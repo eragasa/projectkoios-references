@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.path_safety import (
+    AuthorizedRoot,
+    validate_citekey,
+)
 
 _CITEKEY_FIELD = re.compile(r'^citekey:\s*["\']?([^"\'\s]+)')
 
@@ -24,43 +28,52 @@ def validate_reference_objects(
 ) -> tuple[ValidationIssue, ...]:
     """Validate canonical basenames without requiring every optional PDF."""
     issues: list[ValidationIssue] = []
-    keys = {record.citekey for record in records}
-    for note in sorted(notes_directory.glob("*.md")):
-        if note.stem not in keys:
+    keys = {validate_citekey(record.citekey) for record in records}
+    notes = AuthorizedRoot.existing(notes_directory, label="notes root")
+    pdfs = AuthorizedRoot.existing(pdf_directory, label="PDF root")
+    for relative in notes.iter_files(suffix=".md", recursive=False):
+        stem = validate_citekey(Path(relative.name).stem)
+        if stem not in keys:
             issues.append(
                 ValidationIssue(
                     "orphan-note",
-                    note.name,
+                    relative.name,
                     "note basename is not a bibliography key",
                 )
             )
-        declared = _declared_citekey(note)
-        if declared is not None and declared != note.stem:
+        declared = _declared_citekey(notes, relative)
+        if declared is not None:
+            validate_citekey(declared, field="declared citekey")
+        if declared is not None and declared != stem:
             issues.append(
                 ValidationIssue(
                     "note-citekey-mismatch",
-                    note.name,
+                    relative.name,
                     f"frontmatter citekey is {declared!r}",
                 )
             )
-    for pdf in sorted(pdf_directory.glob("*.pdf")):
-        if pdf.stem not in keys:
+    for relative in pdfs.iter_files(suffix=".pdf", recursive=False):
+        stem = validate_citekey(Path(relative.name).stem)
+        if stem not in keys:
             issues.append(
                 ValidationIssue(
                     "orphan-pdf",
-                    pdf.name,
+                    relative.name,
                     "PDF basename is not a bibliography key",
                 )
             )
     return tuple(issues)
 
 
-def _declared_citekey(path: Path) -> str | None:
-    with path.open(encoding="utf-8") as stream:
-        for number, line in enumerate(stream):
-            if number > 80 or (number > 0 and line.rstrip() == "---"):
-                break
-            match = _CITEKEY_FIELD.match(line.strip())
-            if match:
-                return match.group(1)
+def _declared_citekey(
+    root: AuthorizedRoot,
+    relative: PurePosixPath,
+) -> str | None:
+    text = root.read_text(relative)
+    for number, line in enumerate(text.splitlines()):
+        if number > 80 or (number > 0 and line.rstrip() == "---"):
+            break
+        match = _CITEKEY_FIELD.match(line.strip())
+        if match:
+            return match.group(1)
     return None

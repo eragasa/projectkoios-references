@@ -4,6 +4,12 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from projectkoios.references.path_safety import (
+    validate_citekey,
+    validate_relative_path,
+    validate_root_alias,
+)
+
 _DOI_PREFIX = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.I)
 
 
@@ -28,8 +34,7 @@ class ReferenceRecord:
     eprint: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.citekey:
-            raise ValueError("citekey must be non-empty")
+        validate_citekey(self.citekey)
         if not self.entry_type:
             raise ValueError("entry_type must be non-empty")
         normalized = normalize_doi(self.doi)
@@ -44,7 +49,12 @@ class ReferenceAlias:
     rationale: str
 
     def __post_init__(self) -> None:
-        if not self.alias or not self.canonical_citekey or not self.rationale:
+        validate_citekey(self.alias, field="reference alias")
+        validate_citekey(
+            self.canonical_citekey,
+            field="canonical citekey",
+        )
+        if not self.rationale:
             raise ValueError("reference alias must be fully explained")
 
 
@@ -67,6 +77,11 @@ class ReviewMembership:
     status: ReviewStatus
     decision_note: str | None = None
 
+    def __post_init__(self) -> None:
+        validate_citekey(self.citekey)
+        if not self.collection_id:
+            raise ValueError("review collection identity must be non-empty")
+
 
 @dataclass(frozen=True)
 class SourceAssetRecord:
@@ -79,7 +94,10 @@ class SourceAssetRecord:
     asset_status: str
 
     def __post_init__(self) -> None:
-        if len(self.sha256) != 64:
+        validate_citekey(self.citekey)
+        validate_root_alias(self.root_alias)
+        validate_relative_path(self.relative_path)
+        if re.fullmatch(r"[0-9a-f]{64}", self.sha256) is None:
             raise ValueError("source-asset hash must be a SHA-256 digest")
         if self.byte_size < 0:
             raise ValueError("source-asset byte size must be non-negative")
@@ -93,6 +111,7 @@ class BibliographyOccurrence:
     source_path: str
 
     def __post_init__(self) -> None:
+        validate_citekey(self.citekey)
         if not self.source_id or not self.source_path:
             raise ValueError("bibliography source identity must be complete")
 
@@ -108,6 +127,7 @@ class AbstractRecord:
     language: str | None = None
 
     def __post_init__(self) -> None:
+        validate_citekey(self.citekey)
         if not self.text:
             raise ValueError("abstract text must be non-empty")
         if len(self.content_hash) != 64:
@@ -125,6 +145,13 @@ class CitationCandidate:
     metadata_status: str
     abstract_status: str
     abstract: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.proposed_citekey is not None:
+            validate_citekey(
+                self.proposed_citekey,
+                field="proposed citekey",
+            )
 
 
 @dataclass(frozen=True)

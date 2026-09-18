@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_CITEKEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]*$")
+from projectkoios.references.path_safety import validate_citekey
 
 
 @dataclass(frozen=True)
@@ -18,13 +17,9 @@ class ReferenceFilenames:
     @classmethod
     def from_citekey(cls, citekey: str) -> ReferenceFilenames:
         """Create the note and PDF filenames for a citation key."""
-        if not _CITEKEY_PATTERN.fullmatch(citekey):
-            raise ValueError(
-                "citekey must start with a letter and contain only letters, "
-                "numbers, period, underscore, or hyphen"
-            )
+        safe_citekey = validate_citekey(citekey)
         return cls(
-            citekey=citekey,
-            note=Path(f"{citekey}.md"),
-            pdf=Path(f"{citekey}.pdf"),
+            citekey=safe_citekey,
+            note=Path(f"{safe_citekey}.md"),
+            pdf=Path(f"{safe_citekey}.pdf"),
         )

@@ -4,10 +4,9 @@ import csv
 import hashlib
 import io
 import json
-import os
 import re
+import secrets
 import shutil
-import tempfile
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -16,6 +15,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from projectkoios.references.models import ReferenceRecord
+from projectkoios.references.path_safety import (
+    AuthorizedRoot,
+    PathSafetyError,
+    read_path_text,
+    validate_citekey,
+    validate_relative_path,
+)
 
 _SCHEMA_VERSION = 1
 _PROCESSOR_VERSION = "0.4.0"
@@ -29,7 +35,6 @@ _CITATION = re.compile(
     r"(?:\[[^\]]*\]\s*){0,2}\{([^{}]+)\}",
     re.MULTILINE,
 )
-_VALID_CITEKEY = re.compile(r"^[^\s#%'(),={}\[\]]+$")
 _EXPECTED_PDF_TYPES = frozenset(
     {
         "article",
@@ -197,8 +202,8 @@ class PublicationResult:
 
 
 def load_collection_rows(path: Path) -> dict[str, CollectionRowEvidence]:
-    with path.open(encoding="utf-8", newline="") as stream:
-        rows = tuple(csv.DictReader(stream))
+    text = read_path_text(path, label="collection rows")
+    rows = tuple(csv.DictReader(io.StringIO(text, newline="")))
     if len(rows) > _MAX_RECORDS:
         raise CollectionReconciliationError("collection rows exceed hard limit")
     result: dict[str, CollectionRowEvidence] = {}
@@ -208,6 +213,12 @@ def load_collection_rows(path: Path) -> dict[str, CollectionRowEvidence]:
             raise CollectionReconciliationError(
                 "collection row has an empty citekey"
             )
+        try:
+            validate_citekey(citekey)
+        except PathSafetyError as error:
+            raise CollectionReconciliationError(
+                f"collection row has an unsafe citekey: {citekey}"
+            ) from error
         if citekey in result:
             raise CollectionReconciliationError(
                 f"duplicate collection row: {citekey}"
@@ -232,22 +243,26 @@ def scan_managed_pdfs(
     *,
     source_discovery: Path | None = None,
 ) -> tuple[ManagedPdf, ...]:
-    if directory.is_symlink() or not directory.is_dir():
-        raise CollectionReconciliationError(
-            "managed PDF root must be a real directory"
-        )
+    try:
+        root = AuthorizedRoot.existing(directory, label="managed PDF root")
+        relative_files = root.iter_files(suffix=".pdf", recursive=False)
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
     historical = _load_source_discovery(source_discovery)
     pdfs: list[ManagedPdf] = []
-    for path in sorted(directory.glob("*.pdf"), key=lambda item: item.name):
-        if not path.is_file() or path.is_symlink():
-            continue
-        byte_size = path.stat().st_size
-        if byte_size <= 0 or byte_size > _MAX_PDF_BYTES:
+    for relative in relative_files:
+        try:
+            citekey = validate_citekey(Path(relative.name).stem)
+            content = root.read_bytes(relative, max_bytes=_MAX_PDF_BYTES)
+        except PathSafetyError as error:
+            raise CollectionReconciliationError(str(error)) from error
+        byte_size = len(content)
+        if byte_size <= 0:
             raise CollectionReconciliationError(
-                f"managed PDF size is outside bounds: {path.name}"
+                f"managed PDF size is outside bounds: {relative.name}"
             )
-        digest = _hash_pdf(path)
-        discovery = historical.get(path.stem)
+        digest = _hash_pdf(content, filename=relative.name)
+        discovery = historical.get(citekey)
         if discovery is not None and discovery[0] == digest:
             verified = True
             evidence = discovery[1]
@@ -256,8 +271,8 @@ def scan_managed_pdfs(
             evidence = ()
         pdfs.append(
             ManagedPdf(
-                filename=path.name,
-                citekey=path.stem,
+                filename=relative.name,
+                citekey=citekey,
                 sha256=digest,
                 byte_size=byte_size,
                 historically_verified=verified,
@@ -272,29 +287,33 @@ def scan_processing_evidence(
     *,
     citekeys: tuple[str, ...],
 ) -> dict[str, ProcessingEvidence]:
-    if ingestion_root.is_symlink() or not ingestion_root.is_dir():
-        raise CollectionReconciliationError(
-            "ingestion root must be a real directory"
+    try:
+        root = AuthorizedRoot.existing(
+            ingestion_root,
+            label="ingestion root",
         )
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
     result: dict[str, ProcessingEvidence] = {}
-    for citekey in sorted(set(citekeys)):
-        if _VALID_CITEKEY.fullmatch(citekey) is None:
+    for raw_citekey in sorted(set(citekeys)):
+        try:
+            citekey = validate_citekey(raw_citekey)
+            extraction = f"{citekey}/extraction.json"
+            extraction_state = root.state(extraction)
+        except PathSafetyError as error:
             raise CollectionReconciliationError(
-                f"unsafe citekey for processing lookup: {citekey}"
-            )
-        source_directory = ingestion_root / citekey
-        if source_directory.is_symlink():
+                f"unsafe processing lookup for citekey: {raw_citekey}"
+            ) from error
+        if extraction_state == "directory":
             raise CollectionReconciliationError(
-                f"processing directory must not be a symlink: {citekey}"
+                f"processing extraction is not a file: {citekey}"
             )
-        extraction = source_directory / "extraction.json"
         ingestion_status = (
             "raw-extraction-present"
-            if _is_regular_file(extraction)
+            if extraction_state == "regular"
             else "not-ingested"
         )
-        transcript_directory = source_directory / "derived" / "transcription"
-        transcript_status = _transcript_status(transcript_directory)
+        transcript_status = _transcript_status(root, citekey)
         result[citekey] = ProcessingEvidence(
             ingestion_status=ingestion_status,
             transcript_status=transcript_status,
@@ -308,26 +327,37 @@ def build_citation_closure(
     bibliography_keys: tuple[str, ...],
     source_revision: str,
 ) -> CitationClosure:
-    source_files = tuple(
-        sorted(
-            path
-            for path in manuscript_root.rglob("*.tex")
-            if path.is_file() and not path.is_symlink()
+    try:
+        root = AuthorizedRoot.existing(
+            manuscript_root,
+            label="manuscript root",
         )
-    )
+        source_files = root.iter_files(suffix=".tex", recursive=True)
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
     if len(source_files) > _MAX_TEX_FILES:
         raise CollectionReconciliationError("TeX source count exceeds limit")
-    total_bytes = sum(path.stat().st_size for path in source_files)
-    if total_bytes > _MAX_TEX_BYTES:
-        raise CollectionReconciliationError("TeX source bytes exceed limit")
 
     uses: dict[str, set[str]] = defaultdict(set)
     nocite_all = False
     relative_files: list[str] = []
-    for path in source_files:
-        relative = path.relative_to(manuscript_root).as_posix()
+    total_bytes = 0
+    for relative_path in source_files:
+        try:
+            content = root.read_bytes(
+                relative_path,
+                max_bytes=_MAX_TEX_BYTES,
+            )
+            text = content.decode("utf-8")
+        except (PathSafetyError, UnicodeDecodeError) as error:
+            raise CollectionReconciliationError(
+                f"cannot safely read TeX source: {relative_path}"
+            ) from error
+        total_bytes += len(content)
+        if total_bytes > _MAX_TEX_BYTES:
+            raise CollectionReconciliationError("TeX source bytes exceed limit")
+        relative = relative_path.as_posix()
         relative_files.append(relative)
-        text = path.read_text(encoding="utf-8")
         uncommented = "\n".join(
             _strip_latex_comment(line) for line in text.splitlines()
         )
@@ -339,11 +369,19 @@ def build_citation_closure(
                 if key == "*":
                     nocite_all = True
                     continue
-                if _VALID_CITEKEY.fullmatch(key) is None:
+                try:
+                    validate_citekey(key)
+                except PathSafetyError:
                     continue
                 uses[key].add(relative)
 
-    bibliography = set(bibliography_keys)
+    try:
+        bibliography = {
+            validate_citekey(key, field="bibliography citekey")
+            for key in bibliography_keys
+        }
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
     cited = set(uses)
     payload: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
@@ -405,7 +443,22 @@ def reconcile_collection(
     processing_supplied = processing_evidence is not None
     processing_by_citekey = processing_evidence or {}
     ordered_records = tuple(sorted(records, key=lambda item: item.citekey))
-    citekeys = tuple(record.citekey for record in ordered_records)
+    try:
+        citekeys = tuple(
+            validate_citekey(record.citekey) for record in ordered_records
+        )
+        for managed_pdf in managed_pdfs:
+            validate_citekey(
+                managed_pdf.citekey,
+                field="managed PDF citekey",
+            )
+        for citekey in processing_by_citekey:
+            validate_citekey(
+                citekey,
+                field="processing-evidence citekey",
+            )
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
     if len(citekeys) != len(set(citekeys)):
         raise CollectionReconciliationError(
             "bibliography contains duplicate citekeys"
@@ -613,53 +666,66 @@ def publish_reconciliation(
     output_directory: Path,
 ) -> PublicationResult:
     expected = dict(outputs.files)
-    if output_directory.is_symlink():
-        raise CollectionReconciliationError(
-            "output directory must not be a symlink"
+    try:
+        parent = AuthorizedRoot.create(
+            output_directory.parent,
+            label="reconciliation output parent",
         )
-    if output_directory.exists():
-        actual_names = {
-            path.name
-            for path in output_directory.iterdir()
-            if path.is_file() and not path.is_symlink()
-        }
-        if actual_names != set(expected):
-            raise CollectionReconciliationError(
-                "existing reconciliation output is incomplete or unexpected"
+        output_name = validate_relative_path(
+            output_directory.name,
+            field="output directory name",
+        )
+        output_state = parent.state(output_name)
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
+    if output_state == "regular":
+        raise CollectionReconciliationError(
+            "reconciliation output path is not a directory"
+        )
+    if output_state == "directory":
+        try:
+            existing = AuthorizedRoot.existing(
+                parent.child_path(output_name),
+                label="reconciliation output directory",
             )
-        for name, content in expected.items():
-            path = output_directory / name
-            if path.is_symlink() or path.read_bytes() != content:
-                raise CollectionReconciliationError(
-                    "existing reconciliation output differs"
+            actual_names = {
+                path.name
+                for path in existing.iter_files(
+                    suffix="",
+                    recursive=False,
+                    reject_directories=True,
                 )
+            }
+            if actual_names != set(expected):
+                raise CollectionReconciliationError(
+                    "existing reconciliation output is incomplete or unexpected"
+                )
+            for name, content in expected.items():
+                if existing.read_bytes(name) != content:
+                    raise CollectionReconciliationError(
+                        "existing reconciliation output differs"
+                    )
+        except PathSafetyError as error:
+            raise CollectionReconciliationError(str(error)) from error
         return PublicationResult(
             status="unchanged",
-            output_directory=output_directory,
+            output_directory=parent.child_path(output_name),
             manifest_id=outputs.manifest.manifest_id,
         )
 
-    output_directory.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(
-        tempfile.mkdtemp(
-            prefix=f".{output_directory.name}.",
-            dir=output_directory.parent,
-        )
-    )
+    temporary_name = f".{output_name.name}.{secrets.token_hex(12)}.temporary"
     try:
+        temporary = parent.create_directory(temporary_name)
         for name, content in expected.items():
-            path = temporary / name
-            with path.open("xb") as stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-        os.replace(temporary, output_directory)
+            temporary.write_bytes(name, content, replace=False)
+        published = parent.rename_child(temporary_name, output_name)
     except BaseException:
-        shutil.rmtree(temporary, ignore_errors=True)
+        temporary_path = parent.child_path(temporary_name)
+        shutil.rmtree(temporary_path, ignore_errors=True)
         raise
     return PublicationResult(
         status="created",
-        output_directory=output_directory,
+        output_directory=published,
         manifest_id=outputs.manifest.manifest_id,
     )
 
@@ -669,7 +735,13 @@ def _load_source_discovery(
 ) -> dict[str, tuple[str, tuple[str, ...]]]:
     if path is None:
         return {}
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(
+        read_path_text(
+            path,
+            label="source-discovery document",
+            max_bytes=_MAX_STATUS_JSON_BYTES,
+        )
+    )
     if not isinstance(data, dict) or data.get("schema_version") != 1:
         raise CollectionReconciliationError(
             "unsupported source-discovery document"
@@ -699,6 +771,10 @@ def _load_source_discovery(
             raise CollectionReconciliationError(
                 "source-discovery match identity is incomplete"
             )
+        try:
+            validate_citekey(citekey, field="source-discovery citekey")
+        except PathSafetyError as error:
+            raise CollectionReconciliationError(str(error)) from error
         if citekey in result:
             raise CollectionReconciliationError(
                 f"duplicate source-discovery citekey: {citekey}"
@@ -707,30 +783,39 @@ def _load_source_discovery(
     return result
 
 
-def _is_regular_file(path: Path) -> bool:
-    if path.is_symlink():
-        raise CollectionReconciliationError(
-            f"processing evidence must not be a symlink: {path.name}"
+def _transcript_status(root: AuthorizedRoot, citekey: str) -> str:
+    base = f"{citekey}/derived/transcription"
+    try:
+        directory_state = root.state(base)
+        if directory_state == "missing":
+            return "not-transcribed"
+        if directory_state != "directory":
+            raise CollectionReconciliationError(
+                "transcript path is not a directory"
+            )
+        required = tuple(
+            f"{base}/{name}"
+            for name in (
+                "audit.json",
+                "clean.json",
+                "clean.txt",
+                "manifest.json",
+            )
         )
-    return path.is_file()
-
-
-def _transcript_status(directory: Path) -> str:
-    if directory.is_symlink():
+        states = tuple(root.state(path) for path in required)
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
+    if any(state == "directory" for state in states):
         raise CollectionReconciliationError(
-            "transcript directory must not be a symlink"
+            "transcript artifact is not a regular file"
         )
-    required = tuple(
-        directory / name
-        for name in ("audit.json", "clean.json", "clean.txt", "manifest.json")
-    )
-    present = tuple(_is_regular_file(path) for path in required)
+    present = tuple(state == "regular" for state in states)
     if not any(present):
         return "not-transcribed"
     if not all(present):
         return "partial-transcript-artifacts"
-    manifest = _read_bounded_json(directory / "manifest.json")
-    audit = _read_bounded_json(directory / "audit.json")
+    manifest = _read_bounded_json(root, f"{base}/manifest.json")
+    audit = _read_bounded_json(root, f"{base}/audit.json")
     if (
         manifest.get("status") == "automated_unreviewed"
         and audit.get("status") == "passed"
@@ -739,32 +824,32 @@ def _transcript_status(directory: Path) -> str:
     return "transcript-present-status-unverified"
 
 
-def _read_bounded_json(path: Path) -> dict[str, Any]:
-    size = path.stat().st_size
-    if size <= 0 or size > _MAX_STATUS_JSON_BYTES:
+def _read_bounded_json(
+    root: AuthorizedRoot,
+    relative: str,
+) -> dict[str, Any]:
+    try:
+        content = root.read_bytes(relative, max_bytes=_MAX_STATUS_JSON_BYTES)
+    except PathSafetyError as error:
+        raise CollectionReconciliationError(str(error)) from error
+    if not content:
         raise CollectionReconciliationError(
-            f"processing status JSON size is outside bounds: {path.name}"
+            f"processing status JSON is empty: {Path(relative).name}"
         )
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(content.decode("utf-8"))
     if not isinstance(data, dict):
         raise CollectionReconciliationError(
-            f"processing status JSON must be an object: {path.name}"
+            f"processing status JSON must be an object: {Path(relative).name}"
         )
     return data
 
 
-def _hash_pdf(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        header = stream.read(5)
-        if header != b"%PDF-":
-            raise CollectionReconciliationError(
-                f"managed file lacks PDF header: {path.name}"
-            )
-        digest.update(header)
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _hash_pdf(content: bytes, *, filename: str) -> str:
+    if not content.startswith(b"%PDF-"):
+        raise CollectionReconciliationError(
+            f"managed file lacks PDF header: {filename}"
+        )
+    return hashlib.sha256(content).hexdigest()
 
 
 def _strip_latex_comment(line: str) -> str:

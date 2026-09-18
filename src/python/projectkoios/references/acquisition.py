@@ -4,13 +4,18 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 from projectkoios.references.assets import SearchRoot
 from projectkoios.references.models import normalize_doi
+from projectkoios.references.path_safety import (
+    AuthorizedRoot,
+    validate_citekey,
+    validate_relative_path,
+    validate_root_alias,
+)
 
-_CITEKEY = re.compile(r"^[A-Za-z][A-Za-z0-9._-]*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_ENTRIES = 256
 _MAX_TEXT = 4096
@@ -24,16 +29,7 @@ def _bounded(value: object, *, field: str) -> str:
 
 
 def _relative_path(value: str) -> PurePosixPath:
-    path = PurePosixPath(value)
-    if (
-        not value
-        or path.is_absolute()
-        or ".." in path.parts
-        or not path.parts
-        or path.as_posix() != value
-    ):
-        raise ValueError("relative_path must be normalized and traversal-free")
-    return path
+    return validate_relative_path(value)
 
 
 @dataclass(frozen=True)
@@ -51,13 +47,12 @@ class AcquisitionEntry:
     source_version: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.proposed_citekey, str) or not _CITEKEY.fullmatch(
-            self.proposed_citekey
-        ):
-            raise ValueError("proposed_citekey must be a portable citekey")
+        validate_citekey(
+            self.proposed_citekey,
+            field="proposed_citekey",
+        )
         _bounded(self.root_alias, field="root_alias")
-        if "/" in self.root_alias or "\\" in self.root_alias:
-            raise ValueError("root_alias must be one path-safe segment")
+        validate_root_alias(self.root_alias)
         if not isinstance(self.relative_path, PurePosixPath):
             raise ValueError("relative_path must be a portable path")
         _relative_path(self.relative_path.as_posix())
@@ -256,8 +251,7 @@ def create_acquisition_manifest(
             )
         root_alias = row["root_alias"]
         relative_path = _relative_path(row["relative_path"])
-        path = _resolve_source(root_alias, relative_path, root_paths)
-        content = path.read_bytes()
+        content = _read_source(root_alias, relative_path, root_paths)
         if not content.startswith(b"%PDF-"):
             raise ValueError(f"CSV row {index} source has no PDF header")
         entries.append(
@@ -285,10 +279,9 @@ def verify_acquisition_manifest(
 ) -> None:
     root_paths = _resolved_roots(roots)
     for entry in manifest.entries:
-        path = _resolve_source(
+        content = _read_source(
             entry.root_alias, entry.relative_path, root_paths
         )
-        content = path.read_bytes()
         if not content.startswith(b"%PDF-"):
             raise ValueError(
                 f"source has no PDF header: {entry.proposed_citekey}"
@@ -299,32 +292,33 @@ def verify_acquisition_manifest(
             raise ValueError(f"source hash changed: {entry.proposed_citekey}")
 
 
-def _resolved_roots(roots: tuple[SearchRoot, ...]) -> dict[str, Path]:
+def _resolved_roots(
+    roots: tuple[SearchRoot, ...],
+) -> dict[str, AuthorizedRoot]:
     if not roots:
         raise ValueError("at least one source root is required")
     aliases = tuple(root.alias for root in roots)
     if len(aliases) != len(set(aliases)):
         raise ValueError("source-root aliases must be unique")
-    resolved: dict[str, Path] = {}
+    resolved: dict[str, AuthorizedRoot] = {}
     for root in roots:
-        path = root.path.expanduser().resolve()
-        if not path.is_dir():
-            raise ValueError(f"source root is not a directory: {root.alias}")
-        resolved[root.alias] = path
+        resolved[root.alias] = AuthorizedRoot.existing(
+            root.path,
+            label=f"source root {root.alias!r}",
+        )
     return resolved
 
 
-def _resolve_source(
+def _read_source(
     root_alias: str,
     relative_path: PurePosixPath,
-    roots: dict[str, Path],
-) -> Path:
+    roots: dict[str, AuthorizedRoot],
+) -> bytes:
     if root_alias not in roots:
         raise ValueError(f"source root was not supplied: {root_alias}")
-    root = roots[root_alias]
-    path = (root / Path(relative_path)).resolve()
-    if not path.is_relative_to(root):
-        raise ValueError(f"source path escapes root: {relative_path}")
-    if not path.is_file():
-        raise ValueError(f"source is not a regular file: {relative_path}")
-    return path
+    try:
+        return roots[root_alias].read_bytes(relative_path)
+    except FileNotFoundError as error:
+        raise ValueError(
+            f"source is not a regular file: {relative_path}"
+        ) from error

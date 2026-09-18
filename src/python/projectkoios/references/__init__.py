@@ -51,12 +51,19 @@ from projectkoios.references.models import (
     normalize_doi,
 )
 from projectkoios.references.naming import ReferenceFilenames
+from projectkoios.references.path_safety import (
+    AuthorizedRoot,
+    PathSafetyError,
+    validate_citekey,
+    validate_relative_path,
+)
 
 __all__ = [
     "AbstractRecord",
     "AcquisitionEntry",
     "AcquisitionManifest",
     "AssetCandidate",
+    "AuthorizedRoot",
     "AssetDiscoveryPlan",
     "AssetDiscoveryPlanner",
     "BibliographyImport",
@@ -71,6 +78,7 @@ __all__ = [
     "CollectionRowEvidence",
     "ManagedPdf",
     "PdfExpectation",
+    "PathSafetyError",
     "PdfStatus",
     "ProcessingEvidence",
     "PublicationResult",
@@ -93,5 +101,7 @@ __all__ = [
     "scan_managed_pdfs",
     "scan_processing_evidence",
     "normalize_doi",
+    "validate_citekey",
+    "validate_relative_path",
     "verify_acquisition_manifest",
 ]

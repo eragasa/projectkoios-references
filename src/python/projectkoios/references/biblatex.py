@@ -9,6 +9,7 @@ from projectkoios.references.models import (
     ReferenceRecord,
     normalize_doi,
 )
+from projectkoios.references.path_safety import read_path_text
 
 
 class BibLaTeXUnavailableError(RuntimeError):
@@ -30,13 +31,16 @@ def load_bibliography(
 ) -> BibliographyImport:
     """Load records while preserving their bibliography occurrence."""
     try:
-        from pybtex.database import parse_file  # type: ignore[import-untyped]
+        from pybtex.database import parse_string  # type: ignore[import-untyped]
     except ImportError as error:  # pragma: no cover - environment dependent
         raise BibLaTeXUnavailableError(
             "BibLaTeX import requires the 'bibtex' project extra"
         ) from error
 
-    database: Any = parse_file(str(path), bib_format="bibtex")
+    database: Any = parse_string(
+        read_path_text(path, label="bibliography"),
+        bib_format="bibtex",
+    )
     records: list[ReferenceRecord] = []
     occurrences: list[BibliographyOccurrence] = []
     occurrence_path = source_path or path.name

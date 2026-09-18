@@ -10,6 +10,8 @@ from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from projectkoios.references.path_safety import AuthorizedRoot
+
 _TAG = re.compile(r"<[^>]+>")
 
 
@@ -38,12 +40,32 @@ class CrossrefClient:
         self.mailto = mailto
         self.cache_directory = cache_directory
         self.timeout_seconds = timeout_seconds
+        self._cache_root: AuthorizedRoot | None = None
+        if cache_directory is not None:
+            root = AuthorizedRoot.create(
+                cache_directory,
+                label="provider cache root",
+            )
+            state = root.state("crossref")
+            if state == "missing":
+                self._cache_root = root.create_directory("crossref")
+            elif state == "directory":
+                self._cache_root = AuthorizedRoot.existing(
+                    root.child_path("crossref"),
+                    label="Crossref cache root",
+                )
+            else:
+                raise ValueError("Crossref cache path is not a directory")
 
     def fetch(self, doi: str) -> MetadataEnrichment:
         normalized = doi.strip().lower()
-        cache_path = self._cache_path(normalized)
-        if cache_path is not None and cache_path.exists():
-            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        cache_key = self._cache_key(normalized)
+        if (
+            cache_key is not None
+            and self._cache_root is not None
+            and self._cache_root.state(cache_key) == "regular"
+        ):
+            payload = json.loads(self._cache_root.read_text(cache_key))
         else:
             url = f"https://api.crossref.org/works/{quote(normalized, safe='')}"
             headers = {"User-Agent": self._user_agent()}
@@ -51,19 +73,25 @@ class CrossrefClient:
                 Request(url, headers=headers), timeout=self.timeout_seconds
             ) as response:
                 payload = json.load(response)
-            if cache_path is not None:
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_text(
-                    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
+            if cache_key is not None and self._cache_root is not None:
+                rendered = (
+                    json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+                ).encode("utf-8")
+                try:
+                    self._cache_root.write_bytes(
+                        cache_key,
+                        rendered,
+                        replace=False,
+                    )
+                except FileExistsError:
+                    pass
         return self._to_enrichment(normalized, payload)
 
-    def _cache_path(self, doi: str) -> Path | None:
-        if self.cache_directory is None:
+    def _cache_key(self, doi: str) -> str | None:
+        if self._cache_root is None:
             return None
         digest = hashlib.sha256(doi.encode()).hexdigest()
-        return self.cache_directory / "crossref" / f"{digest}.json"
+        return f"{digest}.json"
 
     def _user_agent(self) -> str:
         agent = "projectkoios-references/0.0.0"

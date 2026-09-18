@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -34,6 +35,11 @@ from projectkoios.references.models import (
     ReviewMembership,
     ReviewStatus,
     SourceAssetRecord,
+)
+from projectkoios.references.path_safety import (
+    read_path_bytes,
+    read_path_text,
+    write_path_bytes,
 )
 from projectkoios.references.validation import validate_reference_objects
 
@@ -206,8 +212,11 @@ def main(arguments: list[str] | None = None) -> int:
     if args.command == "review-import":
         catalog = ReferenceCatalog(args.catalog)
         catalog.initialize()
-        with args.corpus.open(encoding="utf-8", newline="") as stream:
-            rows = tuple(csv.DictReader(stream))
+        stream = io.StringIO(
+            read_path_text(args.corpus, label="review corpus"),
+            newline="",
+        )
+        rows = tuple(csv.DictReader(stream))
         for row in rows:
             citekey = row.get("citekey")
             if not citekey:
@@ -223,7 +232,10 @@ def main(arguments: list[str] | None = None) -> int:
             )
         return 0
     if args.command == "collection-reconcile":
-        bibliography_bytes = args.bibliography.read_bytes()
+        bibliography_bytes = read_path_bytes(
+            args.bibliography,
+            label="bibliography",
+        )
         imported = load_bibliography(
             args.bibliography,
             source_id=args.collection_id,
@@ -289,13 +301,17 @@ def main(arguments: list[str] | None = None) -> int:
             imported.records,
             tuple(args.search_root),
         )
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(plan.to_json(), encoding="utf-8")
+        write_path_bytes(
+            args.output,
+            plan.to_json().encode("utf-8"),
+            label="asset discovery plan",
+            replace=True,
+        )
         print(f"wrote {len(plan.candidates)} candidates to {args.output}")
         return 0
     if args.command == "assets-apply":
         plan = AssetDiscoveryPlan.from_json(
-            args.plan.read_text(encoding="utf-8")
+            read_path_text(args.plan, label="asset discovery plan")
         )
         matches = [
             item
@@ -337,7 +353,7 @@ def main(arguments: list[str] | None = None) -> int:
         catalog = ReferenceCatalog(args.catalog)
         catalog.initialize()
         plan = AssetDiscoveryPlan.from_json(
-            args.plan.read_text(encoding="utf-8")
+            read_path_text(args.plan, label="asset discovery plan")
         )
         for candidate in plan.candidates:
             if candidate.recommendation != "strong-candidate":
@@ -355,30 +371,39 @@ def main(arguments: list[str] | None = None) -> int:
             )
         return 0
     if args.command == "acquisition-create":
-        with args.metadata.open(encoding="utf-8", newline="") as stream:
-            rows = tuple(
-                {
-                    str(key): str(value)
-                    for key, value in row.items()
-                    if key is not None and value is not None
-                }
-                for row in csv.DictReader(stream)
-            )
+        stream = io.StringIO(
+            read_path_text(args.metadata, label="acquisition metadata"),
+            newline="",
+        )
+        rows = tuple(
+            {
+                str(key): str(value)
+                for key, value in row.items()
+                if key is not None and value is not None
+            }
+            for row in csv.DictReader(stream)
+        )
         manifest = create_acquisition_manifest(
             source_id=args.source_id,
             rows=rows,
             roots=tuple(args.source_root),
         )
-        if args.output.exists():
-            raise SystemExit(f"refusing to overwrite manifest: {args.output}")
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        with args.output.open("x", encoding="utf-8") as stream:
-            stream.write(manifest.to_json())
+        try:
+            write_path_bytes(
+                args.output,
+                manifest.to_json().encode("utf-8"),
+                label="acquisition manifest",
+                replace=False,
+            )
+        except FileExistsError:
+            raise SystemExit(
+                f"refusing to overwrite manifest: {args.output}"
+            ) from None
         print(f"wrote {len(manifest.entries)} entries to {args.output}")
         return 0
     if args.command == "acquisition-verify":
         manifest = AcquisitionManifest.from_json(
-            args.manifest.read_text(encoding="utf-8")
+            read_path_text(args.manifest, label="acquisition manifest")
         )
         verify_acquisition_manifest(
             manifest,
