@@ -47,11 +47,7 @@ from projectkoios.references.io_limits import (
     bounded_csv_field_size,
     bounded_utf8_size,
 )
-from projectkoios.references.models import (
-    ReviewMembership,
-    ReviewStatus,
-    SourceAssetRecord,
-)
+from projectkoios.references.models import SourceAssetRecord
 from projectkoios.references.path_safety import (
     PathLimitError,
     RootStorageClass,
@@ -206,30 +202,6 @@ def _parser() -> argparse.ArgumentParser:
     summary.add_argument("catalog", type=Path)
     summary.add_argument(
         "--catalog-storage-class", type=_storage_class, required=True
-    )
-
-    review = commands.add_parser("review-set")
-    review.add_argument("catalog", type=Path)
-    review.add_argument("collection_id")
-    review.add_argument("citekey")
-    review.add_argument("status", choices=tuple(ReviewStatus))
-    review.add_argument("--decision-note")
-    review.add_argument(
-        "--catalog-storage-class", type=_storage_class, required=True
-    )
-
-    review_import = commands.add_parser("review-import")
-    review_import.add_argument("catalog", type=Path)
-    review_import.add_argument("collection_id")
-    review_import.add_argument("corpus", type=Path)
-    review_import.add_argument(
-        "--catalog-storage-class", type=_storage_class, required=True
-    )
-    review_import.add_argument(
-        "--corpus-storage-class", type=_storage_class, required=True
-    )
-    review_import.add_argument(
-        "--status", choices=tuple(ReviewStatus), default="discovered"
     )
 
     reconcile = commands.add_parser(
@@ -486,47 +458,6 @@ def main(arguments: list[str] | None = None) -> int:
             args.catalog, storage_class=args.catalog_storage_class
         )
         print(json.dumps(catalog.counts(), indent=2))
-        return 0
-    if args.command == "review-set":
-        catalog = ReferenceCatalog(
-            args.catalog, storage_class=args.catalog_storage_class
-        )
-        catalog.initialize()
-        catalog.set_review_membership(
-            ReviewMembership(
-                collection_id=args.collection_id,
-                citekey=args.citekey,
-                status=ReviewStatus(args.status),
-                decision_note=args.decision_note,
-            )
-        )
-        return 0
-    if args.command == "review-import":
-        rows = _bounded_csv_rows(
-            args.corpus,
-            label="review corpus",
-            storage_class=args.corpus_storage_class,
-            limits=RECONCILIATION_IO_LIMITS,
-        )
-        memberships: list[ReviewMembership] = []
-        for row in rows:
-            citekey = row.get("citekey")
-            if not citekey:
-                raise ValueError(
-                    "review corpus must contain non-empty citekeys"
-                )
-            memberships.append(
-                ReviewMembership(
-                    collection_id=args.collection_id,
-                    citekey=citekey,
-                    status=ReviewStatus(args.status),
-                )
-            )
-        catalog = ReferenceCatalog(
-            args.catalog, storage_class=args.catalog_storage_class
-        )
-        catalog.initialize()
-        catalog.set_review_memberships(tuple(memberships))
         return 0
     if args.command == "collection-reconcile":
         imported = load_bibliography(

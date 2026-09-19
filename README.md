@@ -20,10 +20,11 @@ the basename of both the reference note and local PDF. See
 [reconciliation package model](docs/reconciliation-packages.md), the
 [ingestion reference-evidence consumer](docs/ingestion-reference-evidence.md),
 the [source-backed citation graph](docs/citation-graph.md), the
+[actor-provenanced review-state model](docs/review-state.md), the
 [reference working catalog](docs/reference-catalog.md), the
 [bounded reference-I/O policy](docs/reference-io-bounds.md), and
-[cloud-placeholder safety](docs/cloud-placeholder-safety.md). Remaining metadata,
-review, and validation work is decomposed in the
+[cloud-placeholder safety](docs/cloud-placeholder-safety.md). Remaining metadata
+and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
 
 The initial [`ksdft2effmass` review seed](collections/ksdft2effmass/README.md)
@@ -45,8 +46,6 @@ koios-ref graph-import .koios/references.sqlite3 \
   sources.csv nodes.csv edges.csv --catalog-storage-class local \
   --sources-storage-class local --nodes-storage-class local \
   --edges-storage-class local
-koios-ref review-import .koios/references.sqlite3 review-id corpus.csv \
-  --catalog-storage-class local --corpus-storage-class local
 koios-ref assets-record-plan .koios/references.sqlite3 .koios/assets.json \
   --catalog-storage-class local --plan-storage-class local
 koios-ref acquisition-create acquisition.csv .koios/acquisition.json \
@@ -79,17 +78,23 @@ noncanonical candidates into the provisional local catalog. `graph-import`
 reads a bounded three-file batch, verifies content-derived source, candidate,
 and edge identities and both edge domains, then appends the complete graph in
 one transaction. Import, graph membership, asset matching, validation, and
-reconciliation do not produce accepted or relevant references; only replay of
-a valid actor-provenanced identity decision can do so.
+reconciliation do not produce canonical or relevant references; only replay of
+a valid actor-provenanced identity decision can produce canonical identity.
 
-The working catalog supports owner-internal schema version 3 with a deterministic
-schema fingerprint and complete observation/candidate round trips, including
-URL and eprint. Existing, newer, altered, or incomplete schemas are never
-silently relabeled. Recognized synthetic version-1 layouts require an explicit
-backup-confirmed forward migration through the Python API. The exact published
-version-2 schema is likewise recognized and preserves all rows while
-quarantining its mutable graph adapters; no operator catalog is migrated by
-these commands. See
+The public Python review API keeps processor outcomes, reading, claim-support
+checks, and review-collection inclusion in separate immutable records. Complete
+replay retains corrected and superseded history and rejects stale concurrent
+branches. It cannot represent canonical promotion, scientific acceptance,
+manuscript use, rights clearance, or publication as a review status. See
+[Actor-provenanced reference review state](docs/review-state.md).
+
+The working catalog supports owner-internal schema version 4 with a deterministic
+schema fingerprint and complete observation/candidate/review round trips.
+Existing, newer, altered, or incomplete schemas are never silently relabeled.
+Recognized synthetic version-1, version-2, and exact version-3 layouts require
+an explicit backup-confirmed forward migration through the Python API. Legacy
+review scalars remain quarantined without authority upgrade; no operator catalog
+is migrated by these commands. See
 [Reference working catalog](docs/reference-catalog.md).
 
 `collection-reconcile` creates an immutable, replayable package containing

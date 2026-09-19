@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -20,19 +21,23 @@ from projectkoios.references.identity import (
     ReferenceCandidate,
     SourceBibliographyObservation,
 )
-from projectkoios.references.models import (
-    AbstractRecord,
-    ReviewMembership,
-    SourceAssetRecord,
-)
+from projectkoios.references.io_limits import REVIEW_IO_LIMITS
+from projectkoios.references.models import AbstractRecord, SourceAssetRecord
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
     CloudPlaceholderProbe,
     CloudRootMutationError,
     RootStorageClass,
 )
+from projectkoios.references.review import (
+    HumanReviewDecision,
+    ReviewProjection,
+    ReviewRecordError,
+    TechnicalReviewRecord,
+    replay_review_records,
+)
 
-CATALOG_SCHEMA_VERSION = 3
+CATALOG_SCHEMA_VERSION = 4
 SUPPORTED_CATALOG_SCHEMA_VERSIONS = (CATALOG_SCHEMA_VERSION,)
 
 _SCHEMA_METADATA_KEYS = frozenset({"schema_version", "schema_fingerprint"})
@@ -50,6 +55,10 @@ _IDENTITY_V1_FINGERPRINT = (
 _PUBLISHED_V2_FINGERPRINT = (
     "catalog-schema:sha256:"
     "2e8db847387f06a003f56c375694000eee5be7edd32d4e7f0712267d1e3d0bc5"
+)
+_PUBLISHED_V3_FINGERPRINT = (
+    "catalog-schema:sha256:"
+    "d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa"
 )
 
 _TARGET_SCHEMA_STATEMENTS = (
@@ -311,6 +320,66 @@ _TARGET_SCHEMA_STATEMENTS = (
             REFERENCES citation_candidates(candidate_id)
     )
     """,
+    """
+    CREATE TABLE technical_review_records (
+        record_id TEXT PRIMARY KEY,
+        record_schema_version INTEGER NOT NULL CHECK(
+            record_schema_version = 1
+        ),
+        authority_kind TEXT NOT NULL CHECK(
+            authority_kind = 'technical-review-observation'
+        ),
+        producer_name TEXT NOT NULL,
+        producer_version TEXT NOT NULL,
+        effective_limits_id TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        context_id TEXT NOT NULL,
+        technical_kind TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        transition_kind TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        actor_kind TEXT NOT NULL CHECK(actor_kind = 'processor'),
+        authority_scope TEXT NOT NULL CHECK(
+            authority_scope = 'technical-processor'
+        ),
+        authority_domain TEXT NOT NULL,
+        verification_record_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        supersedes_record_id TEXT UNIQUE,
+        record_json TEXT NOT NULL,
+        FOREIGN KEY(supersedes_record_id)
+            REFERENCES technical_review_records(record_id)
+    )
+    """,
+    """
+    CREATE TABLE human_review_decisions (
+        decision_id TEXT PRIMARY KEY,
+        record_schema_version INTEGER NOT NULL CHECK(
+            record_schema_version = 1
+        ),
+        authority_kind TEXT NOT NULL CHECK(
+            authority_kind = 'human-review-decision'
+        ),
+        producer_name TEXT NOT NULL,
+        producer_version TEXT NOT NULL,
+        effective_limits_id TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        context_id TEXT NOT NULL,
+        dimension TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        transition_kind TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        actor_kind TEXT NOT NULL CHECK(actor_kind = 'person'),
+        authority_scope TEXT NOT NULL,
+        authority_domain TEXT NOT NULL,
+        verification_record_id TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        supersedes_decision_id TEXT UNIQUE,
+        decision_json TEXT NOT NULL,
+        FOREIGN KEY(supersedes_decision_id)
+            REFERENCES human_review_decisions(decision_id)
+    )
+    """,
 )
 
 _V1_TABLE_MAP = (
@@ -338,7 +407,26 @@ _PUBLISHED_V2_TABLE_MAP = (
     ("citation_edges", "legacy_citation_edges"),
 )
 
+_PUBLISHED_V3_TABLE_MAP = (
+    ("legacy_reference_records", "legacy_reference_records"),
+    ("legacy_reference_aliases", "legacy_reference_aliases"),
+    (
+        "legacy_bibliography_occurrences",
+        "legacy_bibliography_occurrences",
+    ),
+    ("legacy_source_assets", "legacy_source_assets"),
+    ("legacy_review_memberships", "legacy_review_memberships"),
+    ("legacy_abstracts", "legacy_abstracts"),
+    ("legacy_citation_candidates", "legacy_citation_candidates"),
+    ("legacy_citation_edges", "legacy_citation_edges"),
+    ("citation_source_observations", "citation_source_observations"),
+    ("citation_candidates", "citation_candidates"),
+    ("citation_edges", "citation_edges"),
+)
+
 _LEGACY_DROP_ORDER = (
+    "human_review_decisions",
+    "technical_review_records",
     "citation_edges",
     "citation_candidates",
     "citation_source_observations",
@@ -457,6 +545,13 @@ _KNOWN_LEGACY_SCHEMAS = {
     _PROTOTYPE_V1_FINGERPRINT: "prototype-v1",
     _IDENTITY_V1_FINGERPRINT: "identity-v1",
     _PUBLISHED_V2_FINGERPRINT: "published-v2",
+    _PUBLISHED_V3_FINGERPRINT: "published-v3",
+}
+_LEGACY_SCHEMA_VERSIONS = {
+    "prototype-v1": 1,
+    "identity-v1": 1,
+    "published-v2": 2,
+    "published-v3": 3,
 }
 
 
@@ -582,6 +677,75 @@ def _asset_values(asset: SourceAssetRecord) -> tuple[object, ...]:
     )
 
 
+def _technical_review_values(
+    record: TechnicalReviewRecord,
+) -> tuple[object, ...]:
+    return (
+        record.record_id,
+        record.schema_version,
+        record.authority_kind,
+        record.producer.name,
+        record.producer.version,
+        record.effective_limits_id,
+        record.subject_id,
+        record.context_id,
+        record.technical_kind.value,
+        record.outcome.value,
+        record.transition_kind.value,
+        record.actor.actor_id,
+        record.actor.actor_kind.value,
+        record.actor.authority_scope.value,
+        record.actor.authority_domain,
+        record.actor.verification_record_id,
+        record.observed_at,
+        record.supersedes_record_id,
+        record.to_json(),
+    )
+
+
+def _human_review_values(
+    decision: HumanReviewDecision,
+) -> tuple[object, ...]:
+    return (
+        decision.decision_id,
+        decision.schema_version,
+        decision.authority_kind,
+        decision.producer.name,
+        decision.producer.version,
+        decision.effective_limits_id,
+        decision.subject_id,
+        decision.context_id,
+        decision.dimension.value,
+        decision.decision,
+        decision.transition_kind.value,
+        decision.actor.actor_id,
+        decision.actor.actor_kind.value,
+        decision.actor.authority_scope.value,
+        decision.actor.authority_domain,
+        decision.actor.verification_record_id,
+        decision.decided_at,
+        decision.supersedes_decision_id,
+        decision.to_json(),
+    )
+
+
+def _bounded_review_inputs(
+    technical_records: Iterable[TechnicalReviewRecord],
+    human_decisions: Iterable[HumanReviewDecision],
+) -> tuple[tuple[TechnicalReviewRecord, ...], tuple[HumanReviewDecision, ...]]:
+    maximum = REVIEW_IO_LIMITS.max_entries
+    if maximum is None:  # pragma: no cover - fixed profile invariant
+        raise RuntimeError("review limits omit the record ceiling")
+    technical_values = tuple(islice(iter(technical_records), maximum + 1))
+    if len(technical_values) > maximum:
+        raise ReviewRecordError("review import exceeds the record limit")
+    remaining = maximum - len(technical_values)
+    human_values = tuple(islice(iter(human_decisions), remaining + 1))
+    if len(human_values) > remaining:
+        raise ReviewRecordError("review import exceeds the record limit")
+    return technical_values, human_values
+
+
 _OBSERVATION_COLUMNS = (
     "observation_id",
     "record_schema_version",
@@ -662,6 +826,50 @@ _GRAPH_EDGE_COLUMNS = (
     "relation",
     "source_locator",
     "edge_json",
+)
+
+_TECHNICAL_REVIEW_COLUMNS = (
+    "record_id",
+    "record_schema_version",
+    "authority_kind",
+    "producer_name",
+    "producer_version",
+    "effective_limits_id",
+    "subject_id",
+    "context_id",
+    "technical_kind",
+    "outcome",
+    "transition_kind",
+    "actor_id",
+    "actor_kind",
+    "authority_scope",
+    "authority_domain",
+    "verification_record_id",
+    "observed_at",
+    "supersedes_record_id",
+    "record_json",
+)
+
+_HUMAN_REVIEW_COLUMNS = (
+    "decision_id",
+    "record_schema_version",
+    "authority_kind",
+    "producer_name",
+    "producer_version",
+    "effective_limits_id",
+    "subject_id",
+    "context_id",
+    "dimension",
+    "decision",
+    "transition_kind",
+    "actor_id",
+    "actor_kind",
+    "authority_scope",
+    "authority_domain",
+    "verification_record_id",
+    "decided_at",
+    "supersedes_decision_id",
+    "decision_json",
 )
 
 
@@ -924,37 +1132,100 @@ class ReferenceCatalog:
                     label=f"source asset {asset.candidate_id} / {asset.sha256}",
                 )
 
-    def set_review_membership(self, membership: ReviewMembership) -> None:
-        self.set_review_memberships((membership,))
-
-    def set_review_memberships(
-        self, memberships: Iterable[ReviewMembership]
+    def import_review_records(
+        self,
+        technical_records: Iterable[TechnicalReviewRecord],
+        human_decisions: Iterable[HumanReviewDecision],
     ) -> None:
-        """Append identical legacy rows; review redesign remains deferred."""
-        values = tuple(memberships)
-        if any(not isinstance(item, ReviewMembership) for item in values):
-            raise TypeError("memberships must contain ReviewMembership values")
-        columns = ("collection_id", "citekey", "status", "decision_note")
+        """Append a complete valid review transition batch atomically."""
+        technical_values, human_values = _bounded_review_inputs(
+            technical_records,
+            human_decisions,
+        )
+        if any(
+            not isinstance(item, TechnicalReviewRecord)
+            for item in technical_values
+        ):
+            raise TypeError(
+                "technical_records must contain TechnicalReviewRecord values"
+            )
+        if any(
+            not isinstance(item, HumanReviewDecision) for item in human_values
+        ):
+            raise TypeError(
+                "human_decisions must contain HumanReviewDecision values"
+            )
+        technical_values = tuple(
+            TechnicalReviewRecord.from_json(item.to_json())
+            for item in technical_values
+        )
+        human_values = tuple(
+            HumanReviewDecision.from_json(item.to_json())
+            for item in human_values
+        )
         with self._write_transaction() as connection:
-            for membership in values:
-                row = (
-                    membership.collection_id,
-                    membership.citekey,
-                    membership.status.value,
-                    membership.decision_note,
+            existing = self._read_review_projection(connection)
+            technical_by_id = {
+                item.record_id: item for item in existing.technical_history
+            }
+            for item in technical_values:
+                old = technical_by_id.get(item.record_id)
+                if old is not None and old != item:
+                    raise CatalogConflictError(
+                        f"technical review {item.record_id} conflicts with "
+                        "existing evidence"
+                    )
+                technical_by_id[item.record_id] = item
+            human_by_id = {
+                decision.decision_id: decision
+                for decision in existing.human_decision_history
+            }
+            for decision in human_values:
+                previous = human_by_id.get(decision.decision_id)
+                if previous is not None and previous != decision:
+                    raise CatalogConflictError(
+                        f"human review {decision.decision_id} conflicts with "
+                        "existing evidence"
+                    )
+                human_by_id[decision.decision_id] = decision
+            try:
+                replayed = replay_review_records(
+                    tuple(technical_by_id.values()),
+                    tuple(human_by_id.values()),
                 )
+            except ReviewRecordError as error:
+                raise CatalogConflictError(
+                    f"review transition batch conflicts: {error}"
+                ) from error
+            for record in replayed.technical_history:
                 self._insert_exact(
                     connection,
-                    table="legacy_review_memberships",
-                    columns=columns,
-                    values=row,
-                    key_columns=("collection_id", "citekey"),
-                    key_values=(membership.collection_id, membership.citekey),
-                    label=(
-                        "legacy review membership "
-                        f"{membership.collection_id} / {membership.citekey}"
-                    ),
+                    table="technical_review_records",
+                    columns=_TECHNICAL_REVIEW_COLUMNS,
+                    values=_technical_review_values(record),
+                    key_columns=("record_id",),
+                    key_values=(record.record_id,),
+                    label=f"technical review {record.record_id}",
                 )
+            for decision in replayed.human_decision_history:
+                self._insert_exact(
+                    connection,
+                    table="human_review_decisions",
+                    columns=_HUMAN_REVIEW_COLUMNS,
+                    values=_human_review_values(decision),
+                    key_columns=("decision_id",),
+                    key_values=(decision.decision_id,),
+                    label=f"human review {decision.decision_id}",
+                )
+            self._validate_review_rows(connection)
+
+    def read_review_projection(self) -> ReviewProjection:
+        with self._read_transaction() as connection:
+            self._require_current_schema(connection)
+            return self._read_review_projection(connection)
+
+    def export_review_json(self) -> str:
+        return self.read_review_projection().to_json()
 
     def import_citation_graph(self, graph: CitationGraph) -> None:
         """Append one fully validated graph batch in a single transaction."""
@@ -1052,6 +1323,8 @@ class ReferenceCatalog:
             ("legacy_reference_rows", "legacy_reference_records"),
             ("unprovenanced_alias_rows", "legacy_reference_aliases"),
             ("review_memberships", "legacy_review_memberships"),
+            ("technical_review_records", "technical_review_records"),
+            ("human_review_decisions", "human_review_decisions"),
             ("abstracts", "legacy_abstracts"),
             (
                 "citation_source_observations",
@@ -1098,6 +1371,7 @@ class ReferenceCatalog:
             self._require_foreign_keys(connection)
             self._validate_identity_rows(connection)
             self._validate_graph_rows(connection)
+            self._validate_review_rows(connection)
             connection.commit()
         except sqlite3.IntegrityError as error:
             connection.rollback()
@@ -1190,7 +1464,7 @@ class ReferenceCatalog:
                     "migration or recovery"
                 )
             return _SchemaState(version, fingerprint, "current", metadata)
-        if version in {1, 2}:
+        if version in {1, 2, 3}:
             expected_keys = (
                 _LEGACY_METADATA_KEYS if version == 1 else _SCHEMA_METADATA_KEYS
             )
@@ -1199,12 +1473,13 @@ class ReferenceCatalog:
                     f"version {version} catalog metadata is incomplete or "
                     "unexpected"
                 )
-            if version == 2 and (
+            if version in {2, 3} and (
                 metadata_map["schema_fingerprint"] != fingerprint
             ):
                 raise CatalogSchemaError(
-                    "version 2 catalog fingerprint metadata differs from its "
-                    "actual schema; preserve it and require explicit recovery"
+                    f"version {version} catalog fingerprint metadata differs "
+                    "from its actual schema; preserve it and require explicit "
+                    "recovery"
                 )
             kind = _KNOWN_LEGACY_SCHEMAS.get(fingerprint)
             if kind is None:
@@ -1212,6 +1487,12 @@ class ReferenceCatalog:
                     f"catalog claims schema version {version} but its actual "
                     "schema is unknown or altered; preserve it and require an "
                     "explicit reviewed migration"
+                )
+            if _LEGACY_SCHEMA_VERSIONS[kind] != version:
+                raise CatalogSchemaError(
+                    f"catalog claims schema version {version} but its exact "
+                    f"fingerprint belongs to {kind}; preserve it and require "
+                    "explicit recovery"
                 )
             self._require_foreign_keys(connection)
             return _SchemaState(version, fingerprint, kind, metadata)
@@ -1229,6 +1510,7 @@ class ReferenceCatalog:
         self._require_foreign_keys(connection)
         self._validate_identity_rows(connection)
         self._validate_graph_rows(connection)
+        self._validate_review_rows(connection)
 
     @staticmethod
     def _migration_required(state: _SchemaState) -> CatalogMigrationRequired:
@@ -1477,6 +1759,114 @@ class ReferenceCatalog:
     def _validate_graph_rows(self, connection: sqlite3.Connection) -> None:
         self._read_citation_graph(connection)
 
+    def _read_review_projection(
+        self, connection: sqlite3.Connection
+    ) -> ReviewProjection:
+        self._preflight_review_rows(connection)
+        technical_rows = connection.execute(
+            """
+            SELECT record_id, record_schema_version, authority_kind,
+                   producer_name, producer_version, effective_limits_id,
+                   subject_id, context_id, technical_kind, outcome,
+                   transition_kind, actor_id, actor_kind, authority_scope,
+                   authority_domain, verification_record_id, observed_at,
+                   supersedes_record_id, record_json
+            FROM technical_review_records
+            ORDER BY record_id
+            """
+        )
+        technical: list[TechnicalReviewRecord] = []
+        for row in technical_rows:
+            try:
+                record = TechnicalReviewRecord.from_json(str(row[18]))
+            except ValueError as error:
+                raise CatalogSchemaError(
+                    f"technical review row {row[0]} has invalid canonical JSON"
+                ) from error
+            if tuple(row) != _technical_review_values(record):
+                raise CatalogSchemaError(
+                    f"technical review row {row[0]} differs from canonical JSON"
+                )
+            technical.append(record)
+
+        human_rows = connection.execute(
+            """
+            SELECT decision_id, record_schema_version, authority_kind,
+                   producer_name, producer_version, effective_limits_id,
+                   subject_id, context_id, dimension, decision,
+                   transition_kind, actor_id, actor_kind, authority_scope,
+                   authority_domain, verification_record_id, decided_at,
+                   supersedes_decision_id, decision_json
+            FROM human_review_decisions
+            ORDER BY decision_id
+            """
+        )
+        decisions: list[HumanReviewDecision] = []
+        for row in human_rows:
+            try:
+                decision = HumanReviewDecision.from_json(str(row[18]))
+            except ValueError as error:
+                raise CatalogSchemaError(
+                    f"human review row {row[0]} has invalid canonical JSON"
+                ) from error
+            if tuple(row) != _human_review_values(decision):
+                raise CatalogSchemaError(
+                    f"human review row {row[0]} differs from canonical JSON"
+                )
+            decisions.append(decision)
+        try:
+            return replay_review_records(tuple(technical), tuple(decisions))
+        except ReviewRecordError as error:
+            raise CatalogSchemaError(
+                f"catalog review history is invalid: {error}"
+            ) from error
+
+    @staticmethod
+    def _preflight_review_rows(connection: sqlite3.Connection) -> None:
+        maximum_entries = REVIEW_IO_LIMITS.max_entries
+        maximum_json_bytes = REVIEW_IO_LIMITS.max_json_bytes
+        if maximum_entries is None or maximum_json_bytes is None:
+            raise RuntimeError("review limits omit catalog preflight ceilings")
+        counts = connection.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM technical_review_records),
+                (SELECT COUNT(*) FROM human_review_decisions)
+            """
+        ).fetchone()
+        if counts is None or any(type(value) is not int for value in counts):
+            raise CatalogSchemaError("catalog review counts are invalid")
+        total_entries = counts[0] + counts[1]
+        if total_entries > maximum_entries:
+            raise CatalogSchemaError(
+                "catalog review history exceeds the record limit: "
+                f"observed {total_entries}, limit {maximum_entries}"
+            )
+        byte_counts = connection.execute(
+            """
+            SELECT
+                (SELECT COALESCE(
+                    SUM(length(CAST(record_json AS BLOB))), 0
+                ) FROM technical_review_records),
+                (SELECT COALESCE(
+                    SUM(length(CAST(decision_json AS BLOB))), 0
+                ) FROM human_review_decisions)
+            """
+        ).fetchone()
+        if byte_counts is None or any(
+            type(value) is not int for value in byte_counts
+        ):
+            raise CatalogSchemaError("catalog review JSON sizes are invalid")
+        total_json_bytes = byte_counts[0] + byte_counts[1]
+        if total_json_bytes > maximum_json_bytes:
+            raise CatalogSchemaError(
+                "catalog review history exceeds the JSON byte limit: "
+                f"observed {total_json_bytes}, limit {maximum_json_bytes}"
+            )
+
+    def _validate_review_rows(self, connection: sqlite3.Connection) -> None:
+        self._read_review_projection(connection)
+
     @staticmethod
     def _source_asset_from_row(
         row: tuple[object, ...], *, label: str
@@ -1572,11 +1962,13 @@ class ReferenceCatalog:
     def _snapshot_legacy(
         self, connection: sqlite3.Connection, state: _SchemaState
     ) -> dict[str, Any]:
-        table_map = (
-            _PUBLISHED_V2_TABLE_MAP
-            if state.kind == "published-v2"
-            else _V1_TABLE_MAP
-        )
+        table_map: tuple[tuple[str, str], ...]
+        if state.kind == "published-v3":
+            table_map = _PUBLISHED_V3_TABLE_MAP
+        elif state.kind == "published-v2":
+            table_map = _PUBLISHED_V2_TABLE_MAP
+        else:
+            table_map = _V1_TABLE_MAP
         snapshot: dict[str, Any] = {
             "table_map": table_map,
             **{
@@ -1712,8 +2104,10 @@ class ReferenceCatalog:
                     "candidate_source_assets": assets,
                 }
             )
-        elif state.kind == "published-v2":
+        elif state.kind in {"published-v2", "published-v3"}:
             self._validate_identity_rows(connection)
+            if state.kind == "published-v3":
+                self._validate_graph_rows(connection)
             observations = self._read_observations(connection)
             observation_ids = {
                 observation.observation_id for observation in observations
@@ -1799,6 +2193,8 @@ class ReferenceCatalog:
         for source, target in snapshot["table_map"]:
             self._restore_table(connection, target, snapshot[source])
         self._validate_identity_rows(connection)
+        self._validate_graph_rows(connection)
+        self._validate_review_rows(connection)
 
     @staticmethod
     def _restore_table(

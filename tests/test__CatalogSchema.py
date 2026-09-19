@@ -23,11 +23,7 @@ from projectkoios.references.identity import (
     ReferenceCandidate,
     SourceBibliographyObservation,
 )
-from projectkoios.references.models import (
-    ReviewMembership,
-    ReviewStatus,
-    SourceAssetRecord,
-)
+from projectkoios.references.models import SourceAssetRecord
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -336,6 +332,91 @@ def _populate_published_v2(
     return observation, candidate
 
 
+def _populate_published_v3(
+    path: Path,
+) -> tuple[SourceBibliographyObservation, ReferenceCandidate]:
+    observation, candidate = _identity_records(citekey="publishedV3")
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            INSERT INTO source_bibliography_observations(
+                observation_id, record_schema_version, authority_kind,
+                source_id, asserted_source_revision, source_path,
+                bibliography_sha256, bibliography_byte_size, entry_index,
+                observed_citekey, verbatim_entry, parser_name,
+                parser_version, observation_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                observation.observation_id,
+                observation.schema_version,
+                observation.authority_kind,
+                observation.source_id,
+                observation.asserted_source_revision,
+                observation.source_path,
+                observation.bibliography_sha256,
+                observation.bibliography_byte_size,
+                observation.entry_index,
+                observation.observed_citekey,
+                observation.verbatim_entry,
+                observation.parser.name,
+                observation.parser.version,
+                observation.to_json(),
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO reference_candidates(
+                candidate_id, record_schema_version, authority_kind,
+                lifecycle_status, proposed_citekey, citekey_status,
+                entry_type, title, authors_json, year, doi, isbn, url,
+                eprint, generator_name, generator_version, candidate_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                candidate.candidate_id,
+                candidate.schema_version,
+                candidate.authority_kind,
+                candidate.lifecycle_status,
+                candidate.proposed_citekey,
+                candidate.citekey_status,
+                candidate.entry_type,
+                candidate.title,
+                json.dumps(
+                    candidate.authors,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                candidate.year,
+                candidate.doi,
+                candidate.isbn,
+                candidate.url,
+                candidate.eprint,
+                candidate.generator.name,
+                candidate.generator.version,
+                candidate.to_json(),
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO candidate_source_observations(
+                candidate_id, observation_id
+            ) VALUES (?, ?)
+            """,
+            (candidate.candidate_id, observation.observation_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO legacy_review_memberships(
+                collection_id, citekey, status, decision_note
+            ) VALUES ('legacy-v3-review', 'publishedV3',
+                      'human-accepted', 'unprovenanced legacy scalar')
+            """
+        )
+    return observation, candidate
+
+
 def test__catalog_schema__is_explicit_deterministic_and_idempotent(
     tmp_path: Path,
 ) -> None:
@@ -345,11 +426,11 @@ def test__catalog_schema__is_explicit_deterministic_and_idempotent(
     first_info = first.initialize()
     second_info = second.initialize()
 
-    assert CATALOG_SCHEMA_VERSION == 3
-    assert SUPPORTED_CATALOG_SCHEMA_VERSIONS == (3,)
+    assert CATALOG_SCHEMA_VERSION == 4
+    assert SUPPORTED_CATALOG_SCHEMA_VERSIONS == (4,)
     assert CATALOG_SCHEMA_FINGERPRINT == (
         "catalog-schema:sha256:"
-        "d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa"
+        "30bb68e78832c461011f7e2a9ba7812c93aa099c866a84869a8415500f415e48"
     )
     assert re.fullmatch(
         r"catalog-schema:sha256:[0-9a-f]{64}",
@@ -364,7 +445,7 @@ def test__catalog_schema__is_explicit_deterministic_and_idempotent(
             ).fetchall()
         )
     assert metadata == {
-        "schema_version": "3",
+        "schema_version": "4",
         "schema_fingerprint": CATALOG_SCHEMA_FINGERPRINT,
     }
 
@@ -439,6 +520,24 @@ def test__catalog_schema__rejects_divergent_current_schema_without_mutation(
     assert _database_dump(path) == before
 
 
+def test__catalog_schema__rejects_version_fingerprint_mismatch(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "mismatched-version.sqlite3"
+    _create_legacy(path, "catalog-published-v2.sql")
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE catalog_metadata SET value = '3' "
+            "WHERE key = 'schema_version'"
+        )
+    before = _database_dump(path)
+
+    with pytest.raises(CatalogSchemaError, match="belongs to published-v2"):
+        ReferenceCatalog(path).migration_plan()
+
+    assert _database_dump(path) == before
+
+
 def test__catalog_schema__rejects_unknown_or_incomplete_version_one(
     tmp_path: Path,
 ) -> None:
@@ -482,6 +581,13 @@ def test__catalog_schema__rejects_unknown_or_incomplete_version_one(
             "published-v2",
             "catalog-schema:sha256:"
             "2e8db847387f06a003f56c375694000eee5be7edd32d4e7f0712267d1e3d0bc5",
+        ),
+        (
+            "catalog-published-v3.sql",
+            3,
+            "published-v3",
+            "catalog-schema:sha256:"
+            "d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa",
         ),
     ),
 )
@@ -678,7 +784,7 @@ def test__catalog_migration__preserves_published_v2_and_quarantines_graph(
 
     catalog.migrate(backup_confirmed=True)
 
-    assert catalog.schema_info().schema_version == 3
+    assert catalog.schema_info().schema_version == 4
     assert catalog.read_observations() == (observation,)
     assert catalog.read_candidates() == (candidate,)
     assert catalog.counts()["source_assets"] == 1
@@ -697,9 +803,46 @@ def test__catalog_migration__preserves_published_v2_and_quarantines_graph(
         )
     assert actual == expected
     assert metadata == {
-        "schema_version": "3",
+        "schema_version": "4",
         "schema_fingerprint": CATALOG_SCHEMA_FINGERPRINT,
     }
+
+
+def test__catalog_migration__preserves_schema_v3_without_authority_upgrade(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "published-v3.sqlite3"
+    _create_legacy(path, "catalog-published-v3.sql")
+    observation, candidate = _populate_published_v3(path)
+    catalog = ReferenceCatalog(path)
+
+    plan = catalog.migration_plan()
+    assert plan is not None
+    assert plan.source_schema_version == 3
+    assert plan.source_schema_fingerprint == (
+        "catalog-schema:sha256:"
+        "d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa"
+    )
+    catalog.migrate(backup_confirmed=True)
+
+    assert catalog.read_observations() == (observation,)
+    assert catalog.read_candidates() == (candidate,)
+    assert catalog.read_review_projection().human_decision_history == ()
+    with sqlite3.connect(path) as connection:
+        legacy = connection.execute(
+            """
+            SELECT collection_id, citekey, status, decision_note
+            FROM legacy_review_memberships
+            """
+        ).fetchall()
+    assert legacy == [
+        (
+            "legacy-v3-review",
+            "publishedV3",
+            "human-accepted",
+            "unprovenanced legacy scalar",
+        )
+    ]
 
 
 def test__catalog_migration__published_v2_failure_restores_exact_database(
@@ -807,44 +950,6 @@ def test__catalog_import__conflicting_asset_batch_rolls_back_first_row(
         catalog.record_source_assets((first, conflicting))
 
     assert catalog.counts()["source_assets"] == 0
-
-
-def test__catalog_review_adapter__conflicts_do_not_replace_or_partially_write(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "review.sqlite3"
-    catalog = ReferenceCatalog(path)
-    catalog.initialize()
-    existing = ReviewMembership(
-        collection_id="review",
-        citekey="existingKey",
-        status=ReviewStatus.DISCOVERED,
-    )
-    catalog.set_review_membership(existing)
-    catalog.set_review_membership(existing)
-    new_row = ReviewMembership(
-        collection_id="review",
-        citekey="newKey",
-        status=ReviewStatus.DISCOVERED,
-    )
-    conflicting = ReviewMembership(
-        collection_id="review",
-        citekey="existingKey",
-        status=ReviewStatus.HUMAN_ACCEPTED,
-    )
-
-    with pytest.raises(CatalogConflictError, match="existing evidence"):
-        catalog.set_review_memberships((new_row, conflicting))
-
-    with sqlite3.connect(path) as connection:
-        rows = connection.execute(
-            """
-            SELECT collection_id, citekey, status
-            FROM legacy_review_memberships
-            ORDER BY citekey
-            """
-        ).fetchall()
-    assert rows == [("review", "existingKey", "discovered")]
 
 
 def test__catalog_reads__reject_content_identity_mismatch(

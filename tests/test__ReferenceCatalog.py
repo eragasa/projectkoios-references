@@ -90,6 +90,8 @@ def test__catalog__round_trips_complete_identity_records(
         "legacy_reference_rows": 0,
         "unprovenanced_alias_rows": 0,
         "review_memberships": 0,
+        "technical_review_records": 0,
+        "human_review_decisions": 0,
         "abstracts": 0,
         "citation_source_observations": 0,
         "citation_candidates": 0,

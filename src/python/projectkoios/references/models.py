@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import StrEnum
 
 from projectkoios.references.path_safety import (
     validate_citekey,
@@ -20,31 +19,6 @@ def normalize_doi(value: str | None) -> str | None:
         return None
     normalized = _DOI_PREFIX.sub("", value.strip()).lower()
     return normalized or None
-
-
-class ReviewStatus(StrEnum):
-    DISCOVERED = "discovered"
-    METADATA_VERIFIED = "metadata-verified"
-    ABSTRACT_SCREENED = "abstract-screened"
-    FULL_TEXT_LOCATED = "full-text-located"
-    TRANSCRIBED = "transcribed"
-    READ = "read"
-    CLAIM_SUPPORT_CHECKED = "claim-support-checked"
-    HUMAN_ACCEPTED = "human-accepted"
-    EXCLUDED = "excluded"
-
-
-@dataclass(frozen=True)
-class ReviewMembership:
-    collection_id: str
-    citekey: str
-    status: ReviewStatus
-    decision_note: str | None = None
-
-    def __post_init__(self) -> None:
-        validate_citekey(self.citekey)
-        if not self.collection_id:
-            raise ValueError("review collection identity must be non-empty")
 
 
 @dataclass(frozen=True)

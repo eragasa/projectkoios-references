@@ -117,13 +117,17 @@ recorded; screening does not set `read` or `claim-support-checked`.
 ### REF-REVIEW-01 — Review-state transition policy
 
 Replace unrestricted status replacement with validated transitions and actor
-provenance.
+provenance. See [the implemented owner-internal model](../review-state.md).
 
-**Depends on:** current `ReviewMembership` model.
+**Depends on:** accepted reference-authority architecture and `REF-IDENTITY-01`.
 
-**Acceptance:** ingestion may set only discovery or asset/transcription-related
-states; transitions to `read`, `claim-support-checked`, or `human-accepted`
-require explicit human actor data; invalid state regressions fail.
+**Acceptance:** processors may record only orthogonal technical outcomes;
+reading, claim-support checks, and collection inclusion require explicit human
+actor authority, evidence, rationale, and exact supersession. Canonical identity
+acceptance stays in `IdentityDecision`; scientific acceptance, manuscript use,
+rights, and publication stay outside review state. Invalid, stale, and
+concurrent transitions fail while corrected and superseded history remains
+queryable.
 
 ### REF-EVIDENCE-01 — Claim-evidence record
 

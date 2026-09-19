@@ -31,6 +31,7 @@ output publication, and do not publish partial evidence.
 | reference validation | 20,000 | 1 MB note | 50 MB notes | 10,000 candidates | directory entries bounded |
 | metadata provider/cache | 1,000 cache files | 2 MB response / 3 MB cache | 500 MB per-request cache replay | 2,000 directory entries | JSON depth 64; provider field bounds |
 | citation graph import | 3 CSV files | 2 MB | 4 MB | 128 sources; 10,000 candidates and edges | 2,000 direct edges per source; JSON depth 64 |
+| review record/replay | n/a | n/a | JSON 20 MB | 256 records; 64 evidence IDs per record | JSON depth 64; text 4,096 bytes; content IDs 512 bytes |
 
 The exact machine-readable values are in `io_limits.py` and
 `GraphImportLimits`; generated evidence records those values rather than

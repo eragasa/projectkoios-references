@@ -264,6 +264,14 @@ IDENTITY_IO_LIMITS: Final = ReferenceIOLimits(
     max_entries=10_000,
 )
 
+REVIEW_IO_LIMITS: Final = ReferenceIOLimits(
+    profile="review-replay-v1",
+    max_json_bytes=20_000_000,
+    max_json_depth=64,
+    max_text_bytes=4_096,
+    max_entries=256,
+)
+
 METADATA_IO_LIMITS: Final = ReferenceIOLimits(
     profile="metadata-provider-v1",
     max_files=1_000,

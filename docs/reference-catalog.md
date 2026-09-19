@@ -19,8 +19,8 @@ The only operationally supported catalog schema is:
 
 | Field | Value |
 |---|---|
-| Owner-internal schema version | `3` |
-| Schema fingerprint | `catalog-schema:sha256:d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa` |
+| Owner-internal schema version | `4` |
+| Schema fingerprint | `catalog-schema:sha256:30bb68e78832c461011f7e2a9ba7812c93aa099c866a84869a8415500f415e48` |
 | Authority boundary | `non-authoritative-rebuildable-working-projection` |
 
 The fingerprint is the SHA-256 identity of a canonical, deterministically
@@ -30,7 +30,7 @@ normalized SQL. It does not hash catalog rows. Missing or extra columns,
 indexes, views, or triggers therefore change the fingerprint.
 
 `catalog_metadata` contains exactly `schema_version` and
-`schema_fingerprint`. `ReferenceCatalog.initialize()` creates version 3 only
+`schema_fingerprint`. `ReferenceCatalog.initialize()` creates version 4 only
 for a missing or structurally empty database. For an existing database it
 verifies metadata, the actual schema fingerprint, foreign keys, canonical
 record JSON/content identities, scalar/JSON agreement, candidate-to-observation
@@ -44,7 +44,7 @@ recovery requirement.
 
 ## Lossless candidate projection
 
-Version 3 stores every currently supported
+Version 4 stores every currently supported
 `SourceBibliographyObservation` field, including parser identity, exact
 verbatim entry, source locator, asserted revision, whole-bibliography digest and
 size, and the exact canonical JSON/content identity.
@@ -79,6 +79,20 @@ size as an actual SQLite integer. Floating-point, Boolean, or coercible textual
 sizes are unsupported and fail rather than being normalized. Rights and asset
 statuses must likewise be bounded, non-empty strings; numeric, Boolean, empty,
 or oversized caller values are rejected before SQLite can apply text affinity.
+
+## Review-state projection
+
+Technical outcomes and human decisions are stored in separate canonical-JSON-
+backed tables. Producing implementation name/version and effective-limit
+identity are stored as query columns and must agree exactly with each immutable
+record's canonical JSON. Catalog writes first replay the complete existing and
+proposed history, then insert parents before children in one transaction. Exact replay is
+idempotent; stale or concurrent siblings, invalid transitions, malformed actor
+scope, and partial batches fail without mutation. Current state is derived by
+replay and never stored as a replaceable scalar. Legacy review memberships stay
+queryable only in their explicitly named quarantine table and receive no
+authority upgrade. See
+[Actor-provenanced reference review state](review-state.md).
 
 ## Citation-graph projection
 
@@ -115,11 +129,12 @@ limits are documented in [Source-backed citation graph](citation-graph.md).
 
 Mutable version-1 and published-version-2 graph adapter rows migrate only into
 explicitly named `legacy_citation_*` quarantine tables. They are not converted
-into source-backed graph evidence. Legacy review rows are likewise
-append/conflict checked but are
-not redesigned or granted authority; typed actor-provenanced review transitions
-remain owned by `REF-REVIEW-01` (#11). Field-level state authority and
-cross-format projection remain owned by `REF-STATE-PROJECTION-01` (#9).
+into source-backed graph evidence. Legacy review rows remain quarantined and
+cannot be written through the public API. Schema 4 instead projects immutable,
+actor-provenanced technical and human review records after complete replay.
+See [Actor-provenanced reference review state](review-state.md). Field-level
+state authority and cross-format projection remain owned by
+`REF-STATE-PROJECTION-01` (#9).
 
 ## Forward-only migration matrix
 
@@ -130,7 +145,8 @@ Three exact repository-known predecessor layouts are recognized:
 | Prototype v1 | `catalog-schema:sha256:5714c33eba9eb9638c0735dff5824058d7c77115a3a5c62f97486e0da41d771b` | Preserve every legacy table row in explicitly named `legacy_*` quarantine tables. Create no observations, candidates, aliases, or accepted authority from those rows. |
 | Identity v1 | `catalog-schema:sha256:b6280d710df8e1cabdcdec99847a927135a49b9e833d3cb84c5e9bf44ce845c8` | Validate canonical observation/candidate JSON, scalar agreement, links, assets, and foreign keys; expand complete records into v3 columns; preserve all older adapter rows in `legacy_*` quarantine tables. |
 | Published v2 | `catalog-schema:sha256:2e8db847387f06a003f56c375694000eee5be7edd32d4e7f0712267d1e3d0bc5` | Validate and preserve every complete identity/link/asset and legacy row; quarantine mutable graph adapters unchanged in `legacy_citation_*`; create no source-backed graph evidence or authority. |
-| Version 3 | Current fingerprint above | Verify and use unchanged; migration is an idempotent no-op. |
+| Published v3 | `catalog-schema:sha256:d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa` | Validate and preserve every identity, asset, source-backed graph, and legacy row exactly; add empty typed review tables; do not upgrade legacy review scalars. |
+| Version 4 | Current fingerprint above | Verify and use unchanged; migration is an idempotent no-op. |
 | Unknown, altered, incomplete, or newer | Any other fingerprint/version | Refuse initialization and migration. Preserve the database for explicit recovery with a compatible implementation or separately reviewed migration. |
 
 Migration is never automatic. `initialize()` reports recognized legacy schemas
