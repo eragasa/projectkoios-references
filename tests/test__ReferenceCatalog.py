@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 from projectkoios.references.catalog import (
     CatalogConflictError,
-    ReferenceCatalog,
+)
+from projectkoios.references.catalog import (
+    ReferenceCatalog as _ReferenceCatalog,
 )
 from projectkoios.references.graph import (
     CitationCandidate,
@@ -21,6 +23,11 @@ from projectkoios.references.identity import (
     SourceBibliographyObservation,
 )
 from projectkoios.references.models import SourceAssetRecord
+from projectkoios.references.path_safety import RootStorageClass
+
+
+def ReferenceCatalog(path: Path) -> _ReferenceCatalog:
+    return _ReferenceCatalog(path, storage_class=RootStorageClass.LOCAL)
 
 
 def _observed_candidate(

@@ -12,7 +12,11 @@ from projectkoios.references.collection_reconciliation import (
     ProcessingEvidence,
 )
 from projectkoios.references.path_safety import (
+    CloudPlaceholderProbe,
     PathSafetyError,
+    RootPreflightEvidence,
+    RootStorageClass,
+    authorize_root_preflight,
     read_path_bytes,
     validate_citekey,
 )
@@ -183,11 +187,15 @@ class ReferenceEvidenceRecord:
 class ReferenceEvidenceInput:
     citekey: str
     path: Path
+    storage_class: RootStorageClass
+    placeholder_probe: CloudPlaceholderProbe | None = None
 
     def __post_init__(self) -> None:
         validate_citekey(self.citekey, field="reference-evidence citekey")
         if not isinstance(self.path, Path):
             raise TypeError("reference-evidence path must be a Path")
+        if not isinstance(self.storage_class, RootStorageClass):
+            raise TypeError("reference-evidence storage class must be explicit")
 
 
 def parse_reference_evidence(content: bytes) -> ReferenceEvidenceRecord:
@@ -277,6 +285,7 @@ def load_ingestion_reference_evidence(
     result: dict[str, ProcessingEvidence] = {}
     record_ids: set[str] = set()
     retained: list[ContentEvidence] = []
+    root_preflights: list[RootPreflightEvidence] = []
     for binding in sorted(bindings, key=lambda item: item.citekey):
         if binding.citekey in result:
             raise IngestionEvidenceVerificationError(
@@ -288,10 +297,20 @@ def load_ingestion_reference_evidence(
                 "reference evidence has no matching managed PDF: "
                 f"{binding.citekey}"
             )
+        root_preflights.append(
+            authorize_root_preflight(
+                root_alias=f"reference-evidence-{binding.citekey}",
+                storage_class=binding.storage_class,
+                placeholder_probe=binding.placeholder_probe,
+            )
+        )
         try:
             content = read_path_bytes(
                 binding.path,
                 label=f"reference evidence for {binding.citekey}",
+                root_alias=f"reference-evidence-{binding.citekey}",
+                storage_class=binding.storage_class,
+                placeholder_probe=binding.placeholder_probe,
                 max_bytes=REFERENCE_EVIDENCE_MAX_BYTES,
             )
         except PathSafetyError as error:
@@ -344,6 +363,7 @@ def load_ingestion_reference_evidence(
     return EvidenceMapping(
         entries=tuple(sorted(result.items())),
         input_evidence=tuple(sorted(retained, key=_content_evidence_key)),
+        root_preflights=tuple(root_preflights),
     )
 
 

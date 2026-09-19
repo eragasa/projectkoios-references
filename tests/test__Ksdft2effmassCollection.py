@@ -8,8 +8,17 @@ from projectkoios.references import (
     CoverageObservation,
     CoverageState,
     LegacySeedMapping,
-    load_bibliography,
+    RootStorageClass,
 )
+from projectkoios.references import (
+    load_bibliography as _load_bibliography,
+)
+
+
+def load_bibliography(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _load_bibliography(*args, **kwargs)  # type: ignore[arg-type]
+
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _COLLECTION = _PROJECT_ROOT / "collections/ksdft2effmass"

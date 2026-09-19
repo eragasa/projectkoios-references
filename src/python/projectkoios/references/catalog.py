@@ -25,7 +25,12 @@ from projectkoios.references.models import (
     ReviewMembership,
     SourceAssetRecord,
 )
-from projectkoios.references.path_safety import AuthorizedRoot
+from projectkoios.references.path_safety import (
+    AuthorizedRoot,
+    CloudPlaceholderProbe,
+    CloudRootMutationError,
+    RootStorageClass,
+)
 
 CATALOG_SCHEMA_VERSION = 3
 SUPPORTED_CATALOG_SCHEMA_VERSIONS = (CATALOG_SCHEMA_VERSION,)
@@ -663,8 +668,20 @@ _GRAPH_EDGE_COLUMNS = (
 class ReferenceCatalog:
     """SQLite working projection; immutable records remain authoritative."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        storage_class: RootStorageClass,
+        placeholder_probe: CloudPlaceholderProbe | None = None,
+    ) -> None:
+        if storage_class is RootStorageClass.CLOUD_BACKED:
+            raise CloudRootMutationError(
+                "SQLite catalogs require an explicitly local staging path"
+            )
         self.path = path
+        self.storage_class = storage_class
+        self.placeholder_probe = placeholder_probe
 
     def initialize(self) -> CatalogSchemaInfo:
         path = self._safe_path(create_parent=True)
@@ -1809,14 +1826,22 @@ class ReferenceCatalog:
             AuthorizedRoot.create(
                 self.path.parent,
                 label="reference catalog parent",
+                root_alias="reference-catalog-parent",
+                storage_class=self.storage_class,
+                placeholder_probe=self.placeholder_probe,
             )
             if create_parent
             else AuthorizedRoot.existing(
                 self.path.parent,
                 label="reference catalog parent",
+                root_alias="reference-catalog-parent",
+                storage_class=self.storage_class,
+                placeholder_probe=self.placeholder_probe,
             )
         )
         state = root.state(self.path.name)
+        if state == "regular":
+            root.require_readable_file(self.path.name)
         if state == "directory":
             raise ValueError("reference catalog path is a directory")
         if state == "missing" and not create_parent:

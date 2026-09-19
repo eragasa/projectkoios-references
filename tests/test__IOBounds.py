@@ -22,19 +22,46 @@ from projectkoios.references import (
     ReconciliationPackageManifest,
     ReferenceCandidate,
     ReferenceIOLimitError,
+    RootStorageClass,
     SearchRoot,
     create_acquisition_manifest,
-    load_bibliography,
-    load_candidate_graph,
     materialize_asset,
+)
+from projectkoios.references import (
+    load_bibliography as _load_bibliography,
+)
+from projectkoios.references import (
+    load_candidate_graph as _load_candidate_graph,
 )
 from projectkoios.references.cli import main
 from projectkoios.references.enrichment import (
-    CrossrefClient,
+    CrossrefClient as _CrossrefClient,
+)
+from projectkoios.references.enrichment import (
     ProviderResponseError,
     TransportRequest,
     TransportResponse,
 )
+
+
+def load_bibliography(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _load_bibliography(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def load_candidate_graph(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs.update(
+        sources_storage_class=RootStorageClass.LOCAL,
+        nodes_storage_class=RootStorageClass.LOCAL,
+        edges_storage_class=RootStorageClass.LOCAL,
+    )
+    return _load_candidate_graph(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def CrossrefClient(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    if kwargs.get("cache_directory") is not None:
+        kwargs["cache_storage_class"] = RootStorageClass.LOCAL
+    return _CrossrefClient(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def _record(source_digit: str = "0") -> ReferenceCandidate:
@@ -74,7 +101,12 @@ def test__authorized_root__streams_digest_and_bounds_directory_before_sort(
 ) -> None:
     content = b"%PDF-" + b"x" * 2_100_000
     (tmp_path / "large.pdf").write_bytes(content)
-    root = AuthorizedRoot.existing(tmp_path, label="synthetic root")
+    root = AuthorizedRoot.existing(
+        tmp_path,
+        label="synthetic root",
+        root_alias="synthetic-root",
+        storage_class=RootStorageClass.LOCAL,
+    )
 
     observation = root.observe_file(
         "large.pdf",
@@ -111,7 +143,7 @@ def test__asset_discovery__hashes_each_file_once_and_streams_materialization(
     source_root.mkdir()
     source = source_root / "example2026.pdf"
     source.write_bytes(b"%PDF synthetic public fixture")
-    roots = (SearchRoot("papers", source_root),)
+    roots = (SearchRoot("papers", source_root, RootStorageClass.LOCAL),)
 
     observations = 0
     original_observe = AuthorizedRoot.observe_file
@@ -143,8 +175,10 @@ def test__asset_discovery__hashes_each_file_once_and_streams_materialization(
 
     destination = materialize_asset(
         plan.candidates[0],
+        expected_root_preflight=plan.root_preflights[0],
         roots=roots,
         destination_directory=tmp_path / "destination",
+        destination_storage_class=RootStorageClass.LOCAL,
     )
     assert destination.read_bytes() == source.read_bytes()
 
@@ -155,7 +189,7 @@ def test__asset_and_acquisition_limits__retain_incomplete_status(
     source = tmp_path / "source"
     source.mkdir()
     (source / "example2026.pdf").write_bytes(b"%PDF fixture")
-    roots = (SearchRoot("staging", source),)
+    roots = (SearchRoot("staging", source, RootStorageClass.LOCAL),)
     tight = replace(ASSET_DISCOVERY_IO_LIMITS, max_file_bytes=4)
 
     with pytest.raises(ReferenceIOLimitError) as failure:
@@ -195,7 +229,7 @@ def test__acquisition__observes_duplicate_source_only_once(
     source = tmp_path / "source"
     source.mkdir()
     (source / "example2026.pdf").write_bytes(b"%PDF- fixture")
-    roots = (SearchRoot("staging", source),)
+    roots = (SearchRoot("staging", source, RootStorageClass.LOCAL),)
     observations = 0
     original = AuthorizedRoot.observe_file
 
@@ -316,8 +350,12 @@ def test__over_count_csv__does_not_publish_manifest(
                 str(output),
                 "--source-id",
                 "synthetic",
+                "--metadata-storage-class",
+                "local",
+                "--output-storage-class",
+                "local",
                 "--source-root",
-                f"staging={source}",
+                f"local:staging={source}",
             ]
         )
     assert failure.value.limit_name == "max_rows"
@@ -341,6 +379,10 @@ def test__oversized_bibliography__does_not_initialize_catalog(
                 str(bibliography),
                 "--source-id",
                 "synthetic",
+                "--catalog-storage-class",
+                "local",
+                "--bibliography-storage-class",
+                "local",
             ]
         )
     assert failure.value.coverage_status == "incomplete"

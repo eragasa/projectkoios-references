@@ -19,9 +19,10 @@ the basename of both the reference note and local PDF. See
 [PDF coverage observations](docs/coverage-observations.md), the
 [reconciliation package model](docs/reconciliation-packages.md), the
 [ingestion reference-evidence consumer](docs/ingestion-reference-evidence.md),
-the [source-backed citation graph](docs/citation-graph.md), and the
-[reference working catalog](docs/reference-catalog.md), and the
-[bounded reference-I/O policy](docs/reference-io-bounds.md). Remaining metadata,
+the [source-backed citation graph](docs/citation-graph.md), the
+[reference working catalog](docs/reference-catalog.md), the
+[bounded reference-I/O policy](docs/reference-io-bounds.md), and
+[cloud-placeholder safety](docs/cloud-placeholder-safety.md). Remaining metadata,
 review, and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
 
@@ -32,28 +33,45 @@ read-only local PDF discovery pass.
 The `koios-ref` CLI provides the first reusable operational slice:
 
 ```bash
-koios-ref catalog-init .koios/references.sqlite3
+koios-ref catalog-init .koios/references.sqlite3 \
+  --catalog-storage-class local
 koios-ref bib-import .koios/references.sqlite3 references.bib \
-  --source-id example --source-revision REV
+  --source-id example --source-revision REV \
+  --catalog-storage-class local --bibliography-storage-class local
 koios-ref assets-scan references.bib .koios/assets.json \
-  --search-root papers=/path/to/papers
+  --search-root local:papers=/path/to/local-staging \
+  --bibliography-storage-class local --output-storage-class local
 koios-ref graph-import .koios/references.sqlite3 \
-  sources.csv nodes.csv edges.csv
-koios-ref review-import .koios/references.sqlite3 review-id corpus.csv
-koios-ref assets-record-plan .koios/references.sqlite3 .koios/assets.json
+  sources.csv nodes.csv edges.csv --catalog-storage-class local \
+  --sources-storage-class local --nodes-storage-class local \
+  --edges-storage-class local
+koios-ref review-import .koios/references.sqlite3 review-id corpus.csv \
+  --catalog-storage-class local --corpus-storage-class local
+koios-ref assets-record-plan .koios/references.sqlite3 .koios/assets.json \
+  --catalog-storage-class local --plan-storage-class local
 koios-ref acquisition-create acquisition.csv .koios/acquisition.json \
   --source-id operator-recommendation \
-  --source-root staging=/private/staging
+  --metadata-storage-class local --output-storage-class local \
+  --source-root local:staging=/path/to/local-staging
 koios-ref acquisition-verify .koios/acquisition.json \
-  --source-root staging=/private/staging
+  --manifest-storage-class local \
+  --source-root local:staging=/path/to/local-staging
 koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
   .koios/references/example/reconciliation-output \
   --collection-id example --source-revision REV \
+  --bibliography-storage-class local --corpus-storage-class local \
+  --pdf-storage-class local --output-storage-class local \
   --source-discovery source-discovery.json \
+  --source-discovery-storage-class local \
   --coverage-observation coverage-observation.json \
+  --coverage-observation-storage-class local \
   --manuscript-root /isolated/source/docs/publications \
-  --reference-evidence example2026=/explicit/evidence/example2026.json
-koios-ref validate references.bib /path/to/notes /path/to/pdfs
+  --manuscript-storage-class local \
+  --reference-evidence example2026=/explicit/evidence/example2026.json \
+  --reference-evidence-storage-class example2026=local
+koios-ref validate references.bib /path/to/notes /path/to/pdfs \
+  --bibliography-storage-class local \
+  --notes-storage-class local --pdf-storage-class local
 ```
 
 `bib-import` observes exact source entries and projects normalized,
@@ -97,8 +115,9 @@ content-identified coverage observation: no coverage produces
 `not-located`. The command does not scan additional roots, hydrate cloud
 placeholders, download sources, verify rights, or promote bibliography records.
 
-Asset scans store only search-root aliases and relative paths. Version-2 plans
-bind the complete effective I/O profile, complete-coverage status, candidate
+Asset scans store only search-root aliases and relative paths. Version-3 plans
+bind explicit root storage and placeholder-probe evidence, the complete
+I/O profile, complete-coverage status, candidate
 identity, and explicit noncanonical statuses. A limit diagnostic remains
 `incomplete` and is never serialized as a partial plan. Applying a candidate
 requires a separate command, rechecks its planned hash, and writes a
@@ -112,10 +131,11 @@ same-directory publication. Provider responses are cached locally under
 is documented in
 [`docs/reference-metadata-providers.md`](docs/reference-metadata-providers.md).
 
-Recurring lawful acquisition uses a separate version-2 manifest. The manifest
-records complete-coverage status and the exact effective I/O-limit profile.
-Version-1 manifests do not contain that evidence and are rejected rather than
-silently relabeled or assigned inferred limits.
+Recurring lawful acquisition uses a separate version-3 manifest. The manifest
+records root storage/probe evidence, complete-coverage status, and the exact
+effective I/O-limit profile. Earlier manifests do not contain all of that
+evidence and are rejected rather than silently relabeled or assigned inferred
+limits.
 `acquisition-create` reads bounded CSV metadata, resolves each root-relative PDF
 without permitting traversal, streams one size/hash/header observation per
 unique source, and records its byte size and SHA-256 identity. Required CSV

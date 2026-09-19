@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +17,15 @@ from projectkoios.references.io_limits import (
 )
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
+    CloudPlaceholderProbe,
     PathLimitError,
     PathSafetyError,
+    PlaceholderObservation,
+    PlaceholderPreflightError,
+    PlaceholderProbeSupport,
+    PlaceholderStatus,
+    RootPreflightEvidence,
+    RootStorageClass,
     validate_citekey,
     validate_relative_path,
     validate_root_alias,
@@ -36,11 +43,24 @@ def _normalized_words(value: str) -> tuple[str, ...]:
 class SearchRoot:
     alias: str
     path: Path
+    storage_class: RootStorageClass
+    placeholder_probe: CloudPlaceholderProbe | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         validate_root_alias(self.alias, field="search-root alias")
         if not isinstance(self.path, Path):
             raise ValueError("search-root path must be a Path")
+        if not isinstance(self.storage_class, RootStorageClass):
+            raise ValueError("search-root storage class must be explicit")
+        if (
+            self.storage_class is RootStorageClass.LOCAL
+            and self.placeholder_probe is not None
+        ):
+            raise ValueError("local search roots must not supply a cloud probe")
 
 
 @dataclass(frozen=True)
@@ -108,10 +128,12 @@ class AssetDiscoveryPlan:
     coverage_status: str
     effective_limits: ReferenceIOLimits
     effective_limits_id: str
+    root_preflights: tuple[RootPreflightEvidence, ...]
+    file_observations: tuple[PlaceholderObservation, ...]
     candidates: tuple[AssetCandidate, ...]
 
     def __post_init__(self) -> None:
-        if self.schema_version != 2:
+        if self.schema_version != 3:
             raise ValueError("unsupported asset-plan schema version")
         if self.coverage_status != "complete":
             raise ValueError(
@@ -121,6 +143,50 @@ class AssetDiscoveryPlan:
             raise ValueError("asset-plan I/O-limit profile is incompatible")
         if self.effective_limits_id != self.effective_limits.evidence_id:
             raise ValueError("asset-plan I/O-limit identity conflicts")
+        if not isinstance(self.root_preflights, tuple) or any(
+            not isinstance(item, RootPreflightEvidence)
+            for item in self.root_preflights
+        ):
+            raise ValueError("asset-plan root preflights are invalid")
+        aliases = tuple(item.root_alias for item in self.root_preflights)
+        if aliases != tuple(sorted(aliases)) or len(aliases) != len(
+            set(aliases)
+        ):
+            raise ValueError(
+                "asset-plan root preflights must be alias-sorted and unique"
+            )
+        root_evidence = {item.root_alias: item for item in self.root_preflights}
+        if not isinstance(self.file_observations, tuple):
+            raise ValueError("asset-plan file observations must be a tuple")
+        if self.file_observations:
+            raise ValueError(
+                "complete asset plans cannot contain skipped file observations"
+            )
+        observation_keys = tuple(
+            (item.root_alias, item.relative_path or "")
+            for item in self.file_observations
+        )
+        if observation_keys != tuple(sorted(observation_keys)):
+            raise ValueError("asset-plan file observations must be sorted")
+        for observation in self.file_observations:
+            root = root_evidence.get(observation.root_alias)
+            if (
+                root is None
+                or observation.storage_class is not root.storage_class
+                or observation.probe_id != root.probe_id
+                or observation.status
+                in {
+                    PlaceholderStatus.ORDINARY_FILE,
+                    PlaceholderStatus.UNSUPPORTED_PLATFORM,
+                    PlaceholderStatus.AMBIGUOUS,
+                }
+            ):
+                raise ValueError("asset-plan file observation conflicts")
+        if any(
+            candidate.root_alias not in root_evidence
+            for candidate in self.candidates
+        ):
+            raise ValueError("asset candidate root has no preflight evidence")
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2) + "\n"
@@ -146,11 +212,13 @@ class AssetDiscoveryPlan:
             "coverage_status",
             "effective_limits",
             "effective_limits_id",
+            "root_preflights",
+            "file_observations",
             "candidates",
         }
         if set(data) != expected_fields:
             raise ValueError("asset-plan fields are incomplete or unknown")
-        if data.get("schema_version") != 2:
+        if data.get("schema_version") != 3:
             raise ValueError("unsupported asset-plan schema version")
         candidates_data = data.get("candidates")
         if not isinstance(candidates_data, list):
@@ -207,11 +275,15 @@ class AssetDiscoveryPlan:
             raise ValueError(
                 "asset-plan candidate fields differ or are invalid"
             )
+        root_preflights = _parse_root_preflights(data["root_preflights"])
+        file_observations = _parse_file_observations(data["file_observations"])
         return cls(
-            schema_version=2,
+            schema_version=3,
             coverage_status=data["coverage_status"],
             effective_limits=recorded_limits,
             effective_limits_id=data["effective_limits_id"],
+            root_preflights=root_preflights,
+            file_observations=file_observations,
             candidates=tuple(
                 AssetCandidate(
                     candidate_id=item["candidate_id"],
@@ -276,6 +348,7 @@ class AssetDiscoveryPlanner:
                 limits=limits,
             )
         candidates: list[AssetCandidate] = []
+        file_observations: list[PlaceholderObservation] = []
         authorized = _authorized_roots(roots)
         match_index = _MatchIndex(records)
         files_seen = 0
@@ -305,6 +378,9 @@ class AssetDiscoveryPlanner:
                 raise _limit_error(error, limits) from error
             files_seen += len(relative_files)
             for relative in relative_files:
+                preflight = safe_root.preflight_file(relative)
+                if preflight.status is not PlaceholderStatus.ORDINARY_FILE:
+                    raise PlaceholderPreflightError(preflight)
                 path = safe_root.child_path(relative)
                 matches: list[
                     tuple[ReferenceCandidate, float, tuple[str, ...]]
@@ -388,10 +464,28 @@ class AssetDiscoveryPlanner:
             )
         )
         return AssetDiscoveryPlan(
-            schema_version=2,
+            schema_version=3,
             coverage_status="complete",
             effective_limits=limits,
             effective_limits_id=limits.evidence_id,
+            root_preflights=tuple(
+                sorted(
+                    (
+                        authorized[root.alias].preflight_evidence
+                        for root in roots
+                    ),
+                    key=lambda item: item.root_alias,
+                )
+            ),
+            file_observations=tuple(
+                sorted(
+                    file_observations,
+                    key=lambda item: (
+                        item.root_alias,
+                        item.relative_path or "",
+                    ),
+                )
+            ),
             candidates=ordered,
         )
 
@@ -434,8 +528,10 @@ class AssetDiscoveryPlanner:
 def materialize_asset(
     candidate: AssetCandidate,
     *,
+    expected_root_preflight: RootPreflightEvidence,
     roots: tuple[SearchRoot, ...],
     destination_directory: Path,
+    destination_storage_class: RootStorageClass,
     limits: ReferenceIOLimits = ASSET_DISCOVERY_IO_LIMITS,
 ) -> Path:
     """Copy one explicitly selected strong candidate and verify its hash."""
@@ -444,7 +540,14 @@ def materialize_asset(
     root_paths = _authorized_roots(roots)
     if candidate.root_alias not in root_paths:
         raise ValueError("candidate search-root alias was not supplied")
+    if (
+        expected_root_preflight.root_alias != candidate.root_alias
+        or root_paths[candidate.root_alias].preflight_evidence
+        != expected_root_preflight
+    ):
+        raise ValueError("candidate root preflight evidence changed")
     relative = validate_relative_path(candidate.relative_path)
+    root_paths[candidate.root_alias].require_readable_file(relative)
     max_file_bytes = _required_limit(
         limits.max_file_bytes,
         "max_file_bytes",
@@ -461,6 +564,8 @@ def materialize_asset(
     destination_root = AuthorizedRoot.create(
         destination_directory,
         label="asset destination root",
+        root_alias="asset-destination",
+        storage_class=destination_storage_class,
     )
     filename = candidate.materialized_filename
     state = destination_root.state(filename)
@@ -554,6 +659,75 @@ class _MatchIndex:
         )
 
 
+def _parse_root_preflights(value: object) -> tuple[RootPreflightEvidence, ...]:
+    if not isinstance(value, list):
+        raise ValueError("asset-plan root preflights must be an array")
+    expected = {
+        "root_alias",
+        "storage_class",
+        "probe_id",
+        "probe_support",
+    }
+    parsed: list[RootPreflightEvidence] = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != expected:
+            raise ValueError("asset-plan root preflight is malformed")
+        try:
+            storage_class = RootStorageClass(item["storage_class"])
+            raw_support = item["probe_support"]
+            support = (
+                None
+                if raw_support is None
+                else PlaceholderProbeSupport(raw_support)
+            )
+            parsed.append(
+                RootPreflightEvidence(
+                    root_alias=item["root_alias"],
+                    storage_class=storage_class,
+                    probe_id=item["probe_id"],
+                    probe_support=support,
+                )
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "asset-plan root preflight is malformed"
+            ) from error
+    return tuple(parsed)
+
+
+def _parse_file_observations(
+    value: object,
+) -> tuple[PlaceholderObservation, ...]:
+    if not isinstance(value, list):
+        raise ValueError("asset-plan file observations must be an array")
+    expected = {
+        "root_alias",
+        "relative_path",
+        "storage_class",
+        "probe_id",
+        "status",
+    }
+    parsed: list[PlaceholderObservation] = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != expected:
+            raise ValueError("asset-plan file observation is malformed")
+        try:
+            parsed.append(
+                PlaceholderObservation(
+                    root_alias=item["root_alias"],
+                    relative_path=item["relative_path"],
+                    storage_class=RootStorageClass(item["storage_class"]),
+                    probe_id=item["probe_id"],
+                    status=PlaceholderStatus(item["status"]),
+                )
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "asset-plan file observation is malformed"
+            ) from error
+    return tuple(parsed)
+
+
 def _required_limit(value: int | None, name: str) -> int:
     if value is None:
         raise ValueError(f"asset-discovery I/O profile must define {name}")
@@ -622,6 +796,9 @@ def _authorized_roots(
         root.alias: AuthorizedRoot.existing(
             root.path,
             label=f"search root {root.alias!r}",
+            root_alias=root.alias,
+            storage_class=root.storage_class,
+            placeholder_probe=root.placeholder_probe,
         )
         for root in roots
     }

@@ -18,7 +18,14 @@ from projectkoios.references.io_limits import (
     bounded_utf8_size,
 )
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import PathLimitError, read_path_bytes
+from projectkoios.references.path_safety import (
+    CloudPlaceholderProbe,
+    PathLimitError,
+    RootPreflightEvidence,
+    RootStorageClass,
+    authorize_root_preflight,
+    read_path_bytes,
+)
 
 
 class BibLaTeXUnavailableError(RuntimeError):
@@ -43,6 +50,7 @@ class BibliographyImport:
     candidates: tuple[ReferenceCandidate, ...]
     effective_limits: ReferenceIOLimits
     effective_limits_id: str
+    root_preflight: RootPreflightEvidence
 
     def __post_init__(self) -> None:
         if not isinstance(self.bibliography_bytes, bytes) or not (
@@ -94,6 +102,8 @@ def load_bibliography(
     path: Path,
     *,
     source_id: str,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     source_revision: str | None = None,
     source_path: str | None = None,
     limits: ReferenceIOLimits = BIBLIOGRAPHY_IO_LIMITS,
@@ -106,6 +116,11 @@ def load_bibliography(
             "BibLaTeX import requires the 'bibtex' project extra"
         ) from error
 
+    root_preflight = authorize_root_preflight(
+        root_alias="bibliography",
+        storage_class=storage_class,
+        placeholder_probe=placeholder_probe,
+    )
     max_bytes = _required_limit(
         limits.max_bibliography_bytes,
         "max_bibliography_bytes",
@@ -114,6 +129,9 @@ def load_bibliography(
         content = read_path_bytes(
             path,
             label="bibliography",
+            root_alias="bibliography",
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
             max_bytes=max_bytes,
         )
     except PathLimitError as error:
@@ -193,6 +211,7 @@ def load_bibliography(
         candidates=tuple(item[1] for item in ordered),
         effective_limits=limits,
         effective_limits_id=limits.evidence_id,
+        root_preflight=root_preflight,
     )
 
 

@@ -35,8 +35,16 @@ from projectkoios.references.io_limits import (
 )
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
+    CloudPlaceholderProbe,
+    CloudRootMutationError,
     PathLimitError,
     PathSafetyError,
+    PlaceholderObservation,
+    PlaceholderPreflightError,
+    PlaceholderStatus,
+    RootPreflightEvidence,
+    RootStorageClass,
+    authorize_root_preflight,
     read_path_bytes,
     validate_citekey,
     validate_relative_path,
@@ -56,8 +64,8 @@ from projectkoios.references.reconciliation_package import (
     pretty_json,
 )
 
-_SCHEMA_VERSION = 2
-_PROCESSOR_VERSION = "0.7.0"
+_SCHEMA_VERSION = 3
+_PROCESSOR_VERSION = "0.8.0"
 _CITATION_PARSER_VERSION = "1"
 _COLLECTION_ROWS_PARSER_VERSION = "1"
 _SOURCE_DISCOVERY_PARSER_VERSION = "1"
@@ -104,6 +112,7 @@ class EvidenceMapping(Mapping[str, _Value]):
 
     entries: tuple[tuple[str, _Value], ...]
     input_evidence: tuple[ContentEvidence, ...]
+    root_preflights: tuple[RootPreflightEvidence, ...] = ()
 
     def __post_init__(self) -> None:
         keys = tuple(key for key, _ in self.entries)
@@ -296,6 +305,15 @@ class ManagedPdf:
 class ManagedPdfScan(Sequence[ManagedPdf]):
     pdfs: tuple[ManagedPdf, ...]
     input_evidence: tuple[ContentEvidence, ...]
+    root_preflight: RootPreflightEvidence
+    file_observations: tuple[PlaceholderObservation, ...]
+
+    def __post_init__(self) -> None:
+        if self.file_observations:
+            raise ValueError(
+                "complete managed-PDF scans cannot contain skipped "
+                "file observations"
+            )
 
     @overload
     def __getitem__(self, index: int) -> ManagedPdf: ...
@@ -322,6 +340,7 @@ class CitationUse:
 class CitationClosure:
     schema_version: int
     asserted_source_revision: str
+    root_preflight: RootPreflightEvidence
     bibliography_keys: tuple[str, ...]
     explicit_uses: tuple[CitationUse, ...]
     cited_and_defined: tuple[str, ...]
@@ -434,13 +453,23 @@ class PublicationResult:
 def load_collection_rows(
     path: Path,
     *,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> EvidenceMapping[CollectionRowEvidence]:
+    root_preflight = authorize_root_preflight(
+        root_alias="collection-rows",
+        storage_class=storage_class,
+        placeholder_probe=placeholder_probe,
+    )
     max_csv_bytes = _required_limit(limits.max_csv_bytes, "max_csv_bytes")
     try:
         content = read_path_bytes(
             path,
             label="collection rows",
+            root_alias="collection-rows",
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
             max_bytes=max_csv_bytes,
         )
     except PathLimitError as error:
@@ -549,17 +578,27 @@ def load_collection_rows(
                 content=content,
             ),
         ),
+        root_preflights=(root_preflight,),
     )
 
 
 def scan_managed_pdfs(
     directory: Path,
     *,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     source_discovery: Path | None = None,
+    source_discovery_storage_class: RootStorageClass | None = None,
     limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> ManagedPdfScan:
     try:
-        root = AuthorizedRoot.existing(directory, label="managed PDF root")
+        root = AuthorizedRoot.existing(
+            directory,
+            label="managed PDF root",
+            root_alias="managed-pdfs",
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
+        )
         relative_files = root.iter_files(
             suffix=".pdf",
             recursive=False,
@@ -569,13 +608,28 @@ def scan_managed_pdfs(
         )
     except PathLimitError as error:
         raise _limit_error(error, limits) from error
+    except PlaceholderPreflightError:
+        raise
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
-    historical, discovery_evidence = _load_source_discovery(
-        source_discovery,
-        limits=limits,
-    )
+    if (source_discovery is None) != (source_discovery_storage_class is None):
+        raise ValueError(
+            "source discovery path and storage class must be supplied together"
+        )
+    historical: dict[str, tuple[str, tuple[str, ...]]]
+    discovery_evidence: tuple[ContentEvidence, ...]
+    if source_discovery is None:
+        historical, discovery_evidence = {}, ()
+    else:
+        assert source_discovery_storage_class is not None
+        historical, discovery_evidence = _load_source_discovery(
+            source_discovery,
+            storage_class=source_discovery_storage_class,
+            placeholder_probe=placeholder_probe,
+            limits=limits,
+        )
     pdfs: list[ManagedPdf] = []
+    file_observations: list[PlaceholderObservation] = []
     asset_evidence: list[ContentEvidence] = []
     total_bytes = 0
     max_file_bytes = _required_limit(limits.max_file_bytes, "max_file_bytes")
@@ -586,6 +640,9 @@ def scan_managed_pdfs(
     for relative in relative_files:
         try:
             citekey = validate_citekey(Path(relative.name).stem)
+            preflight = root.preflight_file(relative)
+            if preflight.status is not PlaceholderStatus.ORDINARY_FILE:
+                raise PlaceholderPreflightError(preflight)
             observation = root.observe_file(
                 relative,
                 max_bytes=max_file_bytes,
@@ -593,6 +650,8 @@ def scan_managed_pdfs(
             )
         except PathLimitError as error:
             raise _limit_error(error, limits) from error
+        except PlaceholderPreflightError:
+            raise
         except PathSafetyError as error:
             raise CollectionReconciliationError(str(error)) from error
         byte_size = observation.byte_size
@@ -647,12 +706,21 @@ def scan_managed_pdfs(
                 key=_content_evidence_key,
             )
         ),
+        root_preflight=root.preflight_evidence,
+        file_observations=tuple(
+            sorted(
+                file_observations,
+                key=lambda item: item.relative_path or "",
+            )
+        ),
     )
 
 
 def build_citation_closure(
     manuscript_root: Path,
     *,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     bibliography_keys: tuple[str, ...],
     source_revision: str,
     limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
@@ -661,6 +729,9 @@ def build_citation_closure(
         root = AuthorizedRoot.existing(
             manuscript_root,
             label="manuscript root",
+            root_alias="manuscript-sources",
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
         )
         source_files = root.iter_files(
             suffix=".tex",
@@ -742,13 +813,18 @@ def build_citation_closure(
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
     cited = set(uses)
-    verified_source_tree = _verify_source_tree(
-        root.path,
-        asserted_revision=source_revision,
+    verified_source_tree = (
+        _verify_source_tree(
+            root.path,
+            asserted_revision=source_revision,
+        )
+        if storage_class is RootStorageClass.LOCAL
+        else None
     )
     payload: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
         "asserted_source_revision": source_revision,
+        "root_preflight": root.preflight_evidence,
         "verified_source_tree": verified_source_tree,
         "bibliography_keys": sorted(bibliography),
         "explicit_uses": [
@@ -772,6 +848,7 @@ def build_citation_closure(
     closure = CitationClosure(
         schema_version=_SCHEMA_VERSION,
         asserted_source_revision=source_revision,
+        root_preflight=root.preflight_evidence,
         bibliography_keys=tuple(payload["bibliography_keys"]),
         explicit_uses=tuple(
             CitationUse(
@@ -813,6 +890,11 @@ def reconcile_collection(
     bibliography_parser: str = "caller-supplied-records",
     limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> ReconciliationOutputs:
+    if getattr(managed_pdfs, "file_observations", ()):
+        raise CollectionReconciliationError(
+            "complete reconciliation cannot consume skipped managed-PDF "
+            "observations"
+        )
     if not collection_id or not source_revision:
         raise CollectionReconciliationError(
             "collection and asserted source revision must be non-empty"
@@ -955,6 +1037,18 @@ def reconcile_collection(
         )
 
     by_citekey = {item.citekey: item for item in managed_pdfs}
+    preflight_by_citekey: dict[str, PlaceholderObservation] = {}
+    for item in getattr(managed_pdfs, "file_observations", ()):
+        if item.relative_path is None:
+            raise CollectionReconciliationError(
+                "managed-root file observation has no relative path"
+            )
+        citekey = validate_citekey(Path(item.relative_path).stem)
+        if citekey in preflight_by_citekey or citekey in by_citekey:
+            raise CollectionReconciliationError(
+                "managed PDF preflight has duplicate citekey stems"
+            )
+        preflight_by_citekey[citekey] = item
     if len(by_citekey) != len(managed_pdfs):
         raise CollectionReconciliationError(
             "managed PDF directory has duplicate citekey stems"
@@ -992,11 +1086,13 @@ def reconcile_collection(
             ProcessingEvidence.not_supplied(),
         )
         coverage_item = coverage_by_citekey.get(record.proposed_citekey)
+        preflight_item = preflight_by_citekey.get(record.proposed_citekey)
         status, next_action = _classify_pdf_status(
             matched_pdf=matched_pdf,
             expectation=expectation,
             observation=coverage_observation,
             evidence=coverage_item,
+            preflight=preflight_item,
         )
         duplicate_citekeys = (
             tuple(
@@ -1046,12 +1142,17 @@ def reconcile_collection(
                 discovery_evidence=(
                     matched_pdf.discovery_evidence
                     if matched_pdf is not None
-                    else _coverage_evidence(coverage_item)
+                    else (
+                        _preflight_evidence(preflight_item)
+                        if preflight_item is not None
+                        else _coverage_evidence(coverage_item)
+                    )
                 ),
                 duplicate_citekeys=duplicate_citekeys,
                 access_status=_access_status(
                     matched_pdf=matched_pdf,
                     evidence=coverage_item,
+                    preflight=preflight_item,
                 ),
                 rights_status="not-assessed",
                 ingestion_status=processing.ingestion_status,
@@ -1222,6 +1323,7 @@ def publish_reconciliation(
     outputs: ReconciliationOutputs,
     *,
     output_directory: Path,
+    output_storage_class: RootStorageClass,
 ) -> PublicationResult:
     expected = dict(outputs.files)
     try:
@@ -1236,12 +1338,16 @@ def publish_reconciliation(
         parent = AuthorizedRoot.create(
             output_directory.parent,
             label="reconciliation output parent",
+            root_alias="reconciliation-output-parent",
+            storage_class=output_storage_class,
         )
         output_name = validate_relative_path(
             output_directory.name,
             field="output directory name",
         )
         output_state = parent.state(output_name)
+    except CloudRootMutationError, PlaceholderPreflightError:
+        raise
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
     if output_state == "regular":
@@ -1253,6 +1359,8 @@ def publish_reconciliation(
             existing = AuthorizedRoot.existing(
                 parent.child_path(output_name),
                 label="reconciliation output directory",
+                root_alias="reconciliation-output",
+                storage_class=RootStorageClass.LOCAL,
             )
             directory_limit = min(
                 _required_limit(
@@ -1334,10 +1442,16 @@ def parse_reconciliation_package(
 def verify_reconciliation_package(
     directory: Path,
     *,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     expected_package_id: str | None = None,
 ) -> LoadedReconciliationPackage:
     try:
-        loaded = load_reconciliation_package(directory)
+        loaded = load_reconciliation_package(
+            directory,
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
+        )
     except ReconciliationPackageError as error:
         raise CollectionReconciliationError(str(error)) from error
     if (
@@ -1354,9 +1468,14 @@ def replay_reconciliation(
     outputs: ReconciliationOutputs,
     *,
     output_directory: Path,
+    output_storage_class: RootStorageClass,
 ) -> PublicationResult:
     """Replay deterministic bytes through immutable publication semantics."""
-    return publish_reconciliation(outputs, output_directory=output_directory)
+    return publish_reconciliation(
+        outputs,
+        output_directory=output_directory,
+        output_storage_class=output_storage_class,
+    )
 
 
 def _bound_input_evidence(
@@ -1446,12 +1565,24 @@ def _bound_input_evidence(
     normalized = canonical_json_bytes(
         {
             "collection_rows": dict(collection_rows),
+            "collection_rows_root_preflights": getattr(
+                collection_rows, "root_preflights", ()
+            ),
             "managed_pdfs": tuple(managed_pdfs),
+            "managed_root_preflight": getattr(
+                managed_pdfs, "root_preflight", None
+            ),
+            "managed_file_observations": getattr(
+                managed_pdfs, "file_observations", ()
+            ),
             "coverage_observation": coverage_observation,
             "processing_evidence": (
                 None
                 if processing_evidence is None
                 else dict(processing_evidence)
+            ),
+            "processing_evidence_root_preflights": getattr(
+                processing_evidence, "root_preflights", ()
             ),
         }
     )
@@ -1534,6 +1665,8 @@ def _verify_source_tree(
 def _load_source_discovery(
     path: Path | None,
     *,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> tuple[
     dict[str, tuple[str, tuple[str, ...]]],
@@ -1545,6 +1678,9 @@ def _load_source_discovery(
         content = read_path_bytes(
             path,
             label="source-discovery document",
+            root_alias="source-discovery",
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
             max_bytes=_required_limit(
                 limits.max_json_bytes,
                 "max_json_bytes",
@@ -1702,6 +1838,7 @@ def _classify_pdf_status(
     expectation: PdfExpectation,
     observation: CoverageObservation | None,
     evidence: ReferenceCoverage | None,
+    preflight: PlaceholderObservation | None = None,
 ) -> tuple[PdfStatus, str]:
     if matched_pdf is not None:
         return (
@@ -1715,6 +1852,23 @@ def _classify_pdf_status(
                 if matched_pdf.historically_verified
                 else "review-pdf-identity-rights-and-record-acquisition"
             ),
+        )
+    if preflight is not None:
+        if preflight.status is PlaceholderStatus.CLOUD_PLACEHOLDER:
+            return (
+                PdfStatus.CLOUD_PLACEHOLDER,
+                "request-explicit-placeholder-hydration-authorization",
+            )
+        if preflight.status in {
+            PlaceholderStatus.ACCESS_CONTROLLED,
+            PlaceholderStatus.UNREADABLE,
+        }:
+            return (
+                PdfStatus.ACCESS_CONTROLLED,
+                "resolve-local-file-access-without-bypassing-controls",
+            )
+        raise CollectionReconciliationError(
+            "managed-root preflight has unsupported result"
         )
     if expectation is PdfExpectation.NOT_APPLICABLE:
         if evidence is not None and (
@@ -1811,13 +1965,28 @@ def _coverage_evidence(
     return tuple(sorted(values))
 
 
+def _preflight_evidence(
+    observation: PlaceholderObservation | None,
+) -> tuple[str, ...]:
+    if observation is None:
+        return ()
+    return (
+        f"root-storage-class:{observation.storage_class.value}",
+        f"placeholder-probe:{observation.probe_id}",
+        f"path-preflight:{observation.status.value}",
+    )
+
+
 def _access_status(
     *,
     matched_pdf: ManagedPdf | None,
     evidence: ReferenceCoverage | None,
+    preflight: PlaceholderObservation | None = None,
 ) -> str:
     if matched_pdf is not None:
         return "managed-local-access"
+    if preflight is not None:
+        return preflight.status.value
     if evidence is None:
         return "not-assessed"
     if evidence.access_state is not CoverageAccessState.NONE:

@@ -12,7 +12,6 @@ from projectkoios.references.enrichment import (
     MAX_RESPONSE_BYTES,
     OBSERVATION_GENERATOR_VERSION,
     CacheStatus,
-    CrossrefClient,
     DeliveryStatus,
     DiscrepancyKind,
     MetadataEnrichment,
@@ -28,6 +27,17 @@ from projectkoios.references.enrichment import (
     compare_provider_enrichments,
     normalize_persistent_identifier,
 )
+from projectkoios.references.enrichment import (
+    CrossrefClient as _CrossrefClient,
+)
+from projectkoios.references.path_safety import RootStorageClass
+
+
+def CrossrefClient(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    if kwargs.get("cache_directory") is not None:
+        kwargs["cache_storage_class"] = RootStorageClass.LOCAL
+    return _CrossrefClient(*args, **kwargs)  # type: ignore[arg-type]
+
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "crossref-response-v1.json"
 _RETRIEVED_AT = "2026-02-03T04:05:06+00:00"

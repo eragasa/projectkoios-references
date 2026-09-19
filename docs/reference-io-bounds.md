@@ -46,7 +46,11 @@ same-directory temporary file, verifies the planned digest and size, fsyncs,
 and atomically publishes without loading the PDF into memory.
 
 Directory walks cap entries before sorting, cap matching files, reject
-symlinks, and limit recursion depth. CSV readers stop on the first row beyond
+symlinks, and limit recursion depth. Candidate roots also require an explicit
+`local` or `cloud-backed` declaration. Cloud-backed roots require a supported,
+injected metadata-only placeholder probe; the default unsupported capability
+fails before root inventory and cannot become empty or complete coverage. See
+[cloud-placeholder safety](cloud-placeholder-safety.md). CSV readers stop on the first row beyond
 the active limit. JSON and BibLaTeX nesting are checked before parser
 allocation; arrays, text fields, candidates, and graph breadth are checked
 before durable mutation.

@@ -6,6 +6,7 @@ import io
 import json
 import re
 from dataclasses import asdict, dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Self
 
@@ -15,14 +16,18 @@ from projectkoios.references.io_limits import (
 )
 from projectkoios.references.models import normalize_doi
 from projectkoios.references.path_safety import (
+    CloudPlaceholderProbe,
     PathLimitError,
+    RootPreflightEvidence,
+    RootStorageClass,
+    authorize_root_preflight,
     read_path_bytes,
     validate_citekey,
     validate_relative_path,
 )
 
 _GRAPH_SCHEMA_VERSION = 1
-_GRAPH_BATCH_SCHEMA_VERSION = 2
+_GRAPH_BATCH_SCHEMA_VERSION = 3
 _MAX_TEXT_BYTES = 4_096
 _MAX_VERBATIM_BYTES = 262_144
 _MAX_AUTHORS = 256
@@ -695,6 +700,10 @@ class CitationGraph:
     candidates: tuple[CitationCandidate, ...]
     edges: tuple[CitationEdge, ...]
     effective_limits: GraphImportLimits = GraphImportLimits()
+    root_preflights: tuple[RootPreflightEvidence, ...] = dataclass_field(
+        default=(),
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         _validate_graph(
@@ -703,6 +712,13 @@ class CitationGraph:
             edges=self.edges,
             limits=self.effective_limits,
         )
+        aliases = tuple(item.root_alias for item in self.root_preflights)
+        if aliases != tuple(sorted(aliases)) or len(aliases) != len(
+            set(aliases)
+        ):
+            raise CitationGraphError(
+                "graph root preflights must be alias-sorted and unique"
+            )
         if self.sources != tuple(
             sorted(
                 self.sources,
@@ -733,6 +749,7 @@ class CitationGraph:
         candidates: tuple[CitationCandidate, ...],
         edges: tuple[CitationEdge, ...],
         limits: GraphImportLimits | None = None,
+        root_preflights: tuple[RootPreflightEvidence, ...] = (),
     ) -> Self:
         active_limits = limits or GraphImportLimits()
         _validate_graph(
@@ -750,6 +767,7 @@ class CitationGraph:
             ),
             edges=tuple(sorted(edges, key=lambda item: item.edge_id)),
             effective_limits=active_limits,
+            root_preflights=root_preflights,
         )
 
     def to_json(self) -> str:
@@ -761,6 +779,7 @@ class CitationGraph:
             "coverage_status": "complete",
             "effective_limits": asdict(self.effective_limits),
             "effective_limits_id": self.effective_limits.evidence_id,
+            "root_preflights": [asdict(item) for item in self.root_preflights],
             "sources": [json.loads(item.to_json()) for item in self.sources],
             "candidates": [
                 json.loads(item.to_json()) for item in self.candidates
@@ -897,22 +916,60 @@ def load_candidate_graph(
     nodes_path: Path,
     edges_path: Path,
     *,
+    sources_storage_class: RootStorageClass,
+    nodes_storage_class: RootStorageClass,
+    edges_storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     limits: GraphImportLimits | None = None,
 ) -> CitationGraph:
     """Load and atomically validate three bounded graph CSV files."""
     active_limits = limits or GraphImportLimits()
     inputs = (
-        (sources_path, "citation sources", _SOURCE_FIELDS),
-        (nodes_path, "citation candidates", _CANDIDATE_FIELDS),
-        (edges_path, "citation edges", _EDGE_FIELDS),
+        (
+            sources_path,
+            "citation sources",
+            "citation-sources",
+            sources_storage_class,
+            _SOURCE_FIELDS,
+        ),
+        (
+            nodes_path,
+            "citation candidates",
+            "citation-candidates",
+            nodes_storage_class,
+            _CANDIDATE_FIELDS,
+        ),
+        (
+            edges_path,
+            "citation edges",
+            "citation-edges",
+            edges_storage_class,
+            _EDGE_FIELDS,
+        ),
+    )
+    root_preflights = tuple(
+        sorted(
+            (
+                authorize_root_preflight(
+                    root_alias=alias,
+                    storage_class=storage_class,
+                    placeholder_probe=placeholder_probe,
+                )
+                for _, _, alias, storage_class, _ in inputs
+            ),
+            key=lambda item: item.root_alias,
+        )
     )
     contents: list[tuple[str, tuple[dict[str, str], ...]]] = []
     total_bytes = 0
-    for path, label, expected_fields in inputs:
+    for path, label, alias, storage_class, expected_fields in inputs:
         try:
             raw = read_path_bytes(
                 path,
                 label=label,
+                root_alias=alias,
+                storage_class=storage_class,
+                placeholder_probe=placeholder_probe,
                 max_bytes=active_limits.max_file_bytes,
             )
         except PathLimitError as error:
@@ -990,6 +1047,7 @@ def load_candidate_graph(
         candidates=candidates,
         edges=edges,
         limits=active_limits,
+        root_preflights=root_preflights,
     )
 
 

@@ -10,14 +10,26 @@ from pathlib import Path
 import pytest
 from projectkoios.references.collection_reconciliation import (
     CollectionReconciliationError,
-    build_citation_closure,
-    load_collection_rows,
     parse_reconciliation_package,
-    publish_reconciliation,
     reconcile_collection,
-    replay_reconciliation,
-    scan_managed_pdfs,
-    verify_reconciliation_package,
+)
+from projectkoios.references.collection_reconciliation import (
+    build_citation_closure as _build_citation_closure,
+)
+from projectkoios.references.collection_reconciliation import (
+    load_collection_rows as _load_collection_rows,
+)
+from projectkoios.references.collection_reconciliation import (
+    publish_reconciliation as _publish_reconciliation,
+)
+from projectkoios.references.collection_reconciliation import (
+    replay_reconciliation as _replay_reconciliation,
+)
+from projectkoios.references.collection_reconciliation import (
+    scan_managed_pdfs as _scan_managed_pdfs,
+)
+from projectkoios.references.collection_reconciliation import (
+    verify_reconciliation_package as _verify_reconciliation_package,
 )
 from projectkoios.references.coverage import (
     AmbiguityEvaluation,
@@ -32,14 +44,54 @@ from projectkoios.references.identity import (
 )
 from projectkoios.references.ingestion_evidence import (
     IngestionEvidenceVerificationError,
-    ReferenceEvidenceInput,
     load_ingestion_reference_evidence,
 )
+from projectkoios.references.ingestion_evidence import (
+    ReferenceEvidenceInput as _ReferenceEvidenceInput,
+)
 from projectkoios.references.io_limits import ReferenceIOLimitError
+from projectkoios.references.path_safety import RootStorageClass
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,
     FrozenCounts,
 )
+
+
+def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
+    return _ReferenceEvidenceInput(citekey, path, RootStorageClass.LOCAL)
+
+
+def build_citation_closure(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _build_citation_closure(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def scan_managed_pdfs(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    if kwargs.get("source_discovery") is not None:
+        kwargs["source_discovery_storage_class"] = RootStorageClass.LOCAL
+    return _scan_managed_pdfs(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def load_collection_rows(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _load_collection_rows(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def publish_reconciliation(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["output_storage_class"] = RootStorageClass.LOCAL
+    return _publish_reconciliation(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def replay_reconciliation(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["output_storage_class"] = RootStorageClass.LOCAL
+    return _replay_reconciliation(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def verify_reconciliation_package(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _verify_reconciliation_package(*args, **kwargs)  # type: ignore[arg-type]
+
 
 _ASSERTED_REVISION = "caller-asserted-revision"
 _FIXTURE = (

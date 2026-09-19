@@ -12,7 +12,11 @@ from projectkoios.references.io_limits import (
 )
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
+    CloudPlaceholderProbe,
     PathLimitError,
+    PlaceholderPreflightError,
+    PlaceholderStatus,
+    RootStorageClass,
     validate_citekey,
 )
 
@@ -30,7 +34,10 @@ def validate_reference_objects(
     records: tuple[ReferenceCandidate, ...],
     *,
     notes_directory: Path,
+    notes_storage_class: RootStorageClass,
     pdf_directory: Path,
+    pdf_storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     limits: ReferenceIOLimits = VALIDATION_IO_LIMITS,
 ) -> tuple[ValidationIssue, ...]:
     """Validate candidate-key basenames without granting acceptance."""
@@ -45,8 +52,28 @@ def validate_reference_objects(
         )
     issues: list[ValidationIssue] = []
     keys = {validate_citekey(record.proposed_citekey) for record in records}
-    notes = AuthorizedRoot.existing(notes_directory, label="notes root")
-    pdfs = AuthorizedRoot.existing(pdf_directory, label="PDF root")
+    notes = AuthorizedRoot.existing(
+        notes_directory,
+        label="notes root",
+        root_alias="reference-notes",
+        storage_class=notes_storage_class,
+        placeholder_probe=(
+            placeholder_probe
+            if notes_storage_class is RootStorageClass.CLOUD_BACKED
+            else None
+        ),
+    )
+    pdfs = AuthorizedRoot.existing(
+        pdf_directory,
+        label="PDF root",
+        root_alias="reference-pdfs",
+        storage_class=pdf_storage_class,
+        placeholder_probe=(
+            placeholder_probe
+            if pdf_storage_class is RootStorageClass.CLOUD_BACKED
+            else None
+        ),
+    )
     try:
         max_entries_per_root = (
             _required_limit(limits.max_entries, "max_entries") // 2
@@ -79,6 +106,9 @@ def validate_reference_objects(
         )
     total_bytes = 0
     for relative in note_files:
+        preflight = notes.preflight_file(relative)
+        if preflight.status is not PlaceholderStatus.ORDINARY_FILE:
+            raise PlaceholderPreflightError(preflight)
         stem = validate_citekey(Path(relative.name).stem)
         if stem not in keys:
             issues.append(
@@ -117,6 +147,9 @@ def validate_reference_objects(
                 )
             )
     for relative in pdf_files:
+        preflight = pdfs.preflight_file(relative)
+        if preflight.status is not PlaceholderStatus.ORDINARY_FILE:
+            raise PlaceholderPreflightError(preflight)
         stem = validate_citekey(Path(relative.name).stem)
         if stem not in keys:
             issues.append(

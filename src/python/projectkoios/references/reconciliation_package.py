@@ -17,8 +17,10 @@ from projectkoios.references.io_limits import (
 )
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
+    CloudPlaceholderProbe,
     PathLimitError,
     PathSafetyError,
+    RootStorageClass,
     validate_relative_path,
 )
 
@@ -557,11 +559,17 @@ def parse_package_files(
 
 def load_reconciliation_package(
     directory: Path,
+    *,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
 ) -> LoadedReconciliationPackage:
     try:
         root = AuthorizedRoot.existing(
             directory,
             label="reconciliation package directory",
+            root_alias="reconciliation-package",
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
         )
         relative_files = root.iter_files(
             suffix="",

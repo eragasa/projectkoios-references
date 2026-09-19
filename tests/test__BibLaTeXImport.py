@@ -3,7 +3,15 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from projectkoios.references.biblatex import load_bibliography
+from projectkoios.references.biblatex import (
+    load_bibliography as _load_bibliography,
+)
+from projectkoios.references.path_safety import RootStorageClass
+
+
+def load_bibliography(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _load_bibliography(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def test__biblatex_import__preserves_key_and_occurrence(

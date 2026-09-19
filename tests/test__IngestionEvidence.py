@@ -18,11 +18,19 @@ from projectkoios.references.ingestion_evidence import (
     IngestionEvidenceLimitError,
     IngestionEvidenceParseError,
     IngestionEvidenceVerificationError,
-    ReferenceEvidenceInput,
     load_ingestion_reference_evidence,
     parse_reference_evidence,
     verify_reference_evidence_source,
 )
+from projectkoios.references.ingestion_evidence import (
+    ReferenceEvidenceInput as _ReferenceEvidenceInput,
+)
+from projectkoios.references.path_safety import RootStorageClass
+
+
+def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
+    return _ReferenceEvidenceInput(citekey, path, RootStorageClass.LOCAL)
+
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "ingestion-reference-evidence"
 _SOURCE_BYTES = b"sanitized reference-evidence fixture source\n"
@@ -303,6 +311,16 @@ def test__collection_reconcile_cli__uses_explicit_evidence_binding(
                 "fixture",
                 "--source-revision",
                 "asserted-revision",
+                "--pdf-storage-class",
+                "local",
+                "--bibliography-storage-class",
+                "local",
+                "--corpus-storage-class",
+                "local",
+                "--output-storage-class",
+                "local",
+                "--reference-evidence-storage-class",
+                "example2026=local",
                 "--reference-evidence",
                 f"example2026={evidence}",
             ]

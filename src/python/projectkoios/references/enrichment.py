@@ -25,6 +25,7 @@ from projectkoios.references.path_safety import (
     AuthorizedRoot,
     PathLimitError,
     PathSafetyError,
+    RootStorageClass,
 )
 
 CACHE_SCHEMA_VERSION = 2
@@ -451,6 +452,7 @@ class CrossrefClient:
         *,
         mailto: str | None = None,
         cache_directory: Path | None = None,
+        cache_storage_class: RootStorageClass | None = None,
         timeout_seconds: float = 20.0,
         transport: MetadataTransport | None = None,
         limits: ReferenceIOLimits = METADATA_IO_LIMITS,
@@ -458,6 +460,10 @@ class CrossrefClient:
         if timeout_seconds <= 0:
             raise ValueError("provider timeout must be positive")
         self.mailto = mailto
+        if (cache_directory is None) != (cache_storage_class is None):
+            raise ValueError(
+                "cache directory and storage class must be supplied together"
+            )
         self.cache_directory = cache_directory
         self.timeout_seconds = timeout_seconds
         self.transport = transport or HttpsMetadataTransport()
@@ -466,9 +472,13 @@ class CrossrefClient:
         self.limits = limits
         self._cache_root: AuthorizedRoot | None = None
         if cache_directory is not None:
+            if cache_storage_class is None:
+                raise AssertionError("cache storage class was not validated")
             root = AuthorizedRoot.create(
                 cache_directory,
                 label="provider cache root",
+                root_alias="provider-cache",
+                storage_class=cache_storage_class,
             )
             state = root.state("crossref")
             if state == "missing":
@@ -477,6 +487,8 @@ class CrossrefClient:
                 self._cache_root = AuthorizedRoot.existing(
                     root.child_path("crossref"),
                     label="Crossref cache root",
+                    root_alias="crossref-cache",
+                    storage_class=cache_storage_class,
                 )
             else:
                 raise ProviderCacheError(

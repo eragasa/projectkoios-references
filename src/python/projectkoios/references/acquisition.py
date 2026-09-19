@@ -19,6 +19,9 @@ from projectkoios.references.path_safety import (
     AuthorizedRoot,
     FileObservation,
     PathLimitError,
+    PlaceholderProbeSupport,
+    RootPreflightEvidence,
+    RootStorageClass,
     validate_citekey,
     validate_relative_path,
     validate_root_alias,
@@ -181,10 +184,11 @@ class AcquisitionManifest:
     coverage_status: str
     effective_limits: ReferenceIOLimits
     effective_limits_id: str
+    root_preflights: tuple[RootPreflightEvidence, ...]
     entries: tuple[AcquisitionEntry, ...]
 
     def __post_init__(self) -> None:
-        if type(self.schema_version) is not int or self.schema_version != 2:
+        if type(self.schema_version) is not int or self.schema_version != 3:
             raise ValueError("unsupported acquisition-manifest schema version")
         if self.coverage_status != "complete":
             raise ValueError(
@@ -197,6 +201,18 @@ class AcquisitionManifest:
         if self.effective_limits_id != self.effective_limits.evidence_id:
             raise ValueError(
                 "acquisition-manifest I/O-limit identity conflicts"
+            )
+        if not isinstance(self.root_preflights, tuple) or any(
+            not isinstance(item, RootPreflightEvidence)
+            for item in self.root_preflights
+        ):
+            raise ValueError("acquisition root preflights are invalid")
+        root_aliases = tuple(item.root_alias for item in self.root_preflights)
+        if root_aliases != tuple(sorted(root_aliases)) or len(
+            root_aliases
+        ) != len(set(root_aliases)):
+            raise ValueError(
+                "acquisition root preflights must be alias-sorted and unique"
             )
         _bounded(self.source_id, field="source_id")
         if not isinstance(self.entries, tuple) or not self.entries:
@@ -220,6 +236,8 @@ class AcquisitionManifest:
             raise ValueError(
                 "acquisition manifest contains duplicate source paths"
             )
+        if any(entry.root_alias not in root_aliases for entry in self.entries):
+            raise ValueError("acquisition entry root has no preflight evidence")
 
     @classmethod
     def from_json(
@@ -243,6 +261,7 @@ class AcquisitionManifest:
             "coverage_status",
             "effective_limits",
             "effective_limits_id",
+            "root_preflights",
             "entries",
         }
         unknown = set(data) - expected_fields
@@ -290,6 +309,7 @@ class AcquisitionManifest:
             coverage_status=coverage_status,
             effective_limits=recorded_limits,
             effective_limits_id=effective_limits_id,
+            root_preflights=_parse_root_preflights(data["root_preflights"]),
             entries=tuple(AcquisitionEntry.from_dict(item) for item in entries),
         )
 
@@ -302,6 +322,19 @@ class AcquisitionManifest:
                     "coverage_status": self.coverage_status,
                     "effective_limits": self.effective_limits.to_dict(),
                     "effective_limits_id": self.effective_limits_id,
+                    "root_preflights": [
+                        {
+                            "root_alias": item.root_alias,
+                            "storage_class": item.storage_class.value,
+                            "probe_id": item.probe_id,
+                            "probe_support": (
+                                None
+                                if item.probe_support is None
+                                else item.probe_support.value
+                            ),
+                        }
+                        for item in self.root_preflights
+                    ],
                     "entries": [entry.to_dict() for entry in self.entries],
                 },
                 ensure_ascii=False,
@@ -452,11 +485,17 @@ def create_acquisition_manifest(
                 limits=limits,
             )
     return AcquisitionManifest(
-        schema_version=2,
+        schema_version=3,
         source_id=source_id,
         coverage_status="complete",
         effective_limits=limits,
         effective_limits_id=limits.evidence_id,
+        root_preflights=tuple(
+            sorted(
+                (root_paths[root.alias].preflight_evidence for root in roots),
+                key=lambda item: item.root_alias,
+            )
+        ),
         entries=tuple(entries),
     )
 
@@ -477,6 +516,14 @@ def verify_acquisition_manifest(
             limits=limits,
         )
     root_paths = _resolved_roots(roots, limits=limits)
+    supplied_preflights = tuple(
+        sorted(
+            (root_paths[root.alias].preflight_evidence for root in roots),
+            key=lambda item: item.root_alias,
+        )
+    )
+    if supplied_preflights != manifest.root_preflights:
+        raise ValueError("acquisition root preflight evidence changed")
     total_bytes = 0
     for entry in manifest.entries:
         observation = _observe_source(
@@ -532,6 +579,9 @@ def _resolved_roots(
         resolved[root.alias] = AuthorizedRoot.existing(
             root.path,
             label=f"source root {root.alias!r}",
+            root_alias=root.alias,
+            storage_class=root.storage_class,
+            placeholder_probe=root.placeholder_probe,
         )
     return resolved
 
@@ -550,6 +600,7 @@ def _observe_source(
         "max_file_bytes",
     )
     try:
+        roots[root_alias].require_readable_file(relative_path)
         return roots[root_alias].observe_file(
             relative_path,
             max_bytes=max_file_bytes,
@@ -567,6 +618,40 @@ def _observe_source(
             observed=error.observed,
             limits=limits,
         ) from error
+
+
+def _parse_root_preflights(value: object) -> tuple[RootPreflightEvidence, ...]:
+    if not isinstance(value, list):
+        raise ValueError("root_preflights must be an array")
+    expected = {
+        "root_alias",
+        "storage_class",
+        "probe_id",
+        "probe_support",
+    }
+    parsed: list[RootPreflightEvidence] = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != expected:
+            raise ValueError("acquisition root preflight is malformed")
+        try:
+            raw_support = item["probe_support"]
+            parsed.append(
+                RootPreflightEvidence(
+                    root_alias=item["root_alias"],
+                    storage_class=RootStorageClass(item["storage_class"]),
+                    probe_id=item["probe_id"],
+                    probe_support=(
+                        None
+                        if raw_support is None
+                        else PlaceholderProbeSupport(raw_support)
+                    ),
+                )
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "acquisition root preflight is malformed"
+            ) from error
+    return tuple(parsed)
 
 
 def _required_limit(value: int | None, name: str) -> int:

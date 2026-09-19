@@ -13,7 +13,10 @@ from projectkoios.references.catalog import (
     CatalogConflictError,
     CatalogMigrationRequired,
     CatalogSchemaError,
-    ReferenceCatalog,
+    RootStorageClass,
+)
+from projectkoios.references.catalog import (
+    ReferenceCatalog as _ReferenceCatalog,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
@@ -27,6 +30,10 @@ from projectkoios.references.models import (
 )
 
 _FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def ReferenceCatalog(path: Path) -> _ReferenceCatalog:
+    return _ReferenceCatalog(path, storage_class=RootStorageClass.LOCAL)
 
 
 def _database_dump(path: Path) -> str:

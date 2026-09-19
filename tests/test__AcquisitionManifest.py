@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from projectkoios.references import (
     AcquisitionManifest,
+    RootStorageClass,
     SearchRoot,
     create_acquisition_manifest,
     verify_acquisition_manifest,
@@ -36,7 +37,7 @@ def _source(tmp_path: Path) -> tuple[Path, tuple[SearchRoot, ...]]:
     pdf = root / "collection" / "example2026.pdf"
     pdf.parent.mkdir(parents=True)
     pdf.write_bytes(b"%PDF-1.4\nfixture")
-    return pdf, (SearchRoot("staging", root),)
+    return pdf, (SearchRoot("staging", root, RootStorageClass.LOCAL),)
 
 
 def test__acquisition_manifest__retains_provenance_without_absolute_paths(
@@ -119,7 +120,7 @@ def test__acquisition_cli__creates_and_verifies_manifest(
         writer.writeheader()
         writer.writerows(_rows())
     output = tmp_path / "manifest.json"
-    source_root = f"staging={roots[0].path}"
+    source_root = f"local:staging={roots[0].path}"
 
     assert (
         main(
@@ -129,6 +130,10 @@ def test__acquisition_cli__creates_and_verifies_manifest(
                 str(output),
                 "--source-id",
                 "operator-recommendation-2026",
+                "--metadata-storage-class",
+                "local",
+                "--output-storage-class",
+                "local",
                 "--source-root",
                 source_root,
             ]
@@ -143,6 +148,8 @@ def test__acquisition_cli__creates_and_verifies_manifest(
             [
                 "acquisition-verify",
                 str(output),
+                "--manifest-storage-class",
+                "local",
                 "--source-root",
                 source_root,
             ]
@@ -150,7 +157,7 @@ def test__acquisition_cli__creates_and_verifies_manifest(
         == 0
     )
     report = json.loads(capsys.readouterr().out)
-    assert report["schema_version"] == 2
+    assert report["schema_version"] == 3
     assert report["source_id"] == "operator-recommendation-2026"
     assert report["verified"] == 1
     assert report["coverage_status"] == "complete"

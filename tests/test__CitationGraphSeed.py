@@ -1,6 +1,19 @@
 from pathlib import Path
 
-from projectkoios.references.graph import load_candidate_graph
+from projectkoios.references.graph import (
+    load_candidate_graph as _load_candidate_graph,
+)
+from projectkoios.references.path_safety import RootStorageClass
+
+
+def load_candidate_graph(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs.update(
+        sources_storage_class=RootStorageClass.LOCAL,
+        nodes_storage_class=RootStorageClass.LOCAL,
+        edges_storage_class=RootStorageClass.LOCAL,
+    )
+    return _load_candidate_graph(*args, **kwargs)  # type: ignore[arg-type]
+
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _GRAPH = _PROJECT_ROOT / "collections/projectkoios-workflow/padbergHoffmann2015"

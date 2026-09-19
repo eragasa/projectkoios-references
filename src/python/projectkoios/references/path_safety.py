@@ -3,12 +3,14 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import re
 import secrets
 import stat
 import unicodedata
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Literal, Never
+from typing import Literal, Never, Protocol
 
 _CITEKEY_MAX_LENGTH = 200
 _DEFAULT_READ_MAX_BYTES = 50_000_000
@@ -44,6 +46,43 @@ class PathSafetyError(ValueError):
     """Raised when a path cannot be used within an authorized root."""
 
 
+class CloudRootMutationError(PathSafetyError):
+    """Raised before attempting mutation of a cloud-backed root."""
+
+    code = "cloud-root-mutation-forbidden"
+
+
+class PlaceholderPreflightError(PathSafetyError):
+    """Raised when cloud-placeholder safety cannot permit byte access."""
+
+    code = "placeholder-preflight-incomplete"
+    coverage_status = "incomplete"
+
+    def __init__(self, observation: PlaceholderObservation) -> None:
+        self.observation = observation
+        super().__init__(
+            "cloud-placeholder preflight refused access: "
+            f"{observation.root_alias}/{observation.relative_path or '<root>'} "
+            f"is {observation.status.value}"
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "coverage_status": self.coverage_status,
+            "root_alias": self.observation.root_alias,
+            "relative_path": self.observation.relative_path,
+            "storage_class": self.observation.storage_class.value,
+            "probe_id": self.observation.probe_id,
+            "status": self.observation.status.value,
+        }
+
+    def to_json(self) -> str:
+        import json
+
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+
+
 class PathLimitError(PathSafetyError):
     """Raised before a bounded filesystem observation can become partial."""
 
@@ -65,6 +104,201 @@ class PathLimitError(PathSafetyError):
             f"{resource} exceeds {limit_name}: observed {observed}, "
             f"limit {limit}; coverage remains incomplete"
         )
+
+
+class RootStorageClass(StrEnum):
+    """Operator-declared storage semantics for an authorized root."""
+
+    LOCAL = "local"
+    CLOUD_BACKED = "cloud-backed"
+
+
+class PlaceholderProbeSupport(StrEnum):
+    """Whether a probe can safely classify this cloud-backed root."""
+
+    SUPPORTED = "supported"
+    UNSUPPORTED_PLATFORM = "unsupported-platform"
+
+
+class PlaceholderStatus(StrEnum):
+    """A metadata-only classification made before candidate byte access."""
+
+    ORDINARY_FILE = "ordinary-file"
+    CLOUD_PLACEHOLDER = "cloud-placeholder"
+    MISSING = "missing"
+    ACCESS_CONTROLLED = "access-controlled"
+    UNREADABLE = "unreadable"
+    UNSUPPORTED_PLATFORM = "unsupported-platform"
+    AMBIGUOUS = "ambiguous"
+
+
+@dataclass(frozen=True)
+class RootPreflightEvidence:
+    """Privacy-reduced evidence for one declared root capability."""
+
+    root_alias: str
+    storage_class: RootStorageClass
+    probe_id: str
+    probe_support: PlaceholderProbeSupport | None
+
+    def __post_init__(self) -> None:
+        validate_root_alias(self.root_alias)
+        _validate_probe_id(self.probe_id)
+        if not isinstance(self.storage_class, RootStorageClass):
+            raise ValueError("root storage class must be explicit")
+        if self.probe_support is not None and not isinstance(
+            self.probe_support, PlaceholderProbeSupport
+        ):
+            raise ValueError("placeholder probe support is invalid")
+        if self.storage_class is RootStorageClass.LOCAL:
+            if self.probe_support is not None:
+                raise ValueError("local roots cannot claim cloud-probe support")
+        elif self.probe_support is None:
+            raise ValueError(
+                "cloud-backed roots require probe support evidence"
+            )
+
+
+@dataclass(frozen=True)
+class PlaceholderObservation:
+    """A privacy-reduced, metadata-only candidate-path observation."""
+
+    root_alias: str
+    relative_path: str | None
+    storage_class: RootStorageClass
+    probe_id: str
+    status: PlaceholderStatus
+
+    def __post_init__(self) -> None:
+        validate_root_alias(self.root_alias)
+        _validate_probe_id(self.probe_id)
+        if not isinstance(self.storage_class, RootStorageClass):
+            raise ValueError("root storage class must be explicit")
+        if not isinstance(self.status, PlaceholderStatus):
+            raise ValueError("placeholder status is invalid")
+        if self.relative_path is not None:
+            validate_relative_path(self.relative_path)
+        if self.storage_class is RootStorageClass.LOCAL and self.status in {
+            PlaceholderStatus.CLOUD_PLACEHOLDER,
+            PlaceholderStatus.UNSUPPORTED_PLATFORM,
+        }:
+            raise ValueError(
+                "local roots cannot report cloud-placeholder probe states"
+            )
+
+
+class CloudPlaceholderProbe(Protocol):
+    """Provider-neutral metadata probe that never reads candidate bytes."""
+
+    @property
+    def probe_id(self) -> str: ...
+
+    def support(
+        self,
+        *,
+        root_alias: str,
+    ) -> PlaceholderProbeSupport: ...
+
+    def observe(
+        self,
+        *,
+        root_alias: str,
+        relative_path: PurePosixPath,
+    ) -> PlaceholderStatus: ...
+
+
+class UnsupportedCloudPlaceholderProbe:
+    """Default probe: no native platform semantics are implemented."""
+
+    probe_id = "unsupported-default-placeholder-probe-v1"
+
+    def support(
+        self,
+        *,
+        root_alias: str,
+    ) -> PlaceholderProbeSupport:
+        validate_root_alias(root_alias)
+        return PlaceholderProbeSupport.UNSUPPORTED_PLATFORM
+
+    def observe(
+        self,
+        *,
+        root_alias: str,
+        relative_path: PurePosixPath,
+    ) -> PlaceholderStatus:
+        validate_root_alias(root_alias)
+        validate_relative_path(relative_path)
+        return PlaceholderStatus.UNSUPPORTED_PLATFORM
+
+
+UNSUPPORTED_CLOUD_PLACEHOLDER_PROBE = UnsupportedCloudPlaceholderProbe()
+
+
+def _validate_probe_id(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,127}", value) is None
+    ):
+        raise ValueError("placeholder probe identity is invalid")
+    return value
+
+
+def authorize_root_preflight(
+    *,
+    root_alias: str,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None,
+) -> RootPreflightEvidence:
+    """Validate root capability before touching its filesystem path."""
+    validate_root_alias(root_alias)
+    if not isinstance(storage_class, RootStorageClass):
+        raise ValueError("root storage class must be explicit")
+    if storage_class is RootStorageClass.LOCAL:
+        if placeholder_probe is not None:
+            raise ValueError("local roots must not supply a cloud probe")
+        return RootPreflightEvidence(
+            root_alias=root_alias,
+            storage_class=storage_class,
+            probe_id="local-root-no-cloud-probe-v1",
+            probe_support=None,
+        )
+    probe = placeholder_probe or UNSUPPORTED_CLOUD_PLACEHOLDER_PROBE
+    try:
+        probe_id = _validate_probe_id(probe.probe_id)
+        support = probe.support(root_alias=root_alias)
+    except Exception as error:
+        observation = PlaceholderObservation(
+            root_alias=root_alias,
+            relative_path=None,
+            storage_class=storage_class,
+            probe_id="ambiguous-cloud-placeholder-probe-v1",
+            status=PlaceholderStatus.AMBIGUOUS,
+        )
+        raise PlaceholderPreflightError(observation) from error
+    if not isinstance(support, PlaceholderProbeSupport):
+        observation = PlaceholderObservation(
+            root_alias=root_alias,
+            relative_path=None,
+            storage_class=storage_class,
+            probe_id=probe_id,
+            status=PlaceholderStatus.AMBIGUOUS,
+        )
+        raise PlaceholderPreflightError(observation)
+    if support is PlaceholderProbeSupport.UNSUPPORTED_PLATFORM:
+        observation = PlaceholderObservation(
+            root_alias=root_alias,
+            relative_path=None,
+            storage_class=storage_class,
+            probe_id=probe_id,
+            status=PlaceholderStatus.UNSUPPORTED_PLATFORM,
+        )
+        raise PlaceholderPreflightError(observation)
+    return RootPreflightEvidence(
+        root_alias=root_alias,
+        storage_class=storage_class,
+        probe_id=probe_id,
+        probe_support=support,
+    )
 
 
 @dataclass(frozen=True)
@@ -167,10 +401,25 @@ class AuthorizedRoot:
     label: str
     device: int
     inode: int
+    preflight_evidence: RootPreflightEvidence
+    placeholder_probe: CloudPlaceholderProbe | None
 
     @classmethod
-    def existing(cls, path: Path, *, label: str) -> AuthorizedRoot:
+    def existing(
+        cls,
+        path: Path,
+        *,
+        label: str,
+        root_alias: str,
+        storage_class: RootStorageClass,
+        placeholder_probe: CloudPlaceholderProbe | None = None,
+    ) -> AuthorizedRoot:
         """Bind an existing real directory as an authorized root."""
+        preflight = authorize_root_preflight(
+            root_alias=root_alias,
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
+        )
         supplied = path.expanduser()
         if supplied.is_symlink():
             raise PathSafetyError(f"{label} must not be a symlink")
@@ -190,11 +439,34 @@ class AuthorizedRoot:
             label=label,
             device=metadata.st_dev,
             inode=metadata.st_ino,
+            preflight_evidence=preflight,
+            placeholder_probe=(
+                placeholder_probe
+                if storage_class is RootStorageClass.CLOUD_BACKED
+                else None
+            ),
         )
 
     @classmethod
-    def create(cls, path: Path, *, label: str) -> AuthorizedRoot:
+    def create(
+        cls,
+        path: Path,
+        *,
+        label: str,
+        root_alias: str,
+        storage_class: RootStorageClass,
+        placeholder_probe: CloudPlaceholderProbe | None = None,
+    ) -> AuthorizedRoot:
         """Create, then bind, a real authorized directory."""
+        if storage_class is RootStorageClass.CLOUD_BACKED:
+            raise CloudRootMutationError(
+                "cloud-backed root creation requires external authorization"
+            )
+        authorize_root_preflight(
+            root_alias=root_alias,
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
+        )
         supplied = path.expanduser()
         if supplied.is_symlink():
             raise PathSafetyError(f"{label} must not be a symlink")
@@ -202,7 +474,13 @@ class AuthorizedRoot:
             supplied.mkdir(parents=True, exist_ok=True)
         except OSError as error:
             raise PathSafetyError(f"cannot create {label}") from error
-        return cls.existing(supplied, label=label)
+        return cls.existing(
+            supplied,
+            label=label,
+            root_alias=root_alias,
+            storage_class=storage_class,
+            placeholder_probe=placeholder_probe,
+        )
 
     def child_path(self, relative: str | PurePosixPath) -> Path:
         """Render a validated child path for reporting only."""
@@ -240,6 +518,111 @@ class AuthorizedRoot:
         finally:
             os.close(parent)
 
+    def preflight_file(
+        self,
+        relative: str | PurePosixPath,
+    ) -> PlaceholderObservation:
+        """Classify a candidate using metadata only before opening its bytes."""
+        safe = validate_relative_path(relative)
+        evidence = self.preflight_evidence
+        if evidence.storage_class is RootStorageClass.CLOUD_BACKED:
+            probe = self.placeholder_probe
+            if probe is None:
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.UNSUPPORTED_PLATFORM
+                )
+            try:
+                status = probe.observe(
+                    root_alias=evidence.root_alias,
+                    relative_path=safe,
+                )
+            except Exception:
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.AMBIGUOUS
+                )
+            if not isinstance(status, PlaceholderStatus):
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.AMBIGUOUS
+                )
+            if status is not PlaceholderStatus.ORDINARY_FILE:
+                return self._preflight_observation(safe, status)
+        try:
+            parent = self._open_parent(safe.parts[:-1])
+        except FileNotFoundError:
+            return self._preflight_observation(safe, PlaceholderStatus.MISSING)
+        except PermissionError:
+            return self._preflight_observation(
+                safe, PlaceholderStatus.ACCESS_CONTROLLED
+            )
+        try:
+            try:
+                metadata = os.stat(
+                    safe.parts[-1],
+                    dir_fd=parent,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.MISSING
+                )
+            except PermissionError:
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.ACCESS_CONTROLLED
+                )
+            if stat.S_ISLNK(metadata.st_mode):
+                raise PathSafetyError(
+                    f"{self.label} child must not be a symlink: {safe}"
+                )
+            if not stat.S_ISREG(metadata.st_mode):
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.AMBIGUOUS
+                )
+            read_bits = stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+            if metadata.st_mode & read_bits == 0:
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.UNREADABLE
+                )
+            return self._preflight_observation(
+                safe, PlaceholderStatus.ORDINARY_FILE
+            )
+        finally:
+            os.close(parent)
+
+    def require_readable_file(
+        self,
+        relative: str | PurePosixPath,
+    ) -> PlaceholderObservation:
+        """Fail closed unless metadata preflight permits byte access."""
+        observation = self.preflight_file(relative)
+        if observation.status is PlaceholderStatus.ORDINARY_FILE:
+            return observation
+        if observation.storage_class is RootStorageClass.CLOUD_BACKED:
+            raise PlaceholderPreflightError(observation)
+        if observation.status is PlaceholderStatus.MISSING:
+            raise FileNotFoundError(observation.relative_path)
+        if observation.status in {
+            PlaceholderStatus.ACCESS_CONTROLLED,
+            PlaceholderStatus.UNREADABLE,
+        }:
+            raise PermissionError(
+                "candidate byte access denied by metadata preflight"
+            )
+        raise PlaceholderPreflightError(observation)
+
+    def _preflight_observation(
+        self,
+        relative: PurePosixPath,
+        status: PlaceholderStatus,
+    ) -> PlaceholderObservation:
+        evidence = self.preflight_evidence
+        return PlaceholderObservation(
+            root_alias=evidence.root_alias,
+            relative_path=relative.as_posix(),
+            storage_class=evidence.storage_class,
+            probe_id=evidence.probe_id,
+            status=status,
+        )
+
     def read_bytes(
         self,
         relative: str | PurePosixPath,
@@ -248,6 +631,7 @@ class AuthorizedRoot:
     ) -> bytes:
         """Read one regular file through no-follow directory descriptors."""
         safe = validate_relative_path(relative)
+        self.require_readable_file(safe)
         parent = self._open_parent(safe.parts[:-1])
         descriptor = -1
         try:
@@ -319,6 +703,7 @@ class AuthorizedRoot:
         ):
             raise ValueError("file observation limits are invalid")
         safe = validate_relative_path(relative)
+        self.require_readable_file(safe)
         parent = self._open_parent(safe.parts[:-1])
         descriptor = -1
         try:
@@ -445,6 +830,7 @@ class AuthorizedRoot:
         relative: str | PurePosixPath,
     ) -> AuthorizedRoot:
         """Create and bind one confined child directory."""
+        self._require_local_mutation()
         safe = validate_relative_path(relative)
         parent = self._open_parent(safe.parts[:-1])
         child = -1
@@ -469,6 +855,8 @@ class AuthorizedRoot:
             label=f"{self.label} child {safe}",
             device=metadata.st_dev,
             inode=metadata.st_ino,
+            preflight_evidence=self.preflight_evidence,
+            placeholder_probe=self.placeholder_probe,
         )
 
     def rename_child(
@@ -477,6 +865,7 @@ class AuthorizedRoot:
         destination: str | PurePosixPath,
     ) -> Path:
         """Rename a confined child while refusing an existing destination."""
+        self._require_local_mutation()
         safe_source = validate_relative_path(source, field="source")
         safe_destination = validate_relative_path(
             destination,
@@ -515,6 +904,7 @@ class AuthorizedRoot:
         replace: bool,
     ) -> Path:
         """Atomically write one confined file without following symlinks."""
+        self._require_local_mutation()
         safe = validate_relative_path(relative)
         parent = self._open_parent(safe.parts[:-1])
         leaf = safe.parts[-1]
@@ -599,6 +989,7 @@ class AuthorizedRoot:
         chunk_bytes: int = 1_048_576,
     ) -> Path:
         """Stream a verified source into a new atomic destination file."""
+        self._require_local_mutation()
         if (
             not 0 <= max_bytes <= _MAX_STREAMED_FILE_BYTES
             or expected_size < 0
@@ -620,6 +1011,7 @@ class AuthorizedRoot:
                 observed=expected_size,
             )
         safe_source = validate_relative_path(source, field="source")
+        source_root.require_readable_file(safe_source)
         safe_destination = validate_relative_path(
             destination,
             field="destination",
@@ -753,6 +1145,15 @@ class AuthorizedRoot:
             os.close(destination_parent)
         return self.child_path(safe_destination)
 
+    def _require_local_mutation(self) -> None:
+        if (
+            self.preflight_evidence.storage_class
+            is RootStorageClass.CLOUD_BACKED
+        ):
+            raise CloudRootMutationError(
+                "cloud-backed root mutation is outside default behavior"
+            )
+
     def _open_root(self) -> int:
         descriptor = _open_directory(self.path, label=self.label)
         metadata = os.fstat(descriptor)
@@ -876,11 +1277,18 @@ def read_path_bytes(
     path: Path,
     *,
     label: str,
+    root_alias: str,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     max_bytes: int = _DEFAULT_READ_MAX_BYTES,
 ) -> bytes:
-    """Read an explicit file through an authorized parent directory."""
+    """Read an explicitly classified file through its authorized parent."""
     root = AuthorizedRoot.existing(
-        path.expanduser().parent, label=f"{label} parent"
+        path.expanduser().parent,
+        label=f"{label} parent",
+        root_alias=root_alias,
+        storage_class=storage_class,
+        placeholder_probe=placeholder_probe,
     )
     return root.read_bytes(path.name, max_bytes=max_bytes)
 
@@ -889,12 +1297,19 @@ def observe_path_file(
     path: Path,
     *,
     label: str,
+    root_alias: str,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     max_bytes: int,
     prefix_bytes: int = 0,
 ) -> FileObservation:
-    """Observe an explicit file without loading its content into memory."""
+    """Observe an explicitly classified file without loading it into memory."""
     root = AuthorizedRoot.existing(
-        path.expanduser().parent, label=f"{label} parent"
+        path.expanduser().parent,
+        label=f"{label} parent",
+        root_alias=root_alias,
+        storage_class=storage_class,
+        placeholder_probe=placeholder_probe,
     )
     return root.observe_file(
         path.name,
@@ -907,13 +1322,21 @@ def read_path_text(
     path: Path,
     *,
     label: str,
+    root_alias: str,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     encoding: str = "utf-8",
     max_bytes: int = _DEFAULT_READ_MAX_BYTES,
 ) -> str:
-    """Read and decode an explicit file without following symlinks."""
-    return read_path_bytes(path, label=label, max_bytes=max_bytes).decode(
-        encoding
-    )
+    """Read an explicitly classified text file without following symlinks."""
+    return read_path_bytes(
+        path,
+        label=label,
+        root_alias=root_alias,
+        storage_class=storage_class,
+        placeholder_probe=placeholder_probe,
+        max_bytes=max_bytes,
+    ).decode(encoding)
 
 
 def write_path_bytes(
@@ -921,21 +1344,41 @@ def write_path_bytes(
     content: bytes,
     *,
     label: str,
+    root_alias: str,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
     replace: bool,
 ) -> Path:
-    """Atomically write an explicit file through its authorized parent."""
+    """Write through an explicitly classified authorized parent."""
     root = AuthorizedRoot.create(
-        path.expanduser().parent, label=f"{label} parent"
+        path.expanduser().parent,
+        label=f"{label} parent",
+        root_alias=root_alias,
+        storage_class=storage_class,
+        placeholder_probe=placeholder_probe,
     )
     return root.write_bytes(path.name, content, replace=replace)
 
 
-def assert_safe_explicit_path(path: Path, *, label: str) -> Path:
-    """Validate a missing or regular explicit path for an external library."""
+def assert_safe_explicit_path(
+    path: Path,
+    *,
+    label: str,
+    root_alias: str,
+    storage_class: RootStorageClass,
+    placeholder_probe: CloudPlaceholderProbe | None = None,
+) -> Path:
+    """Validate a classified path for an external library."""
     root = AuthorizedRoot.existing(
-        path.expanduser().parent, label=f"{label} parent"
+        path.expanduser().parent,
+        label=f"{label} parent",
+        root_alias=root_alias,
+        storage_class=storage_class,
+        placeholder_probe=placeholder_probe,
     )
     state = root.state(path.name)
+    if state == "regular":
+        root.require_readable_file(path.name)
     if state not in {"missing", "regular"}:
         raise PathSafetyError(f"{label} must be a regular file or missing")
     return root.child_path(path.name)

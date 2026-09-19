@@ -12,20 +12,57 @@ from projectkoios.references.collection_reconciliation import (
     CollectionRowEvidence,
     PdfExpectation,
     PdfStatus,
-    build_citation_closure,
-    load_collection_rows,
-    publish_reconciliation,
     reconcile_collection,
-    scan_managed_pdfs,
+)
+from projectkoios.references.collection_reconciliation import (
+    build_citation_closure as _build_citation_closure,
+)
+from projectkoios.references.collection_reconciliation import (
+    load_collection_rows as _load_collection_rows,
+)
+from projectkoios.references.collection_reconciliation import (
+    publish_reconciliation as _publish_reconciliation,
+)
+from projectkoios.references.collection_reconciliation import (
+    scan_managed_pdfs as _scan_managed_pdfs,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
 )
 from projectkoios.references.ingestion_evidence import (
-    ReferenceEvidenceInput,
+    ReferenceEvidenceInput as _ReferenceEvidenceInput,
+)
+from projectkoios.references.ingestion_evidence import (
     load_ingestion_reference_evidence,
 )
+from projectkoios.references.path_safety import RootStorageClass
+
+
+def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
+    return _ReferenceEvidenceInput(citekey, path, RootStorageClass.LOCAL)
+
+
+def build_citation_closure(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _build_citation_closure(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def scan_managed_pdfs(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    if kwargs.get("source_discovery") is not None:
+        kwargs["source_discovery_storage_class"] = RootStorageClass.LOCAL
+    return _scan_managed_pdfs(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def load_collection_rows(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["storage_class"] = RootStorageClass.LOCAL
+    return _load_collection_rows(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def publish_reconciliation(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["output_storage_class"] = RootStorageClass.LOCAL
+    return _publish_reconciliation(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def _write_collection_rows(path: Path) -> None:

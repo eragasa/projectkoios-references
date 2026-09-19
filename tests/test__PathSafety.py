@@ -9,6 +9,7 @@ import pytest
 from projectkoios.references import (
     AuthorizedRoot,
     PathSafetyError,
+    RootStorageClass,
     validate_citekey,
     validate_relative_path,
 )
@@ -22,9 +23,11 @@ from projectkoios.references.collection_reconciliation import (
     CollectionReconciliationError,
     CollectionRowEvidence,
     ManagedPdf,
-    publish_reconciliation,
     reconcile_collection,
     scan_managed_pdfs,
+)
+from projectkoios.references.collection_reconciliation import (
+    publish_reconciliation as _publish_reconciliation,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
@@ -32,10 +35,21 @@ from projectkoios.references.identity import (
 )
 from projectkoios.references.ingestion_evidence import (
     IngestionEvidenceVerificationError,
-    ReferenceEvidenceInput,
     load_ingestion_reference_evidence,
 )
+from projectkoios.references.ingestion_evidence import (
+    ReferenceEvidenceInput as _ReferenceEvidenceInput,
+)
 from projectkoios.references.validation import validate_reference_objects
+
+
+def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
+    return _ReferenceEvidenceInput(citekey, path, RootStorageClass.LOCAL)
+
+
+def publish_reconciliation(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs["output_storage_class"] = RootStorageClass.LOCAL
+    return _publish_reconciliation(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def _record() -> ReferenceCandidate:
@@ -101,7 +115,12 @@ def test__authorized_root__detects_root_replacement_before_read(
     root_path = tmp_path / "root"
     root_path.mkdir()
     (root_path / "evidence.txt").write_text("original", encoding="utf-8")
-    root = AuthorizedRoot.existing(root_path, label="fixture root")
+    root = AuthorizedRoot.existing(
+        root_path,
+        label="fixture root",
+        root_alias="fixture-root",
+        storage_class=RootStorageClass.LOCAL,
+    )
 
     root_path.rename(tmp_path / "original-root")
     root_path.mkdir()
@@ -120,7 +139,12 @@ def test__authorized_root__rejects_leaf_and_directory_symlink_swaps(
     root_path = tmp_path / "root"
     root_path.mkdir()
     (root_path / "evidence.txt").write_text("safe", encoding="utf-8")
-    root = AuthorizedRoot.existing(root_path, label="fixture root")
+    root = AuthorizedRoot.existing(
+        root_path,
+        label="fixture root",
+        root_alias="fixture-root",
+        storage_class=RootStorageClass.LOCAL,
+    )
 
     (root_path / "evidence.txt").unlink()
     (root_path / "evidence.txt").symlink_to(outside / "secret.txt")
@@ -146,7 +170,7 @@ def test__asset_scan__rejects_symlink_file_and_directory(
     with pytest.raises(PathSafetyError, match="symlink"):
         AssetDiscoveryPlanner().scan(
             (_record(),),
-            (SearchRoot("papers", file_root),),
+            (SearchRoot("papers", file_root, RootStorageClass.LOCAL),),
         )
 
     directory_root = tmp_path / "directory-root"
@@ -158,7 +182,7 @@ def test__asset_scan__rejects_symlink_file_and_directory(
     with pytest.raises(PathSafetyError, match="symlink"):
         AssetDiscoveryPlanner().scan(
             (_record(),),
-            (SearchRoot("papers", directory_root),),
+            (SearchRoot("papers", directory_root, RootStorageClass.LOCAL),),
         )
 
 
@@ -170,8 +194,9 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     source = source_root / "example2026.pdf"
     content = b"%PDF-safe"
     source.write_bytes(content)
-    roots = (SearchRoot("papers", source_root),)
-    candidate = AssetDiscoveryPlanner().scan((_record(),), roots).candidates[0]
+    roots = (SearchRoot("papers", source_root, RootStorageClass.LOCAL),)
+    plan = AssetDiscoveryPlanner().scan((_record(),), roots)
+    candidate = plan.candidates[0]
 
     outside = tmp_path / "outside.pdf"
     outside.write_bytes(content)
@@ -180,8 +205,10 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     with pytest.raises(PathSafetyError):
         materialize_asset(
             candidate,
+            expected_root_preflight=plan.root_preflights[0],
             roots=roots,
             destination_directory=tmp_path / "assets-a",
+            destination_storage_class=RootStorageClass.LOCAL,
         )
 
     source.unlink()
@@ -194,8 +221,10 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     with pytest.raises(PathSafetyError):
         materialize_asset(
             candidate,
+            expected_root_preflight=plan.root_preflights[0],
             roots=roots,
             destination_directory=destination,
+            destination_storage_class=RootStorageClass.LOCAL,
         )
     assert protected.read_bytes() == b"do not replace"
 
@@ -224,7 +253,7 @@ def test__acquisition__rejects_symlinked_source_component(
         create_acquisition_manifest(
             source_id="fixture",
             rows=rows,
-            roots=(SearchRoot("staging", root),),
+            roots=(SearchRoot("staging", root, RootStorageClass.LOCAL),),
         )
 
 
@@ -256,7 +285,7 @@ def test__reference_evidence_input__rejects_traversal_and_symlink_file(
         historically_verified=False,
         discovery_evidence=(),
     )
-    with pytest.raises(IngestionEvidenceVerificationError, match="safely open"):
+    with pytest.raises(IngestionEvidenceVerificationError, match="symlink"):
         load_ingestion_reference_evidence(
             (ReferenceEvidenceInput("example2026", link),),
             managed_pdfs=(managed,),
@@ -273,7 +302,7 @@ def test__managed_pdf_and_object_validation__reject_symlinks(
     (pdfs / "example2026.pdf").symlink_to(outside_pdf)
 
     with pytest.raises(CollectionReconciliationError, match="symlink"):
-        scan_managed_pdfs(pdfs)
+        scan_managed_pdfs(pdfs, storage_class=RootStorageClass.LOCAL)
 
     notes = tmp_path / "notes"
     notes.mkdir()
@@ -284,7 +313,9 @@ def test__managed_pdf_and_object_validation__reject_symlinks(
         validate_reference_objects(
             (_record(),),
             notes_directory=notes,
+            notes_storage_class=RootStorageClass.LOCAL,
             pdf_directory=pdfs,
+            pdf_storage_class=RootStorageClass.LOCAL,
         )
 
 
@@ -323,7 +354,12 @@ def test__authorized_write__is_create_only_and_does_not_follow_symlink(
 ) -> None:
     root_path = tmp_path / "root"
     root_path.mkdir()
-    root = AuthorizedRoot.existing(root_path, label="write root")
+    root = AuthorizedRoot.existing(
+        root_path,
+        label="write root",
+        root_alias="write-root",
+        storage_class=RootStorageClass.LOCAL,
+    )
     written = root.write_bytes("result.txt", b"first", replace=False)
     assert written.read_bytes() == b"first"
     with pytest.raises(FileExistsError):

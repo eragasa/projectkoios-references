@@ -4,6 +4,7 @@ import argparse
 import csv
 import io
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -53,6 +54,7 @@ from projectkoios.references.models import (
 )
 from projectkoios.references.path_safety import (
     PathLimitError,
+    RootStorageClass,
     read_path_bytes,
     read_path_text,
     write_path_bytes,
@@ -61,22 +63,107 @@ from projectkoios.references.validation import validate_reference_objects
 
 
 def _root(value: str) -> SearchRoot:
-    alias, separator, raw_path = value.partition("=")
-    if not separator:
-        raise argparse.ArgumentTypeError("search root must be ALIAS=PATH")
-    return SearchRoot(alias, Path(raw_path).expanduser())
+    storage, class_separator, remainder = value.partition(":")
+    if not class_separator:
+        raise argparse.ArgumentTypeError(
+            "root storage class is required; use local:ALIAS=PATH or "
+            "cloud-backed:ALIAS=PATH"
+        )
+    try:
+        storage_class = RootStorageClass(storage)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "root storage class must be local or cloud-backed"
+        ) from error
+    alias, separator, raw_path = remainder.partition("=")
+    if not separator or not alias or not raw_path:
+        raise argparse.ArgumentTypeError(
+            "root must be STORAGE:ALIAS=PATH; for example, "
+            "local:papers=/path/to/staging"
+        )
+    return SearchRoot(alias, Path(raw_path).expanduser(), storage_class)
 
 
-def _reference_evidence(value: str) -> ReferenceEvidenceInput:
+def _storage_class(value: str) -> RootStorageClass:
+    try:
+        return RootStorageClass(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "storage class must be local or cloud-backed"
+        ) from error
+
+
+def _reference_evidence(value: str) -> tuple[str, Path]:
     citekey, separator, raw_path = value.partition("=")
     if not separator or not citekey or not raw_path:
         raise argparse.ArgumentTypeError(
             "reference evidence must be CITEKEY=PATH"
         )
     try:
-        return ReferenceEvidenceInput(citekey, Path(raw_path).expanduser())
+        return citekey, Path(raw_path).expanduser()
     except (TypeError, ValueError) as error:
         raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def _keyed_storage_class(value: str) -> tuple[str, RootStorageClass]:
+    key, separator, raw_class = value.partition("=")
+    if not separator or not key:
+        raise argparse.ArgumentTypeError(
+            "keyed storage class must be KEY=local or KEY=cloud-backed"
+        )
+    return key, _storage_class(raw_class)
+
+
+def _paired_storage_class(
+    path: Path | None,
+    storage_class: RootStorageClass | None,
+    *,
+    label: str,
+) -> RootStorageClass | None:
+    if (path is None) != (storage_class is None):
+        raise SystemExit(
+            f"{label} path and --{label}-storage-class must be supplied "
+            "together"
+        )
+    return storage_class
+
+
+def _reject_duplicate_storage_options(arguments: list[str]) -> None:
+    seen: set[str] = set()
+    repeatable = {"--reference-evidence-storage-class"}
+    for token in arguments:
+        option = token.split("=", 1)[0]
+        if not option.startswith("--") or not option.endswith("-storage-class"):
+            continue
+        if option in seen and option not in repeatable:
+            raise SystemExit(f"duplicate storage declaration: {option}")
+        seen.add(option)
+
+
+def _validate_root_declarations(roots: list[SearchRoot]) -> None:
+    aliases = tuple(item.alias for item in roots)
+    if len(aliases) != len(set(aliases)):
+        raise SystemExit("root aliases must be unique")
+
+
+def _bind_reference_evidence(
+    paths: list[tuple[str, Path]],
+    classes: list[tuple[str, RootStorageClass]],
+) -> tuple[ReferenceEvidenceInput, ...]:
+    class_map = dict(classes)
+    if len(class_map) != len(classes):
+        raise SystemExit("duplicate reference-evidence storage declaration")
+    path_keys = tuple(key for key, _ in paths)
+    if len(set(path_keys)) != len(path_keys) or set(path_keys) != set(
+        class_map
+    ):
+        raise SystemExit(
+            "each --reference-evidence requires exactly one matching "
+            "--reference-evidence-storage-class CITEKEY=CLASS"
+        )
+    return tuple(
+        ReferenceEvidenceInput(key, path, class_map[key]) for key, path in paths
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -85,6 +172,9 @@ def _parser() -> argparse.ArgumentParser:
 
     initialize = commands.add_parser("catalog-init")
     initialize.add_argument("catalog", type=Path)
+    initialize.add_argument(
+        "--catalog-storage-class", type=_storage_class, required=True
+    )
 
     import_bib = commands.add_parser(
         "bib-import",
@@ -92,6 +182,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     import_bib.add_argument("catalog", type=Path)
     import_bib.add_argument("bibliography", type=Path)
+    import_bib.add_argument(
+        "--catalog-storage-class", type=_storage_class, required=True
+    )
+    import_bib.add_argument(
+        "--bibliography-storage-class", type=_storage_class, required=True
+    )
     import_bib.add_argument("--source-id", required=True)
     import_bib.add_argument("--source-revision")
     import_bib.add_argument("--source-path")
@@ -101,9 +197,16 @@ def _parser() -> argparse.ArgumentParser:
     import_graph.add_argument("sources", type=Path)
     import_graph.add_argument("nodes", type=Path)
     import_graph.add_argument("edges", type=Path)
+    for name in ("catalog", "sources", "nodes", "edges"):
+        import_graph.add_argument(
+            f"--{name}-storage-class", type=_storage_class, required=True
+        )
 
     summary = commands.add_parser("catalog-summary")
     summary.add_argument("catalog", type=Path)
+    summary.add_argument(
+        "--catalog-storage-class", type=_storage_class, required=True
+    )
 
     review = commands.add_parser("review-set")
     review.add_argument("catalog", type=Path)
@@ -111,11 +214,20 @@ def _parser() -> argparse.ArgumentParser:
     review.add_argument("citekey")
     review.add_argument("status", choices=tuple(ReviewStatus))
     review.add_argument("--decision-note")
+    review.add_argument(
+        "--catalog-storage-class", type=_storage_class, required=True
+    )
 
     review_import = commands.add_parser("review-import")
     review_import.add_argument("catalog", type=Path)
     review_import.add_argument("collection_id")
     review_import.add_argument("corpus", type=Path)
+    review_import.add_argument(
+        "--catalog-storage-class", type=_storage_class, required=True
+    )
+    review_import.add_argument(
+        "--corpus-storage-class", type=_storage_class, required=True
+    )
     review_import.add_argument(
         "--status", choices=tuple(ReviewStatus), default="discovered"
     )
@@ -132,7 +244,38 @@ def _parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--source-revision", required=True)
     reconcile.add_argument("--source-discovery", type=Path)
     reconcile.add_argument("--coverage-observation", type=Path)
+    reconcile.add_argument(
+        "--bibliography-storage-class", type=_storage_class, required=True
+    )
+    reconcile.add_argument(
+        "--corpus-storage-class", type=_storage_class, required=True
+    )
+    reconcile.add_argument(
+        "--output-storage-class", type=_storage_class, required=True
+    )
+    reconcile.add_argument(
+        "--source-discovery-storage-class", type=_storage_class
+    )
+    reconcile.add_argument(
+        "--coverage-observation-storage-class", type=_storage_class
+    )
+    reconcile.add_argument(
+        "--pdf-storage-class",
+        type=_storage_class,
+        required=True,
+    )
     reconcile.add_argument("--manuscript-root", type=Path)
+    reconcile.add_argument(
+        "--manuscript-storage-class",
+        type=_storage_class,
+    )
+    reconcile.add_argument(
+        "--reference-evidence-storage-class",
+        action="append",
+        type=_keyed_storage_class,
+        default=[],
+        metavar="CITEKEY=CLASS",
+    )
     reconcile.add_argument(
         "--reference-evidence",
         action="append",
@@ -151,6 +294,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     scan.add_argument("bibliography", type=Path)
     scan.add_argument("output", type=Path)
+    scan.add_argument(
+        "--bibliography-storage-class", type=_storage_class, required=True
+    )
+    scan.add_argument(
+        "--output-storage-class", type=_storage_class, required=True
+    )
     scan.add_argument("--source-id", default="asset-scan")
     scan.add_argument(
         "--search-root", action="append", type=_root, required=True
@@ -160,6 +309,13 @@ def _parser() -> argparse.ArgumentParser:
     apply_asset.add_argument("plan", type=Path)
     apply_asset.add_argument("citekey")
     apply_asset.add_argument("destination", type=Path)
+    apply_asset.add_argument(
+        "--plan-storage-class", type=_storage_class, required=True
+    )
+    apply_asset.add_argument(
+        "--destination-storage-class", type=_storage_class, required=True
+    )
+    apply_asset.add_argument("--catalog-storage-class", type=_storage_class)
     apply_asset.add_argument(
         "--search-root", action="append", type=_root, required=True
     )
@@ -171,6 +327,12 @@ def _parser() -> argparse.ArgumentParser:
     record_assets.add_argument("catalog", type=Path)
     record_assets.add_argument("plan", type=Path)
     record_assets.add_argument(
+        "--catalog-storage-class", type=_storage_class, required=True
+    )
+    record_assets.add_argument(
+        "--plan-storage-class", type=_storage_class, required=True
+    )
+    record_assets.add_argument(
         "--rights-status", default="private-local-rights-unreviewed"
     )
     record_assets.add_argument("--asset-status", default="located-local-copy")
@@ -178,6 +340,12 @@ def _parser() -> argparse.ArgumentParser:
     acquisition_create = commands.add_parser("acquisition-create")
     acquisition_create.add_argument("metadata", type=Path)
     acquisition_create.add_argument("output", type=Path)
+    acquisition_create.add_argument(
+        "--metadata-storage-class", type=_storage_class, required=True
+    )
+    acquisition_create.add_argument(
+        "--output-storage-class", type=_storage_class, required=True
+    )
     acquisition_create.add_argument("--source-id", required=True)
     acquisition_create.add_argument(
         "--source-root", action="append", type=_root, required=True
@@ -186,35 +354,90 @@ def _parser() -> argparse.ArgumentParser:
     acquisition_verify = commands.add_parser("acquisition-verify")
     acquisition_verify.add_argument("manifest", type=Path)
     acquisition_verify.add_argument(
+        "--manifest-storage-class", type=_storage_class, required=True
+    )
+    acquisition_verify.add_argument(
         "--source-root", action="append", type=_root, required=True
     )
 
     enrich = commands.add_parser("enrich-crossref")
     enrich.add_argument("doi")
     enrich.add_argument("--cache", type=Path)
+    enrich.add_argument("--cache-storage-class", type=_storage_class)
     enrich.add_argument("--mailto")
 
     validate = commands.add_parser("validate")
     validate.add_argument("bibliography", type=Path)
     validate.add_argument("notes", type=Path)
     validate.add_argument("pdfs", type=Path)
+    validate.add_argument(
+        "--bibliography-storage-class", type=_storage_class, required=True
+    )
+    validate.add_argument(
+        "--notes-storage-class",
+        type=_storage_class,
+        required=True,
+    )
+    validate.add_argument(
+        "--pdf-storage-class",
+        type=_storage_class,
+        required=True,
+    )
     validate.add_argument("--source-id", default="validation")
     return parser
 
 
 def main(arguments: list[str] | None = None) -> int:
-    args = _parser().parse_args(arguments)
+    raw_arguments = list(sys.argv[1:] if arguments is None else arguments)
+    _reject_duplicate_storage_options(raw_arguments)
+    args = _parser().parse_args(raw_arguments)
+    for attribute in ("search_root", "source_root"):
+        if hasattr(args, attribute):
+            _validate_root_declarations(getattr(args, attribute))
+    if args.command == "collection-reconcile":
+        _paired_storage_class(
+            args.source_discovery,
+            args.source_discovery_storage_class,
+            label="source-discovery",
+        )
+        _paired_storage_class(
+            args.coverage_observation,
+            args.coverage_observation_storage_class,
+            label="coverage-observation",
+        )
+        if (args.manuscript_root is None) != (
+            args.manuscript_storage_class is None
+        ):
+            raise SystemExit(
+                "--manuscript-root and --manuscript-storage-class must be "
+                "supplied together"
+            )
+        _bind_reference_evidence(
+            args.reference_evidence,
+            args.reference_evidence_storage_class,
+        )
+    if args.command == "enrich-crossref" and (
+        (args.cache is None) != (args.cache_storage_class is None)
+    ):
+        raise SystemExit(
+            "--cache and --cache-storage-class must be supplied together"
+        )
     if args.command == "catalog-init":
-        ReferenceCatalog(args.catalog).initialize()
+        ReferenceCatalog(
+            args.catalog, storage_class=args.catalog_storage_class
+        ).initialize()
         return 0
     if args.command == "bib-import":
         imported = load_bibliography(
             args.bibliography,
             source_id=args.source_id,
+            storage_class=args.bibliography_storage_class,
             source_revision=args.source_revision,
             source_path=args.source_path,
         )
-        catalog = ReferenceCatalog(args.catalog)
+        catalog = ReferenceCatalog(
+            args.catalog, storage_class=args.catalog_storage_class
+        )
         catalog.initialize()
         catalog.import_candidates(
             imported.candidates,
@@ -233,8 +456,17 @@ def main(arguments: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "graph-import":
-        graph = load_candidate_graph(args.sources, args.nodes, args.edges)
-        catalog = ReferenceCatalog(args.catalog)
+        graph = load_candidate_graph(
+            args.sources,
+            args.nodes,
+            args.edges,
+            sources_storage_class=args.sources_storage_class,
+            nodes_storage_class=args.nodes_storage_class,
+            edges_storage_class=args.edges_storage_class,
+        )
+        catalog = ReferenceCatalog(
+            args.catalog, storage_class=args.catalog_storage_class
+        )
         catalog.initialize()
         catalog.import_citation_graph(graph)
         print(
@@ -250,10 +482,15 @@ def main(arguments: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "catalog-summary":
-        print(json.dumps(ReferenceCatalog(args.catalog).counts(), indent=2))
+        catalog = ReferenceCatalog(
+            args.catalog, storage_class=args.catalog_storage_class
+        )
+        print(json.dumps(catalog.counts(), indent=2))
         return 0
     if args.command == "review-set":
-        catalog = ReferenceCatalog(args.catalog)
+        catalog = ReferenceCatalog(
+            args.catalog, storage_class=args.catalog_storage_class
+        )
         catalog.initialize()
         catalog.set_review_membership(
             ReviewMembership(
@@ -268,6 +505,7 @@ def main(arguments: list[str] | None = None) -> int:
         rows = _bounded_csv_rows(
             args.corpus,
             label="review corpus",
+            storage_class=args.corpus_storage_class,
             limits=RECONCILIATION_IO_LIMITS,
         )
         memberships: list[ReviewMembership] = []
@@ -284,7 +522,9 @@ def main(arguments: list[str] | None = None) -> int:
                     status=ReviewStatus(args.status),
                 )
             )
-        catalog = ReferenceCatalog(args.catalog)
+        catalog = ReferenceCatalog(
+            args.catalog, storage_class=args.catalog_storage_class
+        )
         catalog.initialize()
         catalog.set_review_memberships(tuple(memberships))
         return 0
@@ -292,12 +532,31 @@ def main(arguments: list[str] | None = None) -> int:
         imported = load_bibliography(
             args.bibliography,
             source_id=args.collection_id,
+            storage_class=args.bibliography_storage_class,
             source_revision=args.source_revision,
         )
         bibliography_bytes = imported.bibliography_bytes
+        source_discovery_storage = _paired_storage_class(
+            args.source_discovery,
+            args.source_discovery_storage_class,
+            label="source-discovery",
+        )
+        coverage_storage = _paired_storage_class(
+            args.coverage_observation,
+            args.coverage_observation_storage_class,
+            label="coverage-observation",
+        )
+        if (
+            args.manuscript_root is not None
+            and args.manuscript_storage_class is None
+        ):
+            raise SystemExit(
+                "--manuscript-storage-class is required with --manuscript-root"
+            )
         citation_closure = (
             build_citation_closure(
                 args.manuscript_root,
+                storage_class=args.manuscript_storage_class,
                 bibliography_keys=tuple(
                     sorted(
                         record.proposed_citekey
@@ -311,11 +570,20 @@ def main(arguments: list[str] | None = None) -> int:
         )
         managed_pdfs = scan_managed_pdfs(
             args.pdfs,
+            storage_class=args.pdf_storage_class,
             source_discovery=args.source_discovery,
+            source_discovery_storage_class=(
+                source_discovery_storage
+                if args.source_discovery is not None
+                else None
+            ),
         )
         processing_evidence = (
             load_ingestion_reference_evidence(
-                tuple(args.reference_evidence),
+                _bind_reference_evidence(
+                    args.reference_evidence,
+                    args.reference_evidence_storage_class,
+                ),
                 managed_pdfs=managed_pdfs,
             )
             if args.reference_evidence
@@ -325,12 +593,15 @@ def main(arguments: list[str] | None = None) -> int:
             read_path_bytes(
                 args.coverage_observation,
                 label="coverage observation",
+                root_alias="coverage-observation",
+                storage_class=coverage_storage,
                 max_bytes=_required_limit(
                     RECONCILIATION_IO_LIMITS.max_json_bytes,
                     "max_json_bytes",
                 ),
             )
             if args.coverage_observation is not None
+            and coverage_storage is not None
             else None
         )
         coverage_observation = (
@@ -345,7 +616,9 @@ def main(arguments: list[str] | None = None) -> int:
             bibliography_bytes=bibliography_bytes,
             collection_id=args.collection_id,
             source_revision=args.source_revision,
-            collection_rows=load_collection_rows(args.corpus),
+            collection_rows=load_collection_rows(
+                args.corpus, storage_class=args.corpus_storage_class
+            ),
             managed_pdfs=managed_pdfs,
             citation_closure=citation_closure,
             coverage_observation=coverage_observation,
@@ -356,6 +629,7 @@ def main(arguments: list[str] | None = None) -> int:
         publication = publish_reconciliation(
             outputs,
             output_directory=args.output,
+            output_storage_class=args.output_storage_class,
         )
         print(
             json.dumps(
@@ -374,6 +648,7 @@ def main(arguments: list[str] | None = None) -> int:
         imported = load_bibliography(
             args.bibliography,
             source_id=args.source_id,
+            storage_class=args.bibliography_storage_class,
         )
         plan = AssetDiscoveryPlanner().scan(
             imported.candidates,
@@ -383,6 +658,8 @@ def main(arguments: list[str] | None = None) -> int:
             args.output,
             plan.to_json().encode("utf-8"),
             label="asset discovery plan",
+            root_alias="asset-plan-output",
+            storage_class=args.output_storage_class,
             replace=True,
         )
         print(f"wrote {len(plan.candidates)} candidates to {args.output}")
@@ -392,6 +669,8 @@ def main(arguments: list[str] | None = None) -> int:
             read_path_text(
                 args.plan,
                 label="asset discovery plan",
+                root_alias="asset-plan-input",
+                storage_class=args.plan_storage_class,
                 max_bytes=_required_limit(
                     ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
                     "max_json_bytes",
@@ -413,13 +692,27 @@ def main(arguments: list[str] | None = None) -> int:
                 "expected exactly one strong candidate; use --candidate-path"
             )
         candidate = matches[0]
+        expected_root_preflight = next(
+            item
+            for item in plan.root_preflights
+            if item.root_alias == candidate.root_alias
+        )
         destination = materialize_asset(
             candidate,
+            expected_root_preflight=expected_root_preflight,
             roots=tuple(args.search_root),
             destination_directory=args.destination,
+            destination_storage_class=args.destination_storage_class,
         )
+        if (args.catalog is None) != (args.catalog_storage_class is None):
+            raise SystemExit(
+                "--catalog and --catalog-storage-class must be supplied "
+                "together"
+            )
         if args.catalog is not None:
-            catalog = ReferenceCatalog(args.catalog)
+            catalog = ReferenceCatalog(
+                args.catalog, storage_class=args.catalog_storage_class
+            )
             catalog.initialize()
             catalog.record_source_asset(
                 SourceAssetRecord(
@@ -442,6 +735,8 @@ def main(arguments: list[str] | None = None) -> int:
             read_path_text(
                 args.plan,
                 label="asset discovery plan",
+                root_alias="asset-plan-input",
+                storage_class=args.plan_storage_class,
                 max_bytes=_required_limit(
                     ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
                     "max_json_bytes",
@@ -464,7 +759,9 @@ def main(arguments: list[str] | None = None) -> int:
             for candidate in plan.candidates
             if candidate.recommendation == "strong-candidate"
         )
-        catalog = ReferenceCatalog(args.catalog)
+        catalog = ReferenceCatalog(
+            args.catalog, storage_class=args.catalog_storage_class
+        )
         catalog.initialize()
         catalog.record_source_assets(assets)
         return 0
@@ -472,6 +769,7 @@ def main(arguments: list[str] | None = None) -> int:
         rows = _bounded_csv_rows(
             args.metadata,
             label="acquisition metadata",
+            storage_class=args.metadata_storage_class,
             limits=ACQUISITION_IO_LIMITS,
         )
         manifest = create_acquisition_manifest(
@@ -484,6 +782,8 @@ def main(arguments: list[str] | None = None) -> int:
                 args.output,
                 manifest.to_json().encode("utf-8"),
                 label="acquisition manifest",
+                root_alias="acquisition-manifest-output",
+                storage_class=args.output_storage_class,
                 replace=False,
             )
         except FileExistsError:
@@ -497,6 +797,8 @@ def main(arguments: list[str] | None = None) -> int:
             read_path_text(
                 args.manifest,
                 label="acquisition manifest",
+                root_alias="acquisition-manifest-input",
+                storage_class=args.manifest_storage_class,
                 max_bytes=_required_limit(
                     ACQUISITION_IO_LIMITS.max_json_bytes,
                     "max_json_bytes",
@@ -525,6 +827,7 @@ def main(arguments: list[str] | None = None) -> int:
         result = CrossrefClient(
             mailto=args.mailto,
             cache_directory=args.cache,
+            cache_storage_class=args.cache_storage_class,
         ).fetch(args.doi)
         print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
         return 0
@@ -532,11 +835,14 @@ def main(arguments: list[str] | None = None) -> int:
         imported = load_bibliography(
             args.bibliography,
             source_id=args.source_id,
+            storage_class=args.bibliography_storage_class,
         )
         issues = validate_reference_objects(
             imported.candidates,
             notes_directory=args.notes,
+            notes_storage_class=args.notes_storage_class,
             pdf_directory=args.pdfs,
+            pdf_storage_class=args.pdf_storage_class,
         )
         for issue in issues:
             print(f"{issue.code}: {issue.path}: {issue.message}")
@@ -548,6 +854,7 @@ def _bounded_csv_rows(
     path: Path,
     *,
     label: str,
+    storage_class: RootStorageClass,
     limits: ReferenceIOLimits,
 ) -> tuple[dict[str, str], ...]:
     max_csv_bytes = _required_limit(limits.max_csv_bytes, "max_csv_bytes")
@@ -555,6 +862,8 @@ def _bounded_csv_rows(
         text = read_path_text(
             path,
             label=label,
+            root_alias=label.replace(" ", "-"),
+            storage_class=storage_class,
             max_bytes=max_csv_bytes,
         )
     except PathLimitError as error:

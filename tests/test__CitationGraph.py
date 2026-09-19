@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 from projectkoios.references.catalog import (
     CatalogConflictError,
-    ReferenceCatalog,
+    RootStorageClass,
+)
+from projectkoios.references.catalog import (
+    ReferenceCatalog as _ReferenceCatalog,
 )
 from projectkoios.references.cli import main
 from projectkoios.references.graph import (
@@ -17,8 +20,23 @@ from projectkoios.references.graph import (
     CitationGraphError,
     CitationSourceObservation,
     GraphImportLimits,
-    load_candidate_graph,
 )
+from projectkoios.references.graph import (
+    load_candidate_graph as _load_candidate_graph,
+)
+
+
+def load_candidate_graph(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    kwargs.update(
+        sources_storage_class=RootStorageClass.LOCAL,
+        nodes_storage_class=RootStorageClass.LOCAL,
+        edges_storage_class=RootStorageClass.LOCAL,
+    )
+    return _load_candidate_graph(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def ReferenceCatalog(path: Path) -> _ReferenceCatalog:
+    return _ReferenceCatalog(path, storage_class=RootStorageClass.LOCAL)
 
 
 def _source(
@@ -344,7 +362,9 @@ def test__graph_csv__is_bounded_strict_and_deterministic(
 
     loaded = load_candidate_graph(*paths)
     assert loaded == expected
-    assert loaded.to_json() == expected.to_json()
+    payload = json.loads(loaded.to_json())
+    assert len(payload["root_preflights"]) == 3
+    assert str(tmp_path) not in loaded.to_json()
 
     with pytest.raises(CitationGraphError, match="byte limit"):
         load_candidate_graph(
@@ -405,6 +425,14 @@ def test__graph_cli__invalid_batch_does_not_create_catalog(
                 "graph-import",
                 str(catalog_path),
                 *(str(path) for path in paths),
+                "--catalog-storage-class",
+                "local",
+                "--sources-storage-class",
+                "local",
+                "--nodes-storage-class",
+                "local",
+                "--edges-storage-class",
+                "local",
             ]
         )
 

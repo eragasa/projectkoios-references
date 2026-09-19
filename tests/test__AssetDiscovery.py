@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from projectkoios.references import RootStorageClass
 from projectkoios.references.assets import (
     AssetDiscoveryPlanner,
     SearchRoot,
@@ -36,7 +37,7 @@ def test__asset_planner__uses_privacy_reduced_relative_paths(
 
     plan = AssetDiscoveryPlanner().scan(
         (_record(),),
-        (SearchRoot("papers", source.parent),),
+        (SearchRoot("papers", source.parent, RootStorageClass.LOCAL),),
     )
 
     candidate = plan.candidates[0]
@@ -66,12 +67,15 @@ def test__materialize_asset__checks_planned_hash_and_never_overwrites(
     source_root.mkdir()
     source = source_root / "padbergHoffmann2015.pdf"
     source.write_bytes(b"%PDF first")
-    roots = (SearchRoot("papers", source_root),)
-    candidate = AssetDiscoveryPlanner().scan((_record(),), roots).candidates[0]
+    roots = (SearchRoot("papers", source_root, RootStorageClass.LOCAL),)
+    plan = AssetDiscoveryPlanner().scan((_record(),), roots)
+    candidate = plan.candidates[0]
     destination = materialize_asset(
         candidate,
+        expected_root_preflight=plan.root_preflights[0],
         roots=roots,
         destination_directory=tmp_path / "assets",
+        destination_storage_class=RootStorageClass.LOCAL,
     )
     assert destination.name == candidate.materialized_filename
     assert (
@@ -82,12 +86,16 @@ def test__materialize_asset__checks_planned_hash_and_never_overwrites(
     with pytest.raises(ValueError, match="hash changed"):
         materialize_asset(
             candidate,
+            expected_root_preflight=plan.root_preflights[0],
             roots=roots,
             destination_directory=tmp_path / "assets",
+            destination_storage_class=RootStorageClass.LOCAL,
         )
     with pytest.raises(ValueError, match="hash changed"):
         materialize_asset(
             candidate,
+            expected_root_preflight=plan.root_preflights[0],
             roots=roots,
             destination_directory=tmp_path / "other-assets",
+            destination_storage_class=RootStorageClass.LOCAL,
         )

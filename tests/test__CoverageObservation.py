@@ -411,8 +411,18 @@ def test__collection_reconcile_cli__consumes_coverage_observation(
                 "fixture",
                 "--source-revision",
                 _REVISION,
+                "--pdf-storage-class",
+                "local",
+                "--bibliography-storage-class",
+                "local",
+                "--corpus-storage-class",
+                "local",
+                "--output-storage-class",
+                "local",
                 "--coverage-observation",
                 str(coverage_path),
+                "--coverage-observation-storage-class",
+                "local",
             ]
         )
         == 0
