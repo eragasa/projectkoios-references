@@ -26,7 +26,7 @@ inputs. Editing a view does not mutate an input.
 | Reconciliation package and collection manifest schema 4 | Immutable package projection | Reports candidate state and discrepancies. It does not resolve them or promote any protected dimension. |
 | Canonical state JSON and claim-level CSV | Deterministic projection | Both carry the complete ordered authoritative input IDs and exact per-value input IDs. |
 | BibLaTeX output | Deterministic bibliographic projection | Discrepant metadata is omitted. Provenance is emitted in `x-projectkoios-*` fields. Reimport creates a new source observation and cannot update history. |
-| Corpus CSV, source-discovery JSON, asset plans, and legacy catalog rows | Bounded source observation, discovery proposal, or quarantined compatibility data according to the producing adapter | Human-readable or tracked files are not authoritative merely because of their format. Legacy scalars receive no authority upgrade. |
+| Corpus CSV, source-discovery JSON, schema-4 asset plans, and legacy catalog rows | Bounded source observation, discovery proposal, or quarantined compatibility data according to the producing adapter | Filename/title heuristics remain typed unresolved proposals. Human-readable or tracked files are not authoritative merely because of their format. Legacy scalars receive no authority upgrade. |
 | Markdown reference objects | Naming or presentation projection | Basenames and rendered text cannot create canonical identity or manuscript acceptance. |
 
 ## Executable field authority matrix
@@ -119,7 +119,11 @@ citation, and ingestion evidence. It emits one state projection per candidate
 and a package-bound `reference-state-projections.json`. Catalog assets and asset
 plans are explicit bounded inputs; they are never discovered implicitly. Asset
 plan JSON must match the producer's canonical bytes exactly, so byte-distinct
-JSON cannot collapse into one authoritative plan input.
+JSON cannot collapse into one authoritative plan input. Asset-plan claims retain
+typed heuristic observations, competing candidate identities, alternate source
+versions, and an unresolved ambiguity status. These proposal claims can create
+state discrepancies but cannot create canonical, rights, scientific,
+manuscript, publication, or contract authority.
 
 Known acquisition, access, and rights observations replace hard-coded unknowns.
 Known actor-provenanced reading decisions are reported separately from the

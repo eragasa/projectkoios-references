@@ -68,10 +68,14 @@ supersessions, active references, or content identities fail closed.
 `load_bibliography` returns aligned source observations and candidates. It does
 not return accepted references. Asset discovery, object validation, and
 collection reconciliation consume those candidates and use proposed keys for
-bounded evidence processing only. Asset plans bind the candidate identity and
-noncanonical statuses. Materialization writes a candidate-suffixed filename,
-not the canonical `citekey.pdf` shape; any later canonical rename requires a
-separately authorized identity and file migration.
+bounded evidence processing only. Schema-4 asset plans bind candidate identity,
+noncanonical statuses, exact byte observations, and typed unresolved filename
+and title heuristics. Canonical `citekey.pdf` materialization requires both a
+replay-validated identity projection and a separate exact actor-provenanced
+`CanonicalAssetAuthorization` covering every competing candidate and alternate
+version. A heuristic, score-like processing result, or successful scan cannot
+supply that authority. See [Reference asset heuristics and canonical
+materialization](reference-assets.md).
 
 The schema-version-5 SQLite catalog is a provisional local projection with an
 explicit schema fingerprint. `import_candidates` projects complete candidates

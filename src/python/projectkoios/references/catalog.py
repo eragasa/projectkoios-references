@@ -1176,6 +1176,77 @@ class ReferenceCatalog:
             + "\n"
         )
 
+    @contextmanager
+    def source_asset_recording_transaction(
+        self, asset: SourceAssetRecord
+    ) -> Iterator[None]:
+        """Hold an exact catalog preflight through one external operation."""
+        if not isinstance(asset, SourceAssetRecord):
+            raise TypeError("asset must be a SourceAssetRecord")
+        columns = (
+            "candidate_id",
+            "proposed_citekey",
+            "identity_status",
+            "citekey_status",
+            "sha256",
+            "byte_size",
+            "root_alias",
+            "relative_path",
+            "rights_status",
+            "asset_status",
+        )
+        values = _asset_values(asset)
+        with self._write_transaction() as connection:
+            # Validate every current-generation invariant before the caller is
+            # allowed to perform its external mutation. BEGIN IMMEDIATE keeps
+            # another catalog writer from invalidating this preflight.
+            self._require_foreign_keys(connection)
+            self._validate_identity_rows(connection)
+            self._validate_graph_rows(connection)
+            self._validate_review_rows(connection)
+            self._validate_state_projection_rows(connection)
+            observations = self._read_observations(connection)
+            candidate_by_id = {
+                item.candidate_id: item
+                for item in self._read_candidates(
+                    connection,
+                    {item.observation_id for item in observations},
+                )
+            }
+            self._require_asset_candidate_match(
+                asset,
+                candidate_by_id,
+                label="source asset",
+            )
+            existing = connection.execute(
+                """
+                SELECT candidate_id, proposed_citekey, identity_status,
+                       citekey_status, sha256, byte_size, root_alias,
+                       relative_path, rights_status, asset_status
+                FROM candidate_source_assets
+                WHERE candidate_id = ? AND sha256 = ?
+                """,
+                (asset.candidate_id, asset.sha256),
+            ).fetchone()
+            if existing is not None and tuple(existing) != values:
+                raise CatalogConflictError(
+                    f"source asset {asset.candidate_id} / {asset.sha256} "
+                    "conflicts with existing evidence"
+                )
+            yield
+            if existing is None:
+                self._insert_exact(
+                    connection,
+                    table="candidate_source_assets",
+                    columns=columns,
+                    values=values,
+                    key_columns=("candidate_id", "sha256"),
+                    key_values=(asset.candidate_id, asset.sha256),
+                    label=(
+                        f"source asset {asset.candidate_id} / {asset.sha256}"
+                    ),
+                )
+
     def record_source_asset(self, asset: SourceAssetRecord) -> None:
         self.record_source_assets((asset,))
 

@@ -356,6 +356,62 @@ def test__reconcile_collection__classifies_missing_and_extra_pdfs(
     assert b"extra2023" in files["extra-pdfs.csv"]
 
 
+def test__reconciliation__retains_asset_plan_version_ambiguity(
+    tmp_path: Path,
+) -> None:
+    corpus, _, _, _ = _inputs(tmp_path)
+    records = _records()
+    alpha = next(
+        item for item in records if item.proposed_citekey == "alpha2020"
+    )
+    plan_root = tmp_path / "plan-ambiguity"
+    plan_root.mkdir()
+    (plan_root / "alpha2020-beta2021.pdf").write_bytes(b"%PDF shared")
+    (plan_root / "beta2021-alternate.pdf").write_bytes(b"%PDF alternate")
+    asset_plan = AssetDiscoveryPlanner().scan(
+        records,
+        (SearchRoot("plan-root", plan_root, RootStorageClass.LOCAL),),
+    )
+
+    outputs = reconcile_collection(
+        records,
+        bibliography_bytes=b"fixture bibliography",
+        collection_id="fixture",
+        source_revision="abc123",
+        collection_rows=load_collection_rows(corpus),
+        managed_pdfs=(),
+        citation_closure=None,
+        asset_plan=asset_plan,
+    )
+    projected = next(
+        item
+        for item in outputs.manifest.references
+        if item.proposed_citekey == alpha.proposed_citekey
+    )
+    state = next(
+        item
+        for item in outputs.manifest.state_projections
+        if item.projection_id == projected.state_projection_id
+    )
+
+    assert projected.pdf_status.value == "ambiguous-matches"
+    assert projected.next_lawful_action == (
+        "review-all-heuristic-candidates-versions-and-record-rejections"
+    )
+    assert len(projected.discovery_evidence) == 3
+    beta_alternate = next(
+        item
+        for item in asset_plan.candidates
+        if item.relative_path == "beta2021-alternate.pdf"
+    )
+    assert beta_alternate.observation_id in projected.discovery_evidence
+    assert (
+        state.field("asset_ambiguity_status").values[0].value()
+        == "unresolved-competing-candidates-and-source-versions"
+    )
+    assert b"alpha2020" in dict(outputs.files)["ambiguous-pdfs.csv"]
+
+
 def test__reconciliation__consumes_authoritative_state_evidence(
     tmp_path: Path,
 ) -> None:

@@ -41,6 +41,7 @@ from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput as _ReferenceEvidenceInput,
 )
 from projectkoios.references.validation import validate_reference_objects
+from test_asset_authorization_helpers import authorize_asset
 
 
 def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
@@ -197,6 +198,7 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     roots = (SearchRoot("papers", source_root, RootStorageClass.LOCAL),)
     plan = AssetDiscoveryPlanner().scan((_record(),), roots)
     candidate = plan.candidates[0]
+    authorization, projection = authorize_asset(plan, candidate, _record())
 
     outside = tmp_path / "outside.pdf"
     outside.write_bytes(content)
@@ -205,6 +207,9 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     with pytest.raises(PathSafetyError):
         materialize_asset(
             candidate,
+            authorization=authorization,
+            plan=plan,
+            identity_projection=projection,
             expected_root_preflight=plan.root_preflights[0],
             roots=roots,
             destination_directory=tmp_path / "assets-a",
@@ -217,10 +222,13 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     destination.mkdir()
     protected = tmp_path / "protected.pdf"
     protected.write_bytes(b"do not replace")
-    (destination / candidate.materialized_filename).symlink_to(protected)
+    (destination / "example2026.pdf").symlink_to(protected)
     with pytest.raises(PathSafetyError):
         materialize_asset(
             candidate,
+            authorization=authorization,
+            plan=plan,
+            identity_projection=projection,
             expected_root_preflight=plan.root_preflights[0],
             roots=roots,
             destination_directory=destination,

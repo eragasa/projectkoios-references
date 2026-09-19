@@ -155,12 +155,27 @@ def _field_value(field: str) -> object:
         return "synthetic2026"
     if field == "citekey_status":
         return "proposed-noncanonical"
-    if field in {"authors", "source_bibliographies"}:
-        return ("synthetic-value",)
+    if field in {
+        "authors",
+        "source_bibliographies",
+        "asset_competing_observation_ids",
+        "asset_alternate_version_observation_ids",
+    }:
+        return ("asset-heuristic-observation:sha256:" + "e" * 64,)
     if field == "asset_sha256":
         return "f" * 64
     if field == "asset_byte_size":
         return 1
+    if field == "asset_ambiguity_status":
+        return "unresolved-single-heuristic-candidate"
+    if field == "asset_heuristic_observations":
+        return (
+            {
+                "kind": "title-token-overlap",
+                "matched_tokens": ["synthetic"],
+                "compared_token_count": 1,
+            },
+        )
     if field == "technical_review_status":
         return {"kind": "discovery", "outcome": "observed"}
     if field == "reading_decision":
@@ -306,6 +321,39 @@ def test__state_projection__rejects_untyped_values_and_decisions() -> None:
             authoritative_input_id=_INPUT_A,
             source_locator="synthetic/size",
         )
+    with pytest.raises(StateProjectionError, match="unsupported"):
+        StateClaim.observed(
+            subject_id=_SUBJECT,
+            field="asset_ambiguity_status",
+            value="resolved-by-score",
+            record_kind=StateRecordKind.IMMUTABLE_PROPOSAL,
+            authoritative_input_id=_INPUT_A,
+            source_locator="synthetic/ambiguity",
+        )
+    with pytest.raises(StateProjectionError, match="heuristic_observations"):
+        StateClaim.observed(
+            subject_id=_SUBJECT,
+            field="asset_heuristic_observations",
+            value=(
+                {
+                    "kind": "fabricated-strong-match",
+                    "matched_tokens": ["synthetic"],
+                    "compared_token_count": 1,
+                },
+            ),
+            record_kind=StateRecordKind.IMMUTABLE_PROPOSAL,
+            authoritative_input_id=_INPUT_A,
+            source_locator="synthetic/heuristics",
+        )
+    with pytest.raises(StateProjectionError, match="asset observation"):
+        StateClaim.observed(
+            subject_id=_SUBJECT,
+            field="asset_competing_observation_ids",
+            value=("not-a-content-identity",),
+            record_kind=StateRecordKind.IMMUTABLE_PROPOSAL,
+            authoritative_input_id=_INPUT_A,
+            source_locator="synthetic/competition",
+        )
     with pytest.raises(StateProjectionError, match="canonical JSON"):
         StateClaim.observed(
             subject_id=_SUBJECT,
@@ -336,6 +384,122 @@ def test__state_projection__rejects_untyped_values_and_decisions() -> None:
             authoritative_input_id=_INPUT_A,
             source_locator="synthetic/publication",
         )
+
+
+def test__persisted_projection__revalidates_asset_values_and_authority() -> (
+    None
+):
+    candidate = _candidate()
+    asset_id = "asset-heuristic-observation:sha256:" + "e" * 64
+    claims = (
+        StateClaim.observed(
+            subject_id=candidate.candidate_id,
+            field="asset_ambiguity_status",
+            value="unresolved-single-heuristic-candidate",
+            record_kind=StateRecordKind.IMMUTABLE_PROPOSAL,
+            authoritative_input_id=_INPUT_A,
+            source_locator="synthetic/ambiguity",
+        ),
+        StateClaim.observed(
+            subject_id=candidate.candidate_id,
+            field="asset_heuristic_observations",
+            value=(
+                {
+                    "kind": "title-token-overlap",
+                    "matched_tokens": ["synthetic"],
+                    "compared_token_count": 1,
+                },
+            ),
+            record_kind=StateRecordKind.IMMUTABLE_PROPOSAL,
+            authoritative_input_id=_INPUT_A,
+            source_locator="synthetic/heuristics",
+        ),
+        StateClaim.observed(
+            subject_id=candidate.candidate_id,
+            field="asset_competing_observation_ids",
+            value=(asset_id,),
+            record_kind=StateRecordKind.IMMUTABLE_PROPOSAL,
+            authoritative_input_id=_INPUT_A,
+            source_locator="synthetic/competition",
+        ),
+    )
+    projection = replay_reference_state(
+        subject_id=candidate.candidate_id,
+        claims=(*candidate_state_claims(candidate), *claims),
+        authoritative_input_ids=(candidate.candidate_id, _INPUT_A),
+    )
+
+    def tampered_json(
+        field: str,
+        *,
+        value: object | None = None,
+        record_kind: str | None = None,
+    ) -> str:
+        data = json.loads(projection.to_json())
+        raw_field = next(
+            item for item in data["fields"] if item["field"] == field
+        )
+        raw_value = raw_field["values"][0]
+        if value is not None:
+            raw_value["value_json"] = json.dumps(
+                value,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        if record_kind is not None:
+            raw_value["record_kinds"] = [record_kind]
+        payload = dict(data)
+        payload.pop("projection_id")
+        data["projection_id"] = state_projection_module._stable_id(
+            "reference-state-projection", payload
+        )
+        return state_projection_module._pretty_json(data)
+
+    invalid_values = (
+        (
+            "asset_ambiguity_status",
+            "resolved-by-score",
+            "unsupported",
+        ),
+        (
+            "asset_heuristic_observations",
+            [
+                {
+                    "kind": "fabricated-strong-match",
+                    "matched_tokens": ["synthetic"],
+                    "compared_token_count": 1,
+                }
+            ],
+            "heuristic_observations",
+        ),
+        (
+            "asset_competing_observation_ids",
+            ["not-a-content-identity"],
+            "asset observation",
+        ),
+    )
+    for field, value, message in invalid_values:
+        with pytest.raises(StateProjectionError, match=message):
+            ReferenceStateProjection.from_json(
+                tampered_json(field, value=value)
+            )
+    with pytest.raises(StateProjectionError, match="record kind"):
+        ReferenceStateProjection.from_json(
+            tampered_json(
+                "asset_ambiguity_status",
+                record_kind="immutable-observation",
+            )
+        )
+
+    csv_text = projection_to_csv(projection)
+    tampered_csv = csv_text.replace(
+        '"""unresolved-single-heuristic-candidate"""',
+        '"""resolved-by-score"""',
+    )
+    assert tampered_csv != csv_text
+    with pytest.raises(StateProjectionError, match="unsupported"):
+        projection_from_csv(tampered_csv)
 
 
 def test__state_projection__bounds_iterables_and_aggregate_bytes() -> None:
@@ -558,10 +722,14 @@ def test__asset_plan_adapter__binds_exact_plan_bytes(tmp_path: Path) -> None:
         ),
     )
 
-    assert projection.field("asset_status").values[0].value() in {
-        "strong-candidate",
-        "manual-review",
-    }
+    assert (
+        projection.field("asset_status").values[0].value()
+        == "unresolved-heuristic-observation"
+    )
+    assert (
+        projection.field("asset_ambiguity_status").values[0].value()
+        == "unresolved-single-heuristic-candidate"
+    )
     plan_id = next(
         item
         for item in projection.authoritative_input_ids
@@ -582,6 +750,59 @@ def test__asset_plan_adapter__binds_exact_plan_bytes(tmp_path: Path) -> None:
     assert noncanonical != plan.to_json()
     with pytest.raises(ValueError, match="noncanonical"):
         AssetDiscoveryPlan.from_json(noncanonical)
+
+
+def test__asset_plan_adapter__projects_transitive_connected_ambiguity(
+    tmp_path: Path,
+) -> None:
+    alpha = _candidate()
+    beta = ReferenceCandidate.create(
+        proposed_citekey="beta2026",
+        entry_type="article",
+        title="Beta Synthetic Work",
+        authors=("B. Author",),
+        year="2026",
+        source_observation_ids=("test-observation:sha256:" + "9" * 64,),
+        generator=ProducerIdentity("synthetic-test", "1"),
+    )
+    root = tmp_path / "connected-assets"
+    root.mkdir()
+    (root / "synthetic2026-beta2026.pdf").write_bytes(b"%PDF shared")
+    (root / "beta2026-alternate.pdf").write_bytes(b"%PDF beta alternate")
+    plan = AssetDiscoveryPlanner().scan(
+        (alpha, beta),
+        (SearchRoot("connected", root, RootStorageClass.LOCAL),),
+    )
+    alpha_asset = next(
+        item
+        for item in plan.candidates
+        if item.candidate_id == alpha.candidate_id
+    )
+    beta_alternate = next(
+        item
+        for item in plan.candidates
+        if item.relative_path == "beta2026-alternate.pdf"
+    )
+    claims = asset_candidate_state_claims(
+        subject_id=alpha.candidate_id,
+        candidate=alpha_asset,
+        plan=plan,
+    )
+    projected = {
+        claim.field: json.loads(claim.value_json or "null") for claim in claims
+    }
+
+    assert projected["asset_ambiguity_status"] == (
+        "unresolved-competing-candidates-and-source-versions"
+    )
+    assert (
+        beta_alternate.observation_id
+        in projected["asset_competing_observation_ids"]
+    )
+    assert (
+        beta_alternate.observation_id
+        in projected["asset_alternate_version_observation_ids"]
+    )
 
 
 def test__state_projection__retains_all_asset_store_conflicts(

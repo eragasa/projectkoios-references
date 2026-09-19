@@ -13,7 +13,12 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 from projectkoios.references.acquisition import AcquisitionProjection
-from projectkoios.references.assets import AssetCandidate, AssetDiscoveryPlan
+from projectkoios.references.assets import (
+    ASSET_AMBIGUITY_STATUSES,
+    AssetCandidate,
+    AssetDiscoveryPlan,
+    AssetHeuristicObservation,
+)
 from projectkoios.references.coverage import (
     CoverageAccessState,
     CoverageObservation,
@@ -253,6 +258,26 @@ STATE_FIELD_RULES: Mapping[str, StateFieldRule] = MappingProxyType(
             "projectkoios-references",
             _OBSERVATION_OR_PROPOSAL,
         ),
+        "asset_heuristic_observations": StateFieldRule(
+            StateDimension.ASSET_DISCOVERY,
+            "projectkoios-references",
+            _PROPOSAL,
+        ),
+        "asset_ambiguity_status": StateFieldRule(
+            StateDimension.ASSET_DISCOVERY,
+            "projectkoios-references",
+            _PROPOSAL,
+        ),
+        "asset_competing_observation_ids": StateFieldRule(
+            StateDimension.ASSET_DISCOVERY,
+            "projectkoios-references",
+            _PROPOSAL,
+        ),
+        "asset_alternate_version_observation_ids": StateFieldRule(
+            StateDimension.ASSET_DISCOVERY,
+            "projectkoios-references",
+            _PROPOSAL,
+        ),
         "acquisition_status": StateFieldRule(
             StateDimension.ACQUISITION,
             "projectkoios-references",
@@ -310,6 +335,7 @@ _EXACT_FIELD_VALUES: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "identity_status": frozenset({"unaccepted-candidate"}),
         "citekey_status": frozenset({"proposed-noncanonical"}),
+        "asset_ambiguity_status": ASSET_AMBIGUITY_STATUSES,
         "reading_decision": frozenset({"not-established", "read"}),
         "claim_support_check": frozenset({"not-established", "checked"}),
         "collection_inclusion": frozenset(
@@ -343,12 +369,20 @@ _STRING_FIELDS = frozenset(
         "citation_status",
     }
 )
-_STRING_ARRAY_FIELDS = frozenset({"authors", "source_bibliographies"})
+_STRING_ARRAY_FIELDS = frozenset(
+    {
+        "authors",
+        "source_bibliographies",
+        "asset_competing_observation_ids",
+        "asset_alternate_version_observation_ids",
+    }
+)
 _SPECIAL_FIELDS = frozenset(
     {
         "candidate_id",
         "asset_sha256",
         "asset_byte_size",
+        "asset_heuristic_observations",
         "technical_review_status",
     }
 )
@@ -599,8 +633,20 @@ class ProjectedField:
             )
         if not isinstance(self.resolution, StateResolution):
             raise StateProjectionError("state resolution is invalid")
-        if not isinstance(self.values, tuple):
-            raise StateProjectionError("projected values must be a tuple")
+        if not isinstance(self.values, tuple) or any(
+            not isinstance(item, ProjectedValue) for item in self.values
+        ):
+            raise StateProjectionError("projected values must be a typed tuple")
+        for value in self.values:
+            if any(
+                kind not in rule.allowed_record_kinds
+                for kind in value.record_kinds
+            ):
+                raise StateProjectionError(
+                    f"{self.field} projected record kind is unsupported"
+                )
+            if value.knowledge is StateKnowledge.OBSERVED:
+                _validate_state_value(self.field, value.value())
         identities = tuple(
             (item.knowledge.value, item.value_json or "")
             for item in self.values
@@ -1199,9 +1245,22 @@ def asset_candidate_state_claims(
         raise StateProjectionError(
             "asset candidate is not retained by the supplied plan"
         )
-    record_id = (
-        "asset-discovery-plan:sha256:"
-        + hashlib.sha256(plan.to_json().encode("utf-8")).hexdigest()
+    record_id = plan.plan_id
+    connected = plan.connected_candidates((candidate.candidate_id,))
+    competing = tuple(
+        sorted(
+            item.observation_id
+            for item in connected
+            if item.candidate_id != candidate.candidate_id
+        )
+    )
+    alternate_versions = tuple(
+        sorted(
+            item.observation_id
+            for item in connected
+            if item.observation_id != candidate.observation_id
+            and item.sha256 != candidate.sha256
+        )
     )
     values: tuple[tuple[str, object], ...] = (
         ("identity_status", candidate.identity_status),
@@ -1211,7 +1270,20 @@ def asset_candidate_state_claims(
         ("asset_byte_size", candidate.byte_size),
         ("asset_root_alias", candidate.root_alias),
         ("asset_relative_path", candidate.relative_path),
-        ("asset_status", candidate.recommendation),
+        ("asset_status", candidate.match_status),
+        (
+            "asset_heuristic_observations",
+            tuple(asdict(item) for item in candidate.heuristic_observations),
+        ),
+        (
+            "asset_ambiguity_status",
+            plan.ambiguity_status(candidate.candidate_id),
+        ),
+        ("asset_competing_observation_ids", competing),
+        (
+            "asset_alternate_version_observation_ids",
+            alternate_versions,
+        ),
     )
     return tuple(
         StateClaim.observed(
@@ -1902,8 +1974,26 @@ def _validate_state_value(field: str, value: object) -> None:
             or any(not isinstance(item, str) for item in value)
         ):
             raise StateProjectionError(f"{field} value must be a string array")
+        asset_observation_fields = {
+            "asset_competing_observation_ids",
+            "asset_alternate_version_observation_ids",
+        }
+        if field in asset_observation_fields and value != sorted(set(value)):
+            raise StateProjectionError(
+                f"{field} value must be sorted and unique"
+            )
         for item in value:
             _bounded(item, field=f"{field} item")
+            if field in asset_observation_fields and (
+                re.fullmatch(
+                    r"asset-heuristic-observation:sha256:[0-9a-f]{64}",
+                    item,
+                )
+                is None
+            ):
+                raise StateProjectionError(
+                    f"{field} item must be an asset observation identity"
+                )
         return
     if field == "candidate_id":
         _content_id(value, field="candidate_id value")
@@ -1919,6 +2009,33 @@ def _validate_state_value(field: str, value: object) -> None:
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise StateProjectionError(
                 "asset_byte_size value must be a positive integer"
+            )
+        return
+    if field == "asset_heuristic_observations":
+        if not isinstance(value, list) or not value or len(value) > 32:
+            raise StateProjectionError(
+                "asset_heuristic_observations value is invalid"
+            )
+        try:
+            parsed = tuple(
+                AssetHeuristicObservation.from_dict(item) for item in value
+            )
+        except (TypeError, ValueError) as error:
+            raise StateProjectionError(
+                "asset_heuristic_observations item is invalid"
+            ) from error
+        if parsed != tuple(
+            sorted(
+                parsed,
+                key=lambda item: (
+                    item.kind.value,
+                    item.matched_tokens,
+                    item.compared_token_count,
+                ),
+            )
+        ):
+            raise StateProjectionError(
+                "asset_heuristic_observations must be sorted"
             )
         return
     if field == "technical_review_status":

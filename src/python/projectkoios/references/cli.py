@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import sys
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,8 +18,11 @@ from projectkoios.references.acquisition import (
 from projectkoios.references.assets import (
     AssetDiscoveryPlan,
     AssetDiscoveryPlanner,
+    AssetMaterializationResult,
+    CanonicalAssetAuthorization,
     SearchRoot,
-    materialize_asset,
+    materialize_asset_with_result,
+    rollback_materialized_asset,
 )
 from projectkoios.references.biblatex import (
     biblatex_parser_identity,
@@ -35,6 +39,7 @@ from projectkoios.references.collection_reconciliation import (
 from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
 from projectkoios.references.graph import load_candidate_graph
+from projectkoios.references.identity import IdentityProjection
 from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput,
     load_ingestion_reference_evidence,
@@ -307,6 +312,16 @@ def _parser() -> argparse.ArgumentParser:
         "--search-root", action="append", type=_root, required=True
     )
     apply_asset.add_argument("--candidate-path")
+    apply_asset.add_argument("--authorization", type=Path, required=True)
+    apply_asset.add_argument(
+        "--authorization-storage-class", type=_storage_class, required=True
+    )
+    apply_asset.add_argument("--identity-projection", type=Path, required=True)
+    apply_asset.add_argument(
+        "--identity-projection-storage-class",
+        type=_storage_class,
+        required=True,
+    )
     apply_asset.add_argument("--catalog", type=Path)
     apply_asset.add_argument("--rights-status", default="private-local")
 
@@ -322,7 +337,6 @@ def _parser() -> argparse.ArgumentParser:
     record_assets.add_argument(
         "--rights-status", default="private-local-rights-unreviewed"
     )
-    record_assets.add_argument("--asset-status", default="located-local-copy")
 
     acquisition_create = commands.add_parser("acquisition-create")
     acquisition_create.add_argument("metadata", type=Path)
@@ -732,6 +746,11 @@ def main(arguments: list[str] | None = None) -> int:
         print(f"wrote {len(plan.candidates)} candidates to {args.output}")
         return 0
     if args.command == "assets-apply":
+        if (args.catalog is None) != (args.catalog_storage_class is None):
+            raise SystemExit(
+                "--catalog and --catalog-storage-class must be supplied "
+                "together"
+            )
         plan = AssetDiscoveryPlan.from_json(
             read_path_text(
                 args.plan,
@@ -744,19 +763,44 @@ def main(arguments: list[str] | None = None) -> int:
                 ),
             )
         )
+        authorization = CanonicalAssetAuthorization.from_json(
+            read_path_text(
+                args.authorization,
+                label="canonical asset authorization",
+                root_alias="asset-authorization-input",
+                storage_class=args.authorization_storage_class,
+                max_bytes=_required_limit(
+                    ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
+                    "max_json_bytes",
+                ),
+            )
+        )
+        identity_projection = IdentityProjection.from_json(
+            read_path_text(
+                args.identity_projection,
+                label="identity projection",
+                root_alias="identity-projection-input",
+                storage_class=args.identity_projection_storage_class,
+                max_bytes=_required_limit(
+                    ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
+                    "max_json_bytes",
+                ),
+            )
+        )
         matches = [
             item
             for item in plan.candidates
-            if item.proposed_citekey == args.citekey
+            if item.observation_id
+            == authorization.selected_asset_observation_id
+            and item.proposed_citekey == args.citekey
             and (
                 args.candidate_path is None
                 or item.relative_path == args.candidate_path
             )
-            and item.recommendation == "strong-candidate"
         ]
         if len(matches) != 1:
             raise SystemExit(
-                "expected exactly one strong candidate; use --candidate-path"
+                "authorization must select exactly one matching asset"
             )
         candidate = matches[0]
         expected_root_preflight = next(
@@ -764,38 +808,65 @@ def main(arguments: list[str] | None = None) -> int:
             for item in plan.root_preflights
             if item.root_alias == candidate.root_alias
         )
-        destination = materialize_asset(
-            candidate,
-            expected_root_preflight=expected_root_preflight,
-            roots=tuple(args.search_root),
-            destination_directory=args.destination,
-            destination_storage_class=args.destination_storage_class,
+        catalog_record = SourceAssetRecord(
+            candidate_id=candidate.candidate_id,
+            proposed_citekey=candidate.proposed_citekey,
+            identity_status=candidate.identity_status,
+            citekey_status=candidate.citekey_status,
+            sha256=candidate.sha256,
+            byte_size=candidate.byte_size,
+            root_alias="materialized-assets",
+            relative_path=f"{authorization.canonical_citekey}.pdf",
+            rights_status=args.rights_status,
+            asset_status="authorized-canonical-local-copy",
         )
-        if (args.catalog is None) != (args.catalog_storage_class is None):
-            raise SystemExit(
-                "--catalog and --catalog-storage-class must be supplied "
-                "together"
-            )
+        recording: AbstractContextManager[None] = nullcontext()
         if args.catalog is not None:
             catalog = ReferenceCatalog(
                 args.catalog, storage_class=args.catalog_storage_class
             )
             catalog.initialize()
-            catalog.record_source_asset(
-                SourceAssetRecord(
-                    candidate_id=candidate.candidate_id,
-                    proposed_citekey=candidate.proposed_citekey,
-                    identity_status=candidate.identity_status,
-                    citekey_status=candidate.citekey_status,
-                    sha256=candidate.sha256,
-                    byte_size=candidate.byte_size,
-                    root_alias="materialized-assets",
-                    relative_path=destination.name,
-                    rights_status=args.rights_status,
-                    asset_status="located-local-copy",
-                )
+            recording = catalog.source_asset_recording_transaction(
+                catalog_record
             )
-        print(destination)
+        materialization_result: AssetMaterializationResult | None = None
+        try:
+            with recording:
+                materialization_result = materialize_asset_with_result(
+                    candidate,
+                    authorization=authorization,
+                    plan=plan,
+                    identity_projection=identity_projection,
+                    expected_root_preflight=expected_root_preflight,
+                    roots=tuple(args.search_root),
+                    destination_directory=args.destination,
+                    destination_storage_class=args.destination_storage_class,
+                )
+        except Exception as error:
+            if (
+                materialization_result is not None
+                and materialization_result.created
+            ):
+                try:
+                    rollback_materialized_asset(
+                        materialization_result,
+                        candidate=candidate,
+                        authorization=authorization,
+                        destination_directory=args.destination,
+                        destination_storage_class=(
+                            args.destination_storage_class
+                        ),
+                    )
+                except Exception as rollback_error:
+                    raise ExceptionGroup(
+                        "catalog recording failed and exact asset rollback "
+                        "also failed",
+                        (error, rollback_error),
+                    ) from error
+            raise
+        if materialization_result is None:  # pragma: no cover
+            raise RuntimeError("asset materialization produced no result")
+        print(materialization_result.path)
         return 0
     if args.command == "assets-record-plan":
         plan = AssetDiscoveryPlan.from_json(
@@ -821,10 +892,9 @@ def main(arguments: list[str] | None = None) -> int:
                 root_alias=candidate.root_alias,
                 relative_path=candidate.relative_path,
                 rights_status=args.rights_status,
-                asset_status=args.asset_status,
+                asset_status="unresolved-heuristic-observation",
             )
             for candidate in plan.candidates
-            if candidate.recommendation == "strong-candidate"
         )
         catalog = ReferenceCatalog(
             args.catalog, storage_class=args.catalog_storage_class

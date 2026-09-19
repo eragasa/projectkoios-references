@@ -24,7 +24,9 @@ the [source-backed citation graph](docs/citation-graph.md), the
 [field-level state projection model](docs/reference-state-projections.md), the
 [reference working catalog](docs/reference-catalog.md), the
 [bounded reference-I/O policy](docs/reference-io-bounds.md),
-[cloud-placeholder safety](docs/cloud-placeholder-safety.md), and the Proposed
+[cloud-placeholder safety](docs/cloud-placeholder-safety.md),
+[reference asset heuristics and canonical
+materialization](docs/reference-assets.md), and the Proposed
 [acquisition-observation contract](docs/contracts/acquisition-observation.md).
 Remaining metadata and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
@@ -136,14 +138,18 @@ content-identified coverage observation: no coverage produces
 `not-located`. The command does not scan additional roots, hydrate cloud
 placeholders, download sources, verify rights, or promote bibliography records.
 
-Asset scans store only search-root aliases and relative paths. Version-3 plans
-bind explicit root storage and placeholder-probe evidence, the complete
-I/O profile, complete-coverage status, candidate
-identity, and explicit noncanonical statuses. A limit diagnostic remains
-`incomplete` and is never serialized as a partial plan. Applying a candidate
-requires a separate command, rechecks its planned hash, and writes a
-candidate-suffixed filename rather than manufacturing a canonical reference
-object. Authorized
+Asset scans store only search-root aliases and relative paths. Version-4 plans
+bind explicit root storage and placeholder-probe evidence, the complete I/O
+profile, complete-coverage status, candidate identity, explicit noncanonical
+statuses, exact byte identity, and typed unresolved filename/title heuristic
+observations. They contain no score or acceptance recommendation. A limit
+diagnostic remains `incomplete` and is never serialized as a partial plan.
+Canonical-name application requires both a replay-validated identity projection
+and a separate exact actor-provenanced authorization that dispositions every
+competing candidate and alternate version with rationale. Apply rechecks the PDF
+header, size, and hash and atomically publishes the authorized canonical name;
+processing success cannot authorize it. Schema-3 plans fail closed rather than
+receiving inferred authority. Authorized
 roots are resolved and identity-bound once; traversal, root replacement, and
 symlink files or directories fail closed before bytes are read, hashed, copied,
 or reported. Confined writes use no-follow directory descriptors and atomic

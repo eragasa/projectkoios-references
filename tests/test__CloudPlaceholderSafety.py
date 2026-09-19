@@ -34,6 +34,7 @@ from projectkoios.references.collection_reconciliation import (
 )
 from projectkoios.references.path_safety import read_path_bytes
 from projectkoios.references.validation import validate_reference_objects
+from test_asset_authorization_helpers import authorize_asset
 
 
 class SyntheticProbe(CloudPlaceholderProbe):
@@ -462,6 +463,7 @@ def test__materialization_rechecks_preflight_before_destination_mutation(
     )
     plan = AssetDiscoveryPlanner().scan((_record(),), cloud_roots)
     candidate = plan.candidates[0]
+    authorization, projection = authorize_asset(plan, candidate, _record())
     probe.statuses["example2026.pdf"] = status
     destination = tmp_path / "must-not-exist"
     opened: list[object] = []
@@ -477,6 +479,9 @@ def test__materialization_rechecks_preflight_before_destination_mutation(
     with pytest.raises(PlaceholderPreflightError) as caught:
         materialize_asset(
             candidate,
+            authorization=authorization,
+            plan=plan,
+            identity_projection=projection,
             expected_root_preflight=plan.root_preflights[0],
             roots=cloud_roots,
             destination_directory=destination,

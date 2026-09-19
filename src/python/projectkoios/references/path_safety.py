@@ -785,6 +785,88 @@ class AuthorizedRoot:
                 os.close(descriptor)
             os.close(parent)
 
+    def remove_file_if_exact(
+        self,
+        relative: str | PurePosixPath,
+        *,
+        expected_sha256: str,
+        expected_size: int,
+        max_bytes: int,
+        chunk_bytes: int = 1_048_576,
+    ) -> None:
+        """Remove one confined file only when its exact bytes still match."""
+        self._require_local_mutation()
+        if (
+            not 0 <= expected_size <= max_bytes <= _MAX_STREAMED_FILE_BYTES
+            or not 0 < chunk_bytes <= 8_000_000
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+        ):
+            raise ValueError("exact-removal limits or identity are invalid")
+        safe = validate_relative_path(relative)
+        parent = self._open_parent(safe.parts[:-1])
+        descriptor = -1
+        try:
+            try:
+                descriptor = os.open(safe.parts[-1], _FILE_FLAGS, dir_fd=parent)
+            except OSError as error:
+                _raise_path_error(
+                    error,
+                    f"cannot safely open {self.label} child: {safe}",
+                )
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise PathSafetyError(
+                    f"{self.label} child is not a regular file: {safe}"
+                )
+            if before.st_size > max_bytes:
+                raise PathLimitError(
+                    resource=f"{self.label} child {safe}",
+                    limit_name="max_file_bytes",
+                    limit=max_bytes,
+                    observed=before.st_size,
+                )
+            digest = hashlib.sha256()
+            total = 0
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                while True:
+                    block = stream.read(chunk_bytes)
+                    if not block:
+                        break
+                    total += len(block)
+                    if total > max_bytes:
+                        raise PathLimitError(
+                            resource=f"{self.label} child {safe}",
+                            limit_name="max_file_bytes",
+                            limit=max_bytes,
+                            observed=total,
+                        )
+                    digest.update(block)
+            after = os.fstat(descriptor)
+            if _file_identity(before) != _file_identity(after) or total != (
+                after.st_size
+            ):
+                raise PathSafetyError(
+                    f"{self.label} child changed while rollback was checked: "
+                    f"{safe}"
+                )
+            if total != expected_size or digest.hexdigest() != expected_sha256:
+                raise PathSafetyError(
+                    "refusing to remove materialized asset with changed bytes"
+                )
+            self._require_open_leaf_identity(
+                parent=parent,
+                leaf=safe.parts[-1],
+                opened=after,
+                safe=safe,
+                operation="checked for rollback",
+            )
+            os.unlink(safe.parts[-1], dir_fd=parent)
+            os.fsync(parent)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            os.close(parent)
+
     def _require_open_leaf_identity(
         self,
         *,

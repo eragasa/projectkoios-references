@@ -99,7 +99,11 @@ content-addressed state projection per candidate, links each collection row to
 its projection identity, and binds `reference-state-projections.json` into the
 package. Known acquisition, access, rights, and reading-decision evidence is no
 longer replaced by hard-coded unknowns. Distinct authoritative values remain an
-`unresolved-discrepancy`; they are not selected by import order. CSV collection
+`unresolved-discrepancy`; they are not selected by import order. Schema-4 asset
+plans also retain typed unresolved filename/title heuristics, competing
+bibliographic candidates, and alternate source versions. Reconciliation reports
+that ambiguity and never treats a heuristic or processing outcome as asset
+identity authorization. CSV collection
 rows retain source-byte identity, row index, parser identity, and parsed values,
 so normalization cannot collapse byte-distinct source evidence.
 

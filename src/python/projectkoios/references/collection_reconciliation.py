@@ -1282,6 +1282,17 @@ def reconcile_collection(
             evidence=coverage_item,
             preflight=preflight_item,
         )
+        plan_candidates = (
+            asset_plan.connected_candidates((record.candidate_id,))
+            if asset_plan is not None
+            else ()
+        )
+        if matched_pdf is None and asset_plan is not None and plan_candidates:
+            status, next_action = _classify_asset_plan_status(
+                candidate_id=record.candidate_id,
+                asset_plan=asset_plan,
+                fallback=(status, next_action),
+            )
         duplicate_citekeys = (
             tuple(
                 sorted(
@@ -1368,9 +1379,17 @@ def reconcile_collection(
                     matched_pdf.discovery_evidence
                     if matched_pdf is not None
                     else (
-                        _preflight_evidence(preflight_item)
-                        if preflight_item is not None
-                        else _coverage_evidence(coverage_item)
+                        tuple(
+                            sorted(
+                                item.observation_id for item in plan_candidates
+                            )
+                        )
+                        if plan_candidates
+                        else (
+                            _preflight_evidence(preflight_item)
+                            if preflight_item is not None
+                            else _coverage_evidence(coverage_item)
+                        )
                     )
                 ),
                 duplicate_citekeys=duplicate_citekeys,
@@ -2250,6 +2269,36 @@ def _classify_pdf_status(
     return (
         PdfStatus.NOT_YET_SEARCHED,
         "search-explicitly-authorized-roots",
+    )
+
+
+def _classify_asset_plan_status(
+    *,
+    candidate_id: str,
+    asset_plan: AssetDiscoveryPlan,
+    fallback: tuple[PdfStatus, str],
+) -> tuple[PdfStatus, str]:
+    ambiguity = asset_plan.ambiguity_status(candidate_id)
+    if fallback[0] not in {
+        PdfStatus.NOT_YET_SEARCHED,
+        PdfStatus.NOT_LOCATED,
+        PdfStatus.SEARCH_INCOMPLETE,
+        PdfStatus.SEARCH_FAILED,
+    }:
+        if ambiguity != "unresolved-single-heuristic-candidate":
+            return (
+                PdfStatus.AMBIGUOUS_MATCHES,
+                "review-all-heuristic-candidates-versions-and-record-rejections",
+            )
+        return fallback
+    if ambiguity == "unresolved-single-heuristic-candidate":
+        return (
+            PdfStatus.LOCATED_UNVERIFIED,
+            "obtain-actor-provenanced-asset-identity-authorization",
+        )
+    return (
+        PdfStatus.AMBIGUOUS_MATCHES,
+        "review-all-heuristic-candidates-versions-and-record-rejections",
     )
 
 

@@ -42,6 +42,7 @@ from projectkoios.references.enrichment import (
     TransportRequest,
     TransportResponse,
 )
+from test_asset_authorization_helpers import authorize_asset
 
 
 def load_bibliography(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
@@ -173,8 +174,20 @@ def test__asset_discovery__hashes_each_file_once_and_streams_materialization(
     assert plan.effective_limits_id == plan.effective_limits.evidence_id
     assert AssetDiscoveryPlan.from_json(plan.to_json()) == plan
 
+    selected = plan.candidates[0]
+    reference_candidate = next(
+        item
+        for item in (_record("0"), _record("1"))
+        if item.candidate_id == selected.candidate_id
+    )
+    authorization, projection = authorize_asset(
+        plan, selected, reference_candidate
+    )
     destination = materialize_asset(
-        plan.candidates[0],
+        selected,
+        authorization=authorization,
+        plan=plan,
+        identity_projection=projection,
         expected_root_preflight=plan.root_preflights[0],
         roots=roots,
         destination_directory=tmp_path / "destination",
