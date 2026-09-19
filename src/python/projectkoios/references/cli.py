@@ -43,6 +43,7 @@ from projectkoios.references.io_limits import (
     ACQUISITION_IO_LIMITS,
     ASSET_DISCOVERY_IO_LIMITS,
     RECONCILIATION_IO_LIMITS,
+    REVIEW_IO_LIMITS,
     ReferenceIOLimitError,
     ReferenceIOLimits,
     bounded_csv_field_size,
@@ -56,6 +57,7 @@ from projectkoios.references.path_safety import (
     read_path_text,
     write_path_bytes,
 )
+from projectkoios.references.review import ReviewProjection
 from projectkoios.references.validation import validate_reference_objects
 
 
@@ -217,6 +219,10 @@ def _parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--source-revision", required=True)
     reconcile.add_argument("--source-discovery", type=Path)
     reconcile.add_argument("--coverage-observation", type=Path)
+    reconcile.add_argument("--acquisition-manifest", type=Path)
+    reconcile.add_argument("--review-projection", type=Path)
+    reconcile.add_argument("--catalog", type=Path)
+    reconcile.add_argument("--asset-plan", type=Path)
     reconcile.add_argument(
         "--bibliography-storage-class", type=_storage_class, required=True
     )
@@ -232,6 +238,14 @@ def _parser() -> argparse.ArgumentParser:
     reconcile.add_argument(
         "--coverage-observation-storage-class", type=_storage_class
     )
+    reconcile.add_argument(
+        "--acquisition-manifest-storage-class", type=_storage_class
+    )
+    reconcile.add_argument(
+        "--review-projection-storage-class", type=_storage_class
+    )
+    reconcile.add_argument("--catalog-storage-class", type=_storage_class)
+    reconcile.add_argument("--asset-plan-storage-class", type=_storage_class)
     reconcile.add_argument(
         "--pdf-storage-class",
         type=_storage_class,
@@ -378,6 +392,26 @@ def main(arguments: list[str] | None = None) -> int:
             args.coverage_observation_storage_class,
             label="coverage-observation",
         )
+        _paired_storage_class(
+            args.acquisition_manifest,
+            args.acquisition_manifest_storage_class,
+            label="acquisition-manifest",
+        )
+        _paired_storage_class(
+            args.review_projection,
+            args.review_projection_storage_class,
+            label="review-projection",
+        )
+        _paired_storage_class(
+            args.catalog,
+            args.catalog_storage_class,
+            label="catalog",
+        )
+        _paired_storage_class(
+            args.asset_plan,
+            args.asset_plan_storage_class,
+            label="asset-plan",
+        )
         if (args.manuscript_root is None) != (
             args.manuscript_storage_class is None
         ):
@@ -478,6 +512,26 @@ def main(arguments: list[str] | None = None) -> int:
             args.coverage_observation_storage_class,
             label="coverage-observation",
         )
+        acquisition_storage = _paired_storage_class(
+            args.acquisition_manifest,
+            args.acquisition_manifest_storage_class,
+            label="acquisition-manifest",
+        )
+        review_storage = _paired_storage_class(
+            args.review_projection,
+            args.review_projection_storage_class,
+            label="review-projection",
+        )
+        catalog_storage = _paired_storage_class(
+            args.catalog,
+            args.catalog_storage_class,
+            label="catalog",
+        )
+        asset_plan_storage = _paired_storage_class(
+            args.asset_plan,
+            args.asset_plan_storage_class,
+            label="asset-plan",
+        )
         if (
             args.manuscript_root is not None
             and args.manuscript_storage_class is None
@@ -543,6 +597,83 @@ def main(arguments: list[str] | None = None) -> int:
             if coverage_observation_bytes is not None
             else None
         )
+        acquisition_manifest = (
+            AcquisitionManifest.from_json(
+                read_path_text(
+                    args.acquisition_manifest,
+                    label="acquisition manifest",
+                    root_alias="acquisition-manifest",
+                    storage_class=acquisition_storage,
+                    max_bytes=_required_limit(
+                        ACQUISITION_IO_LIMITS.max_json_bytes,
+                        "max_json_bytes",
+                    ),
+                )
+            )
+            if args.acquisition_manifest is not None
+            and acquisition_storage is not None
+            else None
+        )
+        acquisition_evidence = (
+            {
+                item.proposed_citekey: item
+                for item in acquisition_manifest.projections()
+            }
+            if acquisition_manifest is not None
+            else None
+        )
+        review_projection = (
+            ReviewProjection.from_json(
+                read_path_text(
+                    args.review_projection,
+                    label="review projection",
+                    root_alias="review-projection",
+                    storage_class=review_storage,
+                    max_bytes=_required_limit(
+                        REVIEW_IO_LIMITS.max_json_bytes,
+                        "max_json_bytes",
+                    ),
+                )
+            )
+            if args.review_projection is not None and review_storage is not None
+            else None
+        )
+        catalog_assets = None
+        if args.catalog is not None and catalog_storage is not None:
+            grouped_assets: dict[str, list[SourceAssetRecord]] = {}
+            for asset in ReferenceCatalog(
+                args.catalog,
+                storage_class=catalog_storage,
+            ).read_source_assets(
+                max_records=_required_limit(
+                    RECONCILIATION_IO_LIMITS.max_candidates,
+                    "max_candidates",
+                )
+            ):
+                grouped_assets.setdefault(
+                    asset.proposed_citekey,
+                    [],
+                ).append(asset)
+            catalog_assets = {
+                citekey: tuple(sorted(values, key=lambda item: item.sha256))
+                for citekey, values in sorted(grouped_assets.items())
+            }
+        asset_plan = (
+            AssetDiscoveryPlan.from_json(
+                read_path_text(
+                    args.asset_plan,
+                    label="asset discovery plan",
+                    root_alias="asset-plan-input",
+                    storage_class=asset_plan_storage,
+                    max_bytes=_required_limit(
+                        ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
+                        "max_json_bytes",
+                    ),
+                )
+            )
+            if args.asset_plan is not None and asset_plan_storage is not None
+            else None
+        )
         outputs = reconcile_collection(
             imported.candidates,
             bibliography_bytes=bibliography_bytes,
@@ -556,6 +687,10 @@ def main(arguments: list[str] | None = None) -> int:
             coverage_observation=coverage_observation,
             coverage_observation_bytes=coverage_observation_bytes,
             processing_evidence=processing_evidence,
+            acquisition_evidence=acquisition_evidence,
+            review_projection=review_projection,
+            catalog_assets=catalog_assets,
+            asset_plan=asset_plan,
             bibliography_parser=biblatex_parser_identity(),
         )
         publication = publish_reconciliation(

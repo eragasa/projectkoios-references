@@ -36,13 +36,20 @@ from projectkoios.references.review import (
     TechnicalReviewRecord,
     replay_review_records,
 )
+from projectkoios.references.state_projection import (
+    ReferenceStateProjection,
+    StateProjectionError,
+)
 
-CATALOG_SCHEMA_VERSION = 4
+CATALOG_SCHEMA_VERSION = 5
 SUPPORTED_CATALOG_SCHEMA_VERSIONS = (CATALOG_SCHEMA_VERSION,)
 
 _SCHEMA_METADATA_KEYS = frozenset({"schema_version", "schema_fingerprint"})
 _LEGACY_METADATA_KEYS = frozenset({"schema_version"})
 _AUTHORITY_BOUNDARY = "non-authoritative-rebuildable-working-projection"
+_MAX_STATE_PROJECTIONS = 4096
+_MAX_STATE_PROJECTION_JSON_BYTES = 16_000_000
+_MAX_STATE_PROJECTION_EXPORT_BYTES = 20_000_000
 
 _PROTOTYPE_V1_FINGERPRINT = (
     "catalog-schema:sha256:"
@@ -59,6 +66,10 @@ _PUBLISHED_V2_FINGERPRINT = (
 _PUBLISHED_V3_FINGERPRINT = (
     "catalog-schema:sha256:"
     "d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa"
+)
+_PUBLISHED_V4_FINGERPRINT = (
+    "catalog-schema:sha256:"
+    "30bb68e78832c461011f7e2a9ba7812c93aa099c866a84869a8415500f415e48"
 )
 
 _TARGET_SCHEMA_STATEMENTS = (
@@ -380,6 +391,22 @@ _TARGET_SCHEMA_STATEMENTS = (
             REFERENCES human_review_decisions(decision_id)
     )
     """,
+    """
+    CREATE TABLE reference_state_projections (
+        projection_id TEXT PRIMARY KEY,
+        record_schema_version INTEGER NOT NULL CHECK(
+            record_schema_version = 1
+        ),
+        artifact_kind TEXT NOT NULL CHECK(
+            artifact_kind =
+                'projectkoios.references.reference-state-projection'
+        ),
+        subject_id TEXT NOT NULL,
+        authoritative_input_ids_json TEXT NOT NULL,
+        projection_json TEXT NOT NULL,
+        FOREIGN KEY(subject_id) REFERENCES reference_candidates(candidate_id)
+    )
+    """,
 )
 
 _V1_TABLE_MAP = (
@@ -424,7 +451,14 @@ _PUBLISHED_V3_TABLE_MAP = (
     ("citation_edges", "citation_edges"),
 )
 
+_PUBLISHED_V4_TABLE_MAP = (
+    *_PUBLISHED_V3_TABLE_MAP,
+    ("technical_review_records", "technical_review_records"),
+    ("human_review_decisions", "human_review_decisions"),
+)
+
 _LEGACY_DROP_ORDER = (
+    "reference_state_projections",
     "human_review_decisions",
     "technical_review_records",
     "citation_edges",
@@ -546,12 +580,14 @@ _KNOWN_LEGACY_SCHEMAS = {
     _IDENTITY_V1_FINGERPRINT: "identity-v1",
     _PUBLISHED_V2_FINGERPRINT: "published-v2",
     _PUBLISHED_V3_FINGERPRINT: "published-v3",
+    _PUBLISHED_V4_FINGERPRINT: "published-v4",
 }
 _LEGACY_SCHEMA_VERSIONS = {
     "prototype-v1": 1,
     "identity-v1": 1,
     "published-v2": 2,
     "published-v3": 3,
+    "published-v4": 4,
 }
 
 
@@ -729,6 +765,39 @@ def _human_review_values(
     )
 
 
+def _state_projection_values(
+    projection: ReferenceStateProjection,
+) -> tuple[object, ...]:
+    return (
+        projection.projection_id,
+        projection.schema_version,
+        projection.artifact_kind,
+        projection.subject_id,
+        _compact_json(projection.authoritative_input_ids),
+        projection.to_json(),
+    )
+
+
+def _bounded_state_projection_inputs(
+    projections: Iterable[ReferenceStateProjection],
+) -> tuple[ReferenceStateProjection, ...]:
+    values = tuple(islice(iter(projections), _MAX_STATE_PROJECTIONS + 1))
+    if len(values) > _MAX_STATE_PROJECTIONS:
+        raise CatalogSchemaError(
+            "state projection batch exceeds the record limit"
+        )
+    if any(not isinstance(item, ReferenceStateProjection) for item in values):
+        raise TypeError(
+            "projections must contain ReferenceStateProjection values"
+        )
+    total_bytes = sum(len(item.to_json().encode("utf-8")) for item in values)
+    if total_bytes > _MAX_STATE_PROJECTION_JSON_BYTES:
+        raise CatalogSchemaError(
+            "state projection batch exceeds the JSON byte limit"
+        )
+    return values
+
+
 def _bounded_review_inputs(
     technical_records: Iterable[TechnicalReviewRecord],
     human_decisions: Iterable[HumanReviewDecision],
@@ -848,6 +917,15 @@ _TECHNICAL_REVIEW_COLUMNS = (
     "observed_at",
     "supersedes_record_id",
     "record_json",
+)
+
+_STATE_PROJECTION_COLUMNS = (
+    "projection_id",
+    "record_schema_version",
+    "artifact_kind",
+    "subject_id",
+    "authoritative_input_ids_json",
+    "projection_json",
 )
 
 _HUMAN_REVIEW_COLUMNS = (
@@ -1132,6 +1210,39 @@ class ReferenceCatalog:
                     label=f"source asset {asset.candidate_id} / {asset.sha256}",
                 )
 
+    def read_source_assets(
+        self, *, max_records: int | None = None
+    ) -> tuple[SourceAssetRecord, ...]:
+        if max_records is not None and (
+            type(max_records) is not int or max_records < 1
+        ):
+            raise ValueError("max_records must be a positive integer")
+        with self._read_transaction() as connection:
+            self._require_current_schema(connection)
+            query = """
+                SELECT candidate_id, proposed_citekey, identity_status,
+                       citekey_status, sha256, byte_size, root_alias,
+                       relative_path, rights_status, asset_status
+                FROM candidate_source_assets
+                ORDER BY candidate_id, sha256
+            """
+            if max_records is None:
+                rows = connection.execute(query).fetchall()
+            else:
+                rows = connection.execute(
+                    query + " LIMIT ?", (max_records + 1,)
+                ).fetchall()
+                if len(rows) > max_records:
+                    raise CatalogSchemaError(
+                        "catalog source assets exceed the requested limit"
+                    )
+            return tuple(
+                self._source_asset_from_row(
+                    tuple(row), label="candidate source asset"
+                )
+                for row in rows
+            )
+
     def import_review_records(
         self,
         technical_records: Iterable[TechnicalReviewRecord],
@@ -1226,6 +1337,141 @@ class ReferenceCatalog:
 
     def export_review_json(self) -> str:
         return self.read_review_projection().to_json()
+
+    def import_state_projections(
+        self,
+        projections: Iterable[ReferenceStateProjection],
+    ) -> None:
+        """Append reproducible cache rows after exact replay checks."""
+        values = _bounded_state_projection_inputs(projections)
+        reparsed = tuple(
+            ReferenceStateProjection.from_json(item.to_json())
+            for item in values
+        )
+        by_id = {item.projection_id: item for item in reparsed}
+        if len(by_id) != len(reparsed):
+            raise CatalogConflictError(
+                "state projection batch contains duplicate identities"
+            )
+        with self._write_transaction() as connection:
+            stored_stats = connection.execute(
+                """
+                SELECT COUNT(*),
+                       COALESCE(
+                           SUM(length(CAST(projection_json AS BLOB))), 0
+                       )
+                FROM reference_state_projections
+                """
+            ).fetchone()
+            if (
+                stored_stats is None
+                or type(stored_stats[0]) is not int
+                or type(stored_stats[1]) is not int
+            ):
+                raise CatalogSchemaError(
+                    "catalog state projection bounds are invalid"
+                )
+            if stored_stats[0] > _MAX_STATE_PROJECTIONS:
+                raise CatalogSchemaError(
+                    "catalog state projections exceed the record limit"
+                )
+            if stored_stats[1] > _MAX_STATE_PROJECTION_JSON_BYTES:
+                raise CatalogSchemaError(
+                    "catalog state projections exceed the JSON byte limit"
+                )
+            stored_rows = connection.execute(
+                """
+                SELECT projection_id,
+                       length(CAST(projection_json AS BLOB))
+                FROM reference_state_projections
+                """
+            ).fetchall()
+            stored_ids = {str(row[0]) for row in stored_rows}
+            stored_bytes = sum(int(row[1]) for row in stored_rows)
+            added = tuple(
+                item
+                for item in reparsed
+                if item.projection_id not in stored_ids
+            )
+            if len(stored_rows) + len(added) > _MAX_STATE_PROJECTIONS:
+                raise CatalogSchemaError(
+                    "catalog state projections exceed the record limit"
+                )
+            aggregate_bytes = stored_bytes + sum(
+                len(item.to_json().encode("utf-8")) for item in added
+            )
+            if aggregate_bytes > _MAX_STATE_PROJECTION_JSON_BYTES:
+                raise CatalogSchemaError(
+                    "catalog state projections exceed the JSON byte limit"
+                )
+            candidate_ids = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT candidate_id FROM reference_candidates"
+                ).fetchall()
+            }
+            missing = sorted(
+                {item.subject_id for item in reparsed} - candidate_ids
+            )
+            if missing:
+                raise CatalogConflictError(
+                    "state projection subjects have no catalog candidates: "
+                    f"{missing}"
+                )
+            for projection_id, projection in sorted(by_id.items()):
+                self._insert_exact(
+                    connection,
+                    table="reference_state_projections",
+                    columns=_STATE_PROJECTION_COLUMNS,
+                    values=_state_projection_values(projection),
+                    key_columns=("projection_id",),
+                    key_values=(projection.projection_id,),
+                    label=f"reference state projection {projection_id}",
+                )
+            self._validate_state_projection_rows(connection)
+
+    def read_state_projections(
+        self,
+    ) -> tuple[ReferenceStateProjection, ...]:
+        with self._read_transaction() as connection:
+            self._require_current_schema(connection)
+            return self._read_state_projections(connection)
+
+    def export_state_projections_json(self) -> str:
+        projections = self.read_state_projections()
+        input_ids = sorted(
+            {
+                input_id
+                for projection in projections
+                for input_id in projection.authoritative_input_ids
+            }
+        )
+        result = (
+            json.dumps(
+                {
+                    "artifact_kind": (
+                        "projectkoios.references.catalog-state-projection"
+                    ),
+                    "authority_boundary": _AUTHORITY_BOUNDARY,
+                    "catalog_schema_fingerprint": CATALOG_SCHEMA_FINGERPRINT,
+                    "catalog_schema_version": CATALOG_SCHEMA_VERSION,
+                    "authoritative_input_ids": input_ids,
+                    "projections": [
+                        json.loads(item.to_json()) for item in projections
+                    ],
+                    "exact_replay": True,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        if len(result.encode("utf-8")) > _MAX_STATE_PROJECTION_EXPORT_BYTES:
+            raise CatalogSchemaError(
+                "catalog state projection export exceeds its byte limit"
+            )
+        return result
 
     def import_citation_graph(self, graph: CitationGraph) -> None:
         """Append one fully validated graph batch in a single transaction."""
@@ -1325,6 +1571,7 @@ class ReferenceCatalog:
             ("review_memberships", "legacy_review_memberships"),
             ("technical_review_records", "technical_review_records"),
             ("human_review_decisions", "human_review_decisions"),
+            ("state_projections", "reference_state_projections"),
             ("abstracts", "legacy_abstracts"),
             (
                 "citation_source_observations",
@@ -1372,6 +1619,7 @@ class ReferenceCatalog:
             self._validate_identity_rows(connection)
             self._validate_graph_rows(connection)
             self._validate_review_rows(connection)
+            self._validate_state_projection_rows(connection)
             connection.commit()
         except sqlite3.IntegrityError as error:
             connection.rollback()
@@ -1464,7 +1712,7 @@ class ReferenceCatalog:
                     "migration or recovery"
                 )
             return _SchemaState(version, fingerprint, "current", metadata)
-        if version in {1, 2, 3}:
+        if version in {1, 2, 3, 4}:
             expected_keys = (
                 _LEGACY_METADATA_KEYS if version == 1 else _SCHEMA_METADATA_KEYS
             )
@@ -1473,7 +1721,7 @@ class ReferenceCatalog:
                     f"version {version} catalog metadata is incomplete or "
                     "unexpected"
                 )
-            if version in {2, 3} and (
+            if version in {2, 3, 4} and (
                 metadata_map["schema_fingerprint"] != fingerprint
             ):
                 raise CatalogSchemaError(
@@ -1511,6 +1759,7 @@ class ReferenceCatalog:
         self._validate_identity_rows(connection)
         self._validate_graph_rows(connection)
         self._validate_review_rows(connection)
+        self._validate_state_projection_rows(connection)
 
     @staticmethod
     def _migration_required(state: _SchemaState) -> CatalogMigrationRequired:
@@ -1867,6 +2116,72 @@ class ReferenceCatalog:
     def _validate_review_rows(self, connection: sqlite3.Connection) -> None:
         self._read_review_projection(connection)
 
+    def _read_state_projections(
+        self,
+        connection: sqlite3.Connection,
+    ) -> tuple[ReferenceStateProjection, ...]:
+        stats = connection.execute(
+            """
+            SELECT COUNT(*),
+                   COALESCE(SUM(length(CAST(projection_json AS BLOB))), 0)
+            FROM reference_state_projections
+            """
+        ).fetchone()
+        if (
+            stats is None
+            or type(stats[0]) is not int
+            or type(stats[1]) is not int
+        ):
+            raise CatalogSchemaError(
+                "catalog state projection bounds are invalid"
+            )
+        if stats[0] > _MAX_STATE_PROJECTIONS:
+            raise CatalogSchemaError(
+                "catalog state projections exceed the record limit"
+            )
+        if stats[1] > _MAX_STATE_PROJECTION_JSON_BYTES:
+            raise CatalogSchemaError(
+                "catalog state projections exceed the JSON byte limit"
+            )
+        rows = connection.execute(
+            """
+            SELECT projection_id, record_schema_version, artifact_kind,
+                   subject_id, authoritative_input_ids_json, projection_json
+            FROM reference_state_projections
+            ORDER BY projection_id
+            """
+        ).fetchall()
+        candidate_ids = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT candidate_id FROM reference_candidates"
+            ).fetchall()
+        }
+        result: list[ReferenceStateProjection] = []
+        for row in rows:
+            try:
+                projection = ReferenceStateProjection.from_json(str(row[5]))
+            except StateProjectionError as error:
+                raise CatalogSchemaError(
+                    f"state projection row {row[0]} has invalid canonical JSON"
+                ) from error
+            if tuple(row) != _state_projection_values(projection):
+                raise CatalogSchemaError(
+                    f"state projection row {row[0]} differs from canonical JSON"
+                )
+            if projection.subject_id not in candidate_ids:
+                raise CatalogSchemaError(
+                    f"state projection row {row[0]} has no catalog candidate"
+                )
+            result.append(projection)
+        return tuple(result)
+
+    def _validate_state_projection_rows(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        self._read_state_projections(connection)
+
     @staticmethod
     def _source_asset_from_row(
         row: tuple[object, ...], *, label: str
@@ -1963,7 +2278,9 @@ class ReferenceCatalog:
         self, connection: sqlite3.Connection, state: _SchemaState
     ) -> dict[str, Any]:
         table_map: tuple[tuple[str, str], ...]
-        if state.kind == "published-v3":
+        if state.kind == "published-v4":
+            table_map = _PUBLISHED_V4_TABLE_MAP
+        elif state.kind == "published-v3":
             table_map = _PUBLISHED_V3_TABLE_MAP
         elif state.kind == "published-v2":
             table_map = _PUBLISHED_V2_TABLE_MAP
@@ -2104,10 +2421,16 @@ class ReferenceCatalog:
                     "candidate_source_assets": assets,
                 }
             )
-        elif state.kind in {"published-v2", "published-v3"}:
+        elif state.kind in {
+            "published-v2",
+            "published-v3",
+            "published-v4",
+        }:
             self._validate_identity_rows(connection)
-            if state.kind == "published-v3":
+            if state.kind in {"published-v3", "published-v4"}:
                 self._validate_graph_rows(connection)
+            if state.kind == "published-v4":
+                self._validate_review_rows(connection)
             observations = self._read_observations(connection)
             observation_ids = {
                 observation.observation_id for observation in observations
@@ -2195,6 +2518,7 @@ class ReferenceCatalog:
         self._validate_identity_rows(connection)
         self._validate_graph_rows(connection)
         self._validate_review_rows(connection)
+        self._validate_state_projection_rows(connection)
 
     @staticmethod
     def _restore_table(

@@ -24,6 +24,18 @@ from projectkoios.references.identity import (
     SourceBibliographyObservation,
 )
 from projectkoios.references.models import SourceAssetRecord
+from projectkoios.references.review import (
+    HumanReviewDecision,
+    HumanReviewDimension,
+    ReadingDecision,
+    ReviewActorKind,
+    ReviewActorProvenance,
+    ReviewAuthorityScope,
+    ReviewTransitionKind,
+    TechnicalReviewKind,
+    TechnicalReviewOutcome,
+    TechnicalReviewRecord,
+)
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -426,11 +438,11 @@ def test__catalog_schema__is_explicit_deterministic_and_idempotent(
     first_info = first.initialize()
     second_info = second.initialize()
 
-    assert CATALOG_SCHEMA_VERSION == 4
-    assert SUPPORTED_CATALOG_SCHEMA_VERSIONS == (4,)
+    assert CATALOG_SCHEMA_VERSION == 5
+    assert SUPPORTED_CATALOG_SCHEMA_VERSIONS == (5,)
     assert CATALOG_SCHEMA_FINGERPRINT == (
         "catalog-schema:sha256:"
-        "30bb68e78832c461011f7e2a9ba7812c93aa099c866a84869a8415500f415e48"
+        "151b0ed2340598d367896fdd17b3a3f3d07222f3f12755649f0e2683338caf09"
     )
     assert re.fullmatch(
         r"catalog-schema:sha256:[0-9a-f]{64}",
@@ -445,7 +457,7 @@ def test__catalog_schema__is_explicit_deterministic_and_idempotent(
             ).fetchall()
         )
     assert metadata == {
-        "schema_version": "4",
+        "schema_version": "5",
         "schema_fingerprint": CATALOG_SCHEMA_FINGERPRINT,
     }
 
@@ -588,6 +600,13 @@ def test__catalog_schema__rejects_unknown_or_incomplete_version_one(
             "published-v3",
             "catalog-schema:sha256:"
             "d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa",
+        ),
+        (
+            "catalog-published-v4.sql",
+            4,
+            "published-v4",
+            "catalog-schema:sha256:"
+            "30bb68e78832c461011f7e2a9ba7812c93aa099c866a84869a8415500f415e48",
         ),
     ),
 )
@@ -784,7 +803,7 @@ def test__catalog_migration__preserves_published_v2_and_quarantines_graph(
 
     catalog.migrate(backup_confirmed=True)
 
-    assert catalog.schema_info().schema_version == 4
+    assert catalog.schema_info().schema_version == 5
     assert catalog.read_observations() == (observation,)
     assert catalog.read_candidates() == (candidate,)
     assert catalog.counts()["source_assets"] == 1
@@ -803,7 +822,7 @@ def test__catalog_migration__preserves_published_v2_and_quarantines_graph(
         )
     assert actual == expected
     assert metadata == {
-        "schema_version": "4",
+        "schema_version": "5",
         "schema_fingerprint": CATALOG_SCHEMA_FINGERPRINT,
     }
 
@@ -843,6 +862,178 @@ def test__catalog_migration__preserves_schema_v3_without_authority_upgrade(
             "unprovenanced legacy scalar",
         )
     ]
+
+
+def _populated_published_v4(
+    path: Path,
+) -> tuple[
+    SourceBibliographyObservation,
+    ReferenceCandidate,
+    TechnicalReviewRecord,
+    tuple[HumanReviewDecision, HumanReviewDecision],
+    dict[str, list[tuple[object, ...]]],
+]:
+    catalog = ReferenceCatalog(path)
+    catalog.initialize()
+    observation, candidate = _identity_records(citekey="publishedV4")
+    catalog.import_candidates((candidate,), (observation,))
+    actor_verification = "actor-verification:sha256:" + "a" * 64
+    source_evidence = "source-evidence:sha256:" + "b" * 64
+    evidence_ids = tuple(sorted((actor_verification, source_evidence)))
+    processor = ReviewActorProvenance(
+        actor_id="synthetic-processor",
+        actor_kind=ReviewActorKind.PROCESSOR,
+        authority_scope=ReviewAuthorityScope.TECHNICAL_PROCESSOR,
+        authority_domain="projectkoios-references",
+        verification_record_id=actor_verification,
+        verification_method="synthetic implementation attestation",
+    )
+    reader = ReviewActorProvenance(
+        actor_id="synthetic-reader",
+        actor_kind=ReviewActorKind.PERSON,
+        authority_scope=ReviewAuthorityScope.REFERENCE_READER,
+        authority_domain="projectkoios-references",
+        verification_record_id=actor_verification,
+        verification_method="synthetic repository admission",
+    )
+    producer = ProducerIdentity("synthetic-review-recorder", "1")
+    technical = TechnicalReviewRecord.create(
+        subject_id=candidate.candidate_id,
+        context_id="synthetic-collection",
+        technical_kind=TechnicalReviewKind.DISCOVERY,
+        outcome=TechnicalReviewOutcome.OBSERVED,
+        producer=producer,
+        transition_kind=ReviewTransitionKind.INITIAL,
+        actor=processor,
+        evidence_ids=evidence_ids,
+        rationale="Synthetic technical observation.",
+        observed_at="2026-09-19T00:00:00Z",
+    )
+    initial = HumanReviewDecision.create(
+        subject_id=candidate.candidate_id,
+        context_id="synthetic-collection",
+        dimension=HumanReviewDimension.READING,
+        decision=ReadingDecision.NOT_ESTABLISHED,
+        producer=producer,
+        transition_kind=ReviewTransitionKind.INITIAL,
+        actor=reader,
+        evidence_ids=evidence_ids,
+        rationale="Synthetic initial reading state.",
+        decided_at="2026-09-19T00:01:00Z",
+    )
+    correction = HumanReviewDecision.create(
+        subject_id=candidate.candidate_id,
+        context_id="synthetic-collection",
+        dimension=HumanReviewDimension.READING,
+        decision=ReadingDecision.READ,
+        producer=producer,
+        transition_kind=ReviewTransitionKind.CORRECTION,
+        actor=reader,
+        evidence_ids=evidence_ids,
+        rationale="Synthetic corrected reading decision.",
+        decided_at="2026-09-19T00:02:00Z",
+        supersedes_decision_id=initial.decision_id,
+    )
+    catalog.import_review_records((technical,), (correction, initial))
+    with sqlite3.connect(path) as connection:
+        expected = {
+            table: connection.execute(
+                f'SELECT * FROM "{table}" ORDER BY rowid'
+            ).fetchall()
+            for table in (
+                "technical_review_records",
+                "human_review_decisions",
+            )
+        }
+        connection.execute("DROP TABLE reference_state_projections")
+        connection.execute(
+            "UPDATE catalog_metadata SET value = '4' "
+            "WHERE key = 'schema_version'"
+        )
+        connection.execute(
+            "UPDATE catalog_metadata SET value = ? "
+            "WHERE key = 'schema_fingerprint'",
+            (
+                "catalog-schema:sha256:"
+                "30bb68e78832c461011f7e2a9ba7812c93aa099c866a84869a8415500f415e48",
+            ),
+        )
+    return observation, candidate, technical, (initial, correction), expected
+
+
+def test__catalog_migration__preserves_populated_schema_v4(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "published-v4.sqlite3"
+    observation, candidate, technical, decisions, expected = (
+        _populated_published_v4(path)
+    )
+    catalog = ReferenceCatalog(path)
+
+    plan = catalog.migration_plan()
+    assert plan is not None
+    assert plan.source_schema_version == 4
+    assert plan.source_schema_fingerprint == (
+        "catalog-schema:sha256:"
+        "30bb68e78832c461011f7e2a9ba7812c93aa099c866a84869a8415500f415e48"
+    )
+    catalog.migrate(backup_confirmed=True)
+
+    assert catalog.read_observations() == (observation,)
+    assert catalog.read_candidates() == (candidate,)
+    review = catalog.read_review_projection()
+    assert review.technical_history == (technical,)
+    assert review.human_decision_history == decisions
+    assert review.current_human_decision_ids == (decisions[1].decision_id,)
+    assert catalog.read_state_projections() == ()
+    assert catalog.counts()["state_projections"] == 0
+    with sqlite3.connect(path) as connection:
+        actual = {
+            table: connection.execute(
+                f'SELECT * FROM "{table}" ORDER BY rowid'
+            ).fetchall()
+            for table in expected
+        }
+    assert actual == expected
+
+
+def test__catalog_migration__populated_v4_failure_rolls_back(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "published-v4-rollback.sqlite3"
+    _populated_published_v4(path)
+    catalog = ReferenceCatalog(path)
+    before = _database_dump(path)
+
+    def fail_after_target_verified(step: str) -> None:
+        if step == "target-verified":
+            raise RuntimeError("induced v4 migration failure")
+
+    catalog._migration_checkpoint = fail_after_target_verified  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="induced v4 migration failure"):
+        catalog.migrate(backup_confirmed=True)
+
+    assert _database_dump(path) == before
+    plan = catalog.migration_plan()
+    assert plan is not None
+    assert plan.source_kind == "published-v4"
+
+
+def test__catalog_schema__altered_published_v4_fails_closed(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "altered-published-v4.sqlite3"
+    _create_legacy(path, "catalog-published-v4.sql")
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "ALTER TABLE human_review_decisions ADD COLUMN unexpected TEXT"
+        )
+    before = _database_dump(path)
+
+    with pytest.raises(CatalogSchemaError, match="differs from its actual"):
+        ReferenceCatalog(path).migration_plan()
+
+    assert _database_dump(path) == before
 
 
 def test__catalog_migration__published_v2_failure_restores_exact_database(

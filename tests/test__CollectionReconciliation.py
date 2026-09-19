@@ -6,6 +6,16 @@ import json
 from pathlib import Path
 
 import pytest
+from projectkoios.references.acquisition import (
+    ACQUISITION_CONTRACT_ID,
+    ACQUISITION_CONTRACT_STATUS,
+    ACQUISITION_CONTRACT_VERSION,
+    AccessObservation,
+    AcquisitionObservation,
+    AcquisitionProjection,
+    RightsObservation,
+)
+from projectkoios.references.assets import AssetDiscoveryPlanner, SearchRoot
 from projectkoios.references.collection_reconciliation import (
     CitationStatus,
     CollectionReconciliationError,
@@ -36,7 +46,18 @@ from projectkoios.references.ingestion_evidence import (
 from projectkoios.references.ingestion_evidence import (
     load_ingestion_reference_evidence,
 )
+from projectkoios.references.models import SourceAssetRecord
 from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.review import (
+    HumanReviewDecision,
+    HumanReviewDimension,
+    ReadingDecision,
+    ReviewActorKind,
+    ReviewActorProvenance,
+    ReviewAuthorityScope,
+    ReviewTransitionKind,
+    replay_review_records,
+)
 
 
 def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
@@ -167,6 +188,68 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path, Path, bytes]:
     return corpus, pdfs, discovery, pdf_bytes
 
 
+def _acquisition_projection(
+    candidate: ReferenceCandidate,
+) -> AcquisitionProjection:
+    return AcquisitionProjection(
+        contract_id=ACQUISITION_CONTRACT_ID,
+        contract_version=ACQUISITION_CONTRACT_VERSION,
+        contract_status=ACQUISITION_CONTRACT_STATUS,
+        manifest_id="acquisition-manifest:sha256:" + "a" * 64,
+        normalized_input_id="acquisition-input:sha256:" + "b" * 64,
+        source_id="synthetic-acquisition",
+        proposed_citekey=candidate.proposed_citekey,
+        identity_status=candidate.lifecycle_status,
+        citekey_status=candidate.citekey_status,
+        manuscript_status="not-assessed",
+        source_content_id="blob:sha256:" + "c" * 64,
+        source_sha256="c" * 64,
+        source_byte_size=321,
+        root_alias="synthetic-staging",
+        relative_path=f"{candidate.proposed_citekey}.pdf",
+        acquisition=AcquisitionObservation(
+            "operator-asserted-lawfully-held",
+            "operator-assertion",
+        ),
+        access=AccessObservation(
+            "private-local-bytes-observed",
+            "operator-assertion",
+        ),
+        rights=RightsObservation(
+            "cc-by-4.0-operator-asserted",
+            "operator-assertion",
+        ),
+        doi=candidate.doi,
+        source_url="https://example.test/synthetic.pdf",
+        source_version="published-version",
+    )
+
+
+def _review_projection(candidate: ReferenceCandidate):  # type: ignore[no-untyped-def]
+    verification = "actor-verification:sha256:" + "d" * 64
+    evidence = "review-evidence:sha256:" + "e" * 64
+    decision = HumanReviewDecision.create(
+        subject_id=candidate.candidate_id,
+        context_id="fixture",
+        dimension=HumanReviewDimension.READING,
+        decision=ReadingDecision.READ,
+        producer=ProducerIdentity("synthetic-review-recorder", "1"),
+        transition_kind=ReviewTransitionKind.INITIAL,
+        actor=ReviewActorProvenance(
+            actor_id="synthetic-reader",
+            actor_kind=ReviewActorKind.PERSON,
+            authority_scope=ReviewAuthorityScope.REFERENCE_READER,
+            authority_domain="projectkoios-references",
+            verification_record_id=verification,
+            verification_method="synthetic repository admission",
+        ),
+        evidence_ids=tuple(sorted((verification, evidence))),
+        rationale="Synthetic actor-provenanced reading decision.",
+        decided_at="2026-09-19T00:00:00Z",
+    )
+    return replay_review_records((), (decision,))
+
+
 def test__build_citation_closure__is_deterministic_and_ignores_comments(
     tmp_path: Path,
 ) -> None:
@@ -271,6 +354,84 @@ def test__reconcile_collection__classifies_missing_and_extra_pdfs(
     assert b"beta2021" in files["missing-pdfs.csv"]
     assert b"manual2022" not in files["missing-pdfs.csv"]
     assert b"extra2023" in files["extra-pdfs.csv"]
+
+
+def test__reconciliation__consumes_authoritative_state_evidence(
+    tmp_path: Path,
+) -> None:
+    corpus, pdfs, discovery, _ = _inputs(tmp_path)
+    records = _records()
+    beta = next(item for item in records if item.proposed_citekey == "beta2021")
+    plan_root = tmp_path / "plan-root"
+    plan_root.mkdir()
+    (plan_root / "alpha2020.pdf").write_bytes(b"%PDF-1.4\nalpha")
+    asset_plan = AssetDiscoveryPlanner().scan(
+        records,
+        (SearchRoot("plan-root", plan_root, RootStorageClass.LOCAL),),
+    )
+    catalog_asset = SourceAssetRecord(
+        candidate_id=beta.candidate_id,
+        proposed_citekey=beta.proposed_citekey,
+        identity_status=beta.lifecycle_status,
+        citekey_status=beta.citekey_status,
+        sha256="c" * 64,
+        byte_size=22,
+        root_alias="catalog-root",
+        relative_path="beta2021.pdf",
+        rights_status="cc-by-4.0-operator-asserted",
+        asset_status="acquired-via-bounded-download",
+    )
+    outputs = reconcile_collection(
+        records,
+        bibliography_bytes=b"fixture bibliography",
+        collection_id="fixture",
+        source_revision="abc123",
+        collection_rows=load_collection_rows(corpus),
+        managed_pdfs=scan_managed_pdfs(
+            pdfs,
+            source_discovery=discovery,
+        ),
+        citation_closure=None,
+        acquisition_evidence={
+            beta.proposed_citekey: _acquisition_projection(beta)
+        },
+        review_projection=_review_projection(beta),
+        catalog_assets={beta.proposed_citekey: (catalog_asset,)},
+        asset_plan=asset_plan,
+    )
+
+    projected = {
+        item.proposed_citekey: item for item in outputs.manifest.references
+    }["beta2021"]
+    assert projected.acquisition_status == "operator-asserted-lawfully-held"
+    assert projected.access_status == "private-local-bytes-observed"
+    assert projected.rights_status == "cc-by-4.0-operator-asserted"
+    assert projected.reading_decision_status == "read"
+    assert projected.identity_status == "unaccepted-candidate"
+    assert projected.citekey_status == "proposed-noncanonical"
+    assert "manuscript_status" not in projected.state_discrepancy_fields
+
+    state = next(
+        item
+        for item in outputs.manifest.state_projections
+        if item.projection_id == projected.state_projection_id
+    )
+    with pytest.raises(KeyError):
+        state.field("manuscript_status")
+    with pytest.raises(KeyError):
+        state.field("publication_status")
+    with pytest.raises(KeyError):
+        state.field("contract_status")
+    assert _acquisition_projection(beta).manifest_id in (
+        state.authoritative_input_ids
+    )
+    output_files = dict(outputs.files)
+    payload = json.loads(output_files["reference-state-projections.json"])
+    assert payload["exact_replay"] is True
+    assert state.projection_id == payload["projections"][1]["projection_id"]
+    evidence_roles = {item.role for item in outputs.package_manifest.inputs}
+    assert "catalog-asset-observations" in evidence_roles
+    assert "asset-discovery-plan" in evidence_roles
 
 
 def test__reconcile_collection__marks_unverified_managed_pdf_present(

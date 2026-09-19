@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, TypeVar, cast, overload
 from urllib.parse import urlparse
 
+from projectkoios.references.acquisition import AcquisitionProjection
+from projectkoios.references.assets import AssetDiscoveryPlan
 from projectkoios.references.coverage import (
     AmbiguityEvaluation,
     CoverageAccessState,
@@ -33,6 +35,7 @@ from projectkoios.references.io_limits import (
     bounded_utf8_size,
     validate_json_text_nesting,
 )
+from projectkoios.references.models import SourceAssetRecord
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
     CloudPlaceholderProbe,
@@ -63,9 +66,16 @@ from projectkoios.references.reconciliation_package import (
     parse_package_files,
     pretty_json,
 )
+from projectkoios.references.review import ReviewProjection
+from projectkoios.references.state_projection import (
+    ReferenceStateProjection,
+    StateKnowledge,
+    StateResolution,
+    build_reference_state_projection,
+)
 
-_SCHEMA_VERSION = 3
-_PROCESSOR_VERSION = "0.8.0"
+_SCHEMA_VERSION = 4
+_PROCESSOR_VERSION = "0.9.0"
 _CITATION_PARSER_VERSION = "1"
 _COLLECTION_ROWS_PARSER_VERSION = "1"
 _SOURCE_DISCOVERY_PARSER_VERSION = "1"
@@ -166,6 +176,60 @@ class CollectionRowEvidence:
     source_bibliographies: tuple[str, ...]
     bibliographic_status: str
     reading_status: str
+    observation_id: str | None = None
+    source_content_id: str | None = None
+    row_index: int | None = None
+    parser_name: str | None = None
+    parser_version: str | None = None
+
+    def __post_init__(self) -> None:
+        provenance = (
+            self.observation_id,
+            self.source_content_id,
+            self.row_index,
+            self.parser_name,
+            self.parser_version,
+        )
+        if all(item is None for item in provenance):
+            return
+        if any(item is None for item in provenance):
+            raise ValueError(
+                "collection row provenance must be complete or absent"
+            )
+        if (
+            re.fullmatch(
+                r"collection-row-observation:sha256:[0-9a-f]{64}",
+                str(self.observation_id),
+            )
+            is None
+        ):
+            raise ValueError("collection row observation identity is invalid")
+        if (
+            re.fullmatch(
+                r"blob:sha256:[0-9a-f]{64}",
+                str(self.source_content_id),
+            )
+            is None
+        ):
+            raise ValueError("collection row source identity is invalid")
+        if type(self.row_index) is not int or self.row_index < 0:
+            raise ValueError("collection row index is invalid")
+        if not self.parser_name or not self.parser_version:
+            raise ValueError("collection row parser identity is invalid")
+        expected = _stable_id(
+            "collection-row-observation",
+            {
+                "source_content_id": self.source_content_id,
+                "row_index": self.row_index,
+                "parser_name": self.parser_name,
+                "parser_version": self.parser_version,
+                "source_bibliographies": self.source_bibliographies,
+                "bibliographic_status": self.bibliographic_status,
+                "reading_status": self.reading_status,
+            },
+        )
+        if self.observation_id != expected:
+            raise ValueError("collection row observation identity differs")
 
 
 @dataclass(frozen=True, init=False)
@@ -373,6 +437,7 @@ class CollectionReference:
     source_bibliographies: tuple[str, ...]
     metadata_verification_status: str
     reading_status: str
+    reading_decision_status: str
     citation_status: CitationStatus
     pdf_expectation: PdfExpectation
     pdf_status: PdfStatus
@@ -381,10 +446,13 @@ class CollectionReference:
     byte_size: int | None
     discovery_evidence: tuple[str, ...]
     duplicate_citekeys: tuple[str, ...]
+    acquisition_status: str
     access_status: str
     rights_status: str
     ingestion_status: str
     transcript_status: str
+    state_projection_id: str
+    state_discrepancy_fields: tuple[str, ...]
     next_lawful_action: str
 
     def __post_init__(self) -> None:
@@ -426,6 +494,7 @@ class CollectionManifest:
     coverage_state: CoverageState | None
     ambiguity_evaluation: AmbiguityEvaluation
     coverage: tuple[str, ...]
+    state_projections: tuple[ReferenceStateProjection, ...]
     references: tuple[CollectionReference, ...]
     extra_pdfs: tuple[ExtraPdf, ...]
     counts: FrozenCounts
@@ -486,6 +555,7 @@ def load_collection_rows(
         "max_text_bytes",
     )
     result: dict[str, CollectionRowEvidence] = {}
+    source_content_id = "blob:sha256:" + hashlib.sha256(content).hexdigest()
     try:
         with bounded_csv_field_size(max_text_bytes):
             rows = csv.DictReader(io.StringIO(text, newline=""))
@@ -550,12 +620,30 @@ def load_collection_rows(
                         observed=len(sources),
                         limits=limits,
                     )
+                bibliographic_status = (
+                    row.get("bibliographic_status") or "unrecorded"
+                )
+                reading_status = row.get("reading_status") or "unrecorded"
+                row_payload = {
+                    "source_content_id": source_content_id,
+                    "row_index": row_number - 1,
+                    "parser_name": "projectkoios-collection-csv",
+                    "parser_version": _COLLECTION_ROWS_PARSER_VERSION,
+                    "source_bibliographies": sources,
+                    "bibliographic_status": bibliographic_status,
+                    "reading_status": reading_status,
+                }
                 result[citekey] = CollectionRowEvidence(
                     source_bibliographies=sources,
-                    bibliographic_status=(
-                        row.get("bibliographic_status") or "unrecorded"
+                    bibliographic_status=bibliographic_status,
+                    reading_status=reading_status,
+                    observation_id=_stable_id(
+                        "collection-row-observation", row_payload
                     ),
-                    reading_status=row.get("reading_status") or "unrecorded",
+                    source_content_id=source_content_id,
+                    row_index=row_number - 1,
+                    parser_name="projectkoios-collection-csv",
+                    parser_version=_COLLECTION_ROWS_PARSER_VERSION,
                 )
     except csv.Error as error:
         if "field larger than field limit" in str(error):
@@ -887,6 +975,10 @@ def reconcile_collection(
     coverage_observation: CoverageObservation | None = None,
     coverage_observation_bytes: bytes | None = None,
     processing_evidence: Mapping[str, ProcessingEvidence] | None = None,
+    acquisition_evidence: Mapping[str, AcquisitionProjection] | None = None,
+    review_projection: ReviewProjection | None = None,
+    catalog_assets: Mapping[str, tuple[SourceAssetRecord, ...]] | None = None,
+    asset_plan: AssetDiscoveryPlan | None = None,
     bibliography_parser: str = "caller-supplied-records",
     limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
 ) -> ReconciliationOutputs:
@@ -960,6 +1052,42 @@ def reconcile_collection(
             observed=len(processing_evidence),
             limits=limits,
         )
+    if (
+        acquisition_evidence is not None
+        and len(acquisition_evidence) > max_records
+    ):
+        raise ReferenceIOLimitError(
+            resource="acquisition evidence observations",
+            limit_name="max_candidates",
+            limit=max_records,
+            observed=len(acquisition_evidence),
+            limits=limits,
+        )
+    if asset_plan is not None and not isinstance(
+        asset_plan, AssetDiscoveryPlan
+    ):
+        raise CollectionReconciliationError(
+            "asset_plan must be a typed AssetDiscoveryPlan"
+        )
+    catalog_asset_count = sum(
+        len(values) for values in (catalog_assets or {}).values()
+    )
+    if catalog_asset_count > max_records:
+        raise ReferenceIOLimitError(
+            resource="catalog asset observations",
+            limit_name="max_candidates",
+            limit=max_records,
+            observed=catalog_asset_count,
+            limits=limits,
+        )
+    if asset_plan is not None and len(asset_plan.candidates) > max_records:
+        raise ReferenceIOLimitError(
+            resource="asset plan candidates",
+            limit_name="max_candidates",
+            limit=max_records,
+            observed=len(asset_plan.candidates),
+            limits=limits,
+        )
     max_bibliography_bytes = _required_limit(
         limits.max_bibliography_bytes,
         "max_bibliography_bytes",
@@ -974,6 +1102,15 @@ def reconcile_collection(
         )
     processing_supplied = processing_evidence is not None
     processing_by_citekey = processing_evidence or {}
+    acquisition_supplied = acquisition_evidence is not None
+    acquisition_by_citekey = acquisition_evidence or {}
+    catalog_assets_by_citekey = catalog_assets or {}
+    if review_projection is not None and not isinstance(
+        review_projection, ReviewProjection
+    ):
+        raise CollectionReconciliationError(
+            "review_projection must be a replayed ReviewProjection"
+        )
     coverage_by_citekey = (
         coverage_observation.by_citekey()
         if coverage_observation is not None
@@ -997,6 +1134,13 @@ def reconcile_collection(
                 citekey,
                 field="processing-evidence citekey",
             )
+        for citekey in acquisition_by_citekey:
+            validate_citekey(
+                citekey,
+                field="acquisition-evidence citekey",
+            )
+        for citekey in catalog_assets_by_citekey:
+            validate_citekey(citekey, field="catalog-asset citekey")
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
     if len(citekeys) != len(set(citekeys)):
@@ -1067,6 +1211,48 @@ def reconcile_collection(
         raise CollectionReconciliationError(
             "supplied processing evidence is not source-bound producer evidence"
         )
+    unmatched_acquisition = sorted(set(acquisition_by_citekey) - set(citekeys))
+    if unmatched_acquisition:
+        raise CollectionReconciliationError(
+            "acquisition evidence has no matching candidate: "
+            f"{unmatched_acquisition}"
+        )
+    if any(
+        not isinstance(item, AcquisitionProjection)
+        for item in acquisition_by_citekey.values()
+    ):
+        raise CollectionReconciliationError(
+            "supplied acquisition evidence is not a typed projection"
+        )
+    unmatched_catalog_assets = sorted(
+        set(catalog_assets_by_citekey) - set(citekeys)
+    )
+    if unmatched_catalog_assets:
+        raise CollectionReconciliationError(
+            "catalog assets have no matching candidate: "
+            f"{unmatched_catalog_assets}"
+        )
+    if any(
+        not isinstance(values, tuple)
+        or any(not isinstance(item, SourceAssetRecord) for item in values)
+        for values in catalog_assets_by_citekey.values()
+    ):
+        raise CollectionReconciliationError(
+            "catalog assets must be typed immutable tuples"
+        )
+    candidate_ids = {item.candidate_id for item in ordered_records}
+    if asset_plan is not None:
+        unmatched_plan = sorted(
+            {
+                item.candidate_id
+                for item in asset_plan.candidates
+                if item.candidate_id not in candidate_ids
+            }
+        )
+        if unmatched_plan:
+            raise CollectionReconciliationError(
+                f"asset plan has no matching candidates: {unmatched_plan}"
+            )
     by_digest: dict[str, list[str]] = defaultdict(list)
     for managed_pdf in managed_pdfs:
         by_digest[managed_pdf.sha256].append(managed_pdf.citekey)
@@ -1077,6 +1263,7 @@ def reconcile_collection(
         else set()
     )
     references: list[CollectionReference] = []
+    state_projections: list[ReferenceStateProjection] = []
     for record in ordered_records:
         evidence = collection_rows[record.proposed_citekey]
         matched_pdf = by_citekey.get(record.proposed_citekey)
@@ -1085,6 +1272,7 @@ def reconcile_collection(
             record.proposed_citekey,
             ProcessingEvidence.not_supplied(),
         )
+        acquisition = acquisition_by_citekey.get(record.proposed_citekey)
         coverage_item = coverage_by_citekey.get(record.proposed_citekey)
         preflight_item = preflight_by_citekey.get(record.proposed_citekey)
         status, next_action = _classify_pdf_status(
@@ -1105,6 +1293,47 @@ def reconcile_collection(
             if matched_pdf is not None
             else ()
         )
+        citation_status = (
+            CitationStatus.CLOSURE_UNAVAILABLE
+            if citation_closure is None
+            else (
+                CitationStatus.CITED_DEFINED
+                if record.proposed_citekey in cited
+                else CitationStatus.DEFINED_UNCITED
+            )
+        )
+        state_projection = build_reference_state_projection(
+            candidate=record,
+            collection_id=collection_id,
+            collection_row=evidence,
+            managed_asset=matched_pdf,
+            acquisition=acquisition,
+            processing=(
+                processing
+                if processing.evidence_record_id is not None
+                else None
+            ),
+            review=review_projection,
+            coverage=coverage_observation,
+            catalog_assets=catalog_assets_by_citekey.get(
+                record.proposed_citekey, ()
+            ),
+            asset_plan=asset_plan,
+            citation_status=(
+                citation_status.value if citation_closure is not None else None
+            ),
+            citation_input_id=(
+                citation_closure.closure_id
+                if citation_closure is not None
+                else None
+            ),
+        )
+        state_projections.append(state_projection)
+        discrepancy_fields = tuple(
+            item.field
+            for item in state_projection.fields
+            if item.resolution is StateResolution.DISCREPANCY
+        )
         references.append(
             CollectionReference(
                 proposed_citekey=record.proposed_citekey,
@@ -1119,15 +1348,11 @@ def reconcile_collection(
                 source_bibliographies=evidence.source_bibliographies,
                 metadata_verification_status=evidence.bibliographic_status,
                 reading_status=evidence.reading_status,
-                citation_status=(
-                    CitationStatus.CLOSURE_UNAVAILABLE
-                    if citation_closure is None
-                    else (
-                        CitationStatus.CITED_DEFINED
-                        if record.proposed_citekey in cited
-                        else CitationStatus.DEFINED_UNCITED
-                    )
+                reading_decision_status=_projected_status(
+                    state_projection,
+                    "reading_decision",
                 ),
+                citation_status=citation_status,
                 pdf_expectation=expectation,
                 pdf_status=status,
                 managed_pdf=(
@@ -1149,14 +1374,22 @@ def reconcile_collection(
                     )
                 ),
                 duplicate_citekeys=duplicate_citekeys,
-                access_status=_access_status(
-                    matched_pdf=matched_pdf,
-                    evidence=coverage_item,
-                    preflight=preflight_item,
+                acquisition_status=_projected_status(
+                    state_projection,
+                    "acquisition_status",
                 ),
-                rights_status="not-assessed",
+                access_status=_projected_status(
+                    state_projection,
+                    "access_status",
+                ),
+                rights_status=_projected_status(
+                    state_projection,
+                    "rights_status",
+                ),
                 ingestion_status=processing.ingestion_status,
                 transcript_status=processing.transcript_status,
+                state_projection_id=state_projection.projection_id,
+                state_discrepancy_fields=discrepancy_fields,
                 next_lawful_action=next_action,
             )
         )
@@ -1191,6 +1424,8 @@ def reconcile_collection(
     coverage = _coverage_claims(
         coverage_observation=coverage_observation,
         processing_supplied=processing_supplied,
+        acquisition_supplied=acquisition_supplied,
+        review_supplied=review_projection is not None,
         citation_closure_supplied=citation_closure is not None,
     )
     bibliography_sha256 = hashlib.sha256(bibliography_bytes).hexdigest()
@@ -1216,6 +1451,9 @@ def reconcile_collection(
             else AmbiguityEvaluation.NOT_EVALUATED
         ),
         "coverage": list(coverage),
+        "state_projections": [
+            json.loads(item.to_json()) for item in state_projections
+        ],
         "references": [asdict(record) for record in references],
         "extra_pdfs": [asdict(extra) for extra in extras],
         "counts": counts,
@@ -1242,6 +1480,7 @@ def reconcile_collection(
             else AmbiguityEvaluation.NOT_EVALUATED
         ),
         coverage=coverage,
+        state_projections=tuple(state_projections),
         references=tuple(references),
         extra_pdfs=extras,
         counts=counts,
@@ -1260,6 +1499,10 @@ def reconcile_collection(
         coverage_observation=coverage_observation,
         coverage_observation_bytes=coverage_observation_bytes,
         processing_evidence=processing_evidence,
+        acquisition_evidence=acquisition_evidence,
+        review_projection=review_projection,
+        catalog_assets=catalog_assets,
+        asset_plan=asset_plan,
         limits=limits,
     )
     package_manifest = ReconciliationPackageManifest.create(
@@ -1487,6 +1730,10 @@ def _bound_input_evidence(
     coverage_observation: CoverageObservation | None,
     coverage_observation_bytes: bytes | None,
     processing_evidence: Mapping[str, ProcessingEvidence] | None,
+    acquisition_evidence: Mapping[str, AcquisitionProjection] | None,
+    review_projection: ReviewProjection | None,
+    catalog_assets: Mapping[str, tuple[SourceAssetRecord, ...]] | None,
+    asset_plan: AssetDiscoveryPlan | None,
     limits: ReferenceIOLimits,
 ) -> tuple[ContentEvidence, ...]:
     evidence = [
@@ -1562,6 +1809,43 @@ def _bound_input_evidence(
                     content=canonical_json_bytes(dict(processing_evidence)),
                 )
             )
+    if acquisition_evidence is not None:
+        evidence.append(
+            ContentEvidence.from_bytes(
+                role="acquisition-projection",
+                filename="inputs/acquisition-projections.json",
+                content=canonical_json_bytes(
+                    {
+                        key: asdict(value)
+                        for key, value in sorted(acquisition_evidence.items())
+                    }
+                ),
+            )
+        )
+    if review_projection is not None:
+        evidence.append(
+            ContentEvidence.from_bytes(
+                role="review-projection",
+                filename="inputs/review-projection.json",
+                content=review_projection.to_json().encode("utf-8"),
+            )
+        )
+    if catalog_assets is not None:
+        evidence.append(
+            ContentEvidence.from_bytes(
+                role="catalog-asset-observations",
+                filename="inputs/catalog-assets.json",
+                content=canonical_json_bytes(dict(catalog_assets)),
+            )
+        )
+    if asset_plan is not None:
+        evidence.append(
+            ContentEvidence.from_bytes(
+                role="asset-discovery-plan",
+                filename="inputs/asset-discovery-plan.json",
+                content=asset_plan.to_json().encode("utf-8"),
+            )
+        )
     normalized = canonical_json_bytes(
         {
             "collection_rows": dict(collection_rows),
@@ -1584,6 +1868,23 @@ def _bound_input_evidence(
             "processing_evidence_root_preflights": getattr(
                 processing_evidence, "root_preflights", ()
             ),
+            "acquisition_evidence": (
+                None
+                if acquisition_evidence is None
+                else {
+                    key: asdict(value)
+                    for key, value in sorted(acquisition_evidence.items())
+                }
+            ),
+            "review_projection_id": (
+                None
+                if review_projection is None
+                else review_projection.projection_id
+            ),
+            "catalog_assets": (
+                None if catalog_assets is None else dict(catalog_assets)
+            ),
+            "asset_plan": asset_plan,
         }
     )
     evidence.append(
@@ -1977,6 +2278,26 @@ def _preflight_evidence(
     )
 
 
+def _projected_status(
+    projection: ReferenceStateProjection,
+    field: str,
+) -> str:
+    projected = projection.field(field)
+    if projected.resolution is StateResolution.DISCREPANCY:
+        return StateResolution.DISCREPANCY.value
+    if not projected.values:
+        return StateKnowledge.NOT_OBSERVED.value
+    value = projected.values[0]
+    if value.knowledge is not StateKnowledge.OBSERVED:
+        return value.knowledge.value
+    parsed = value.value()
+    if not isinstance(parsed, str):
+        raise CollectionReconciliationError(
+            f"projected {field} status is not text"
+        )
+    return parsed
+
+
 def _access_status(
     *,
     matched_pdf: ManagedPdf | None,
@@ -2045,6 +2366,8 @@ def _coverage_claims(
     *,
     coverage_observation: CoverageObservation | None,
     processing_supplied: bool,
+    acquisition_supplied: bool,
+    review_supplied: bool,
     citation_closure_supplied: bool,
 ) -> tuple[str, ...]:
     values = {
@@ -2055,6 +2378,16 @@ def _coverage_claims(
             "processing-evidence:supplied"
             if processing_supplied
             else "processing-evidence:not-supplied"
+        ),
+        (
+            "acquisition-evidence:supplied"
+            if acquisition_supplied
+            else "acquisition-evidence:not-supplied"
+        ),
+        (
+            "review-evidence:supplied"
+            if review_supplied
+            else "review-evidence:not-supplied"
         ),
         (
             "citation-closure:supplied"
@@ -2227,6 +2560,26 @@ def _render_outputs(
     ]
     return {
         "collection-manifest.json": manifest.to_json().encode("utf-8"),
+        "reference-state-projections.json": pretty_json(
+            {
+                "schema_version": 1,
+                "artifact_kind": (
+                    "projectkoios.references.collection-state-projections"
+                ),
+                "authoritative_input_ids": sorted(
+                    {
+                        input_id
+                        for projection in manifest.state_projections
+                        for input_id in projection.authoritative_input_ids
+                    }
+                ),
+                "projections": [
+                    json.loads(item.to_json())
+                    for item in manifest.state_projections
+                ],
+                "exact_replay": True,
+            }
+        ).encode("utf-8"),
         "citation-closure.json": (
             closure.to_json().encode("utf-8")
             if closure is not None
@@ -2271,12 +2624,16 @@ def _reference_csv(records: list[CollectionReference]) -> str:
         "doi",
         "source_bibliographies",
         "metadata_verification_status",
+        "reading_decision_status",
         "pdf_expectation",
         "pdf_status",
+        "acquisition_status",
         "access_status",
         "rights_status",
         "ingestion_status",
         "transcript_status",
+        "state_projection_id",
+        "state_discrepancy_fields",
         "next_lawful_action",
     )
     writer = csv.DictWriter(stream, fieldnames=fields, lineterminator="\n")
@@ -2301,12 +2658,18 @@ def _reference_csv(records: list[CollectionReference]) -> str:
                 "metadata_verification_status": (
                     record.metadata_verification_status
                 ),
+                "reading_decision_status": record.reading_decision_status,
                 "pdf_expectation": record.pdf_expectation,
                 "pdf_status": record.pdf_status,
+                "acquisition_status": record.acquisition_status,
                 "access_status": record.access_status,
                 "rights_status": record.rights_status,
                 "ingestion_status": record.ingestion_status,
                 "transcript_status": record.transcript_status,
+                "state_projection_id": record.state_projection_id,
+                "state_discrepancy_fields": ";".join(
+                    record.state_discrepancy_fields
+                ),
                 "next_lawful_action": record.next_lawful_action,
             }
         )

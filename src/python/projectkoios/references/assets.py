@@ -277,7 +277,7 @@ class AssetDiscoveryPlan:
             )
         root_preflights = _parse_root_preflights(data["root_preflights"])
         file_observations = _parse_file_observations(data["file_observations"])
-        return cls(
+        plan = cls(
             schema_version=3,
             coverage_status=data["coverage_status"],
             effective_limits=recorded_limits,
@@ -301,6 +301,9 @@ class AssetDiscoveryPlan:
                 for item in candidates_data
             ),
         )
+        if text != plan.to_json():
+            raise ValueError("asset discovery plan JSON is noncanonical")
+        return plan
 
 
 class AssetDiscoveryPlanner:

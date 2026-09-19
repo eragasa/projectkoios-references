@@ -21,6 +21,7 @@ the basename of both the reference note and local PDF. See
 [ingestion reference-evidence consumer](docs/ingestion-reference-evidence.md),
 the [source-backed citation graph](docs/citation-graph.md), the
 [actor-provenanced review-state model](docs/review-state.md), the
+[field-level state projection model](docs/reference-state-projections.md), the
 [reference working catalog](docs/reference-catalog.md), the
 [bounded reference-I/O policy](docs/reference-io-bounds.md),
 [cloud-placeholder safety](docs/cloud-placeholder-safety.md), and the Proposed
@@ -65,6 +66,14 @@ koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
   --source-discovery-storage-class local \
   --coverage-observation coverage-observation.json \
   --coverage-observation-storage-class local \
+  --acquisition-manifest acquisition.json \
+  --acquisition-manifest-storage-class local \
+  --review-projection review-projection.json \
+  --review-projection-storage-class local \
+  --catalog .koios/references.sqlite3 \
+  --catalog-storage-class local \
+  --asset-plan .koios/assets.json \
+  --asset-plan-storage-class local \
   --manuscript-root /isolated/source/docs/publications \
   --manuscript-storage-class local \
   --reference-evidence example2026=/explicit/evidence/example2026.json \
@@ -89,27 +98,33 @@ branches. It cannot represent canonical promotion, scientific acceptance,
 manuscript use, rights clearance, or publication as a review status. See
 [Actor-provenanced reference review state](docs/review-state.md).
 
-The working catalog supports owner-internal schema version 4 with a deterministic
-schema fingerprint and complete observation/candidate/review round trips.
-Existing, newer, altered, or incomplete schemas are never silently relabeled.
-Recognized synthetic version-1, version-2, and exact version-3 layouts require
-an explicit backup-confirmed forward migration through the Python API. Legacy
+The working catalog supports owner-internal schema version 5 with a deterministic
+schema fingerprint and complete observation/candidate/review/state-projection
+round trips. Existing, newer, altered, or incomplete schemas are never silently
+relabeled. Recognized synthetic version-1, version-2, exact version-3, and
+published version-4 layouts require an explicit backup-confirmed forward
+migration through the Python API. Legacy
 review scalars remain quarantined without authority upgrade; no operator catalog
 is migrated by these commands. See
 [Reference working catalog](docs/reference-catalog.md).
 
 `collection-reconcile` creates an immutable, replayable package containing
 `package-manifest.json`, `collection-manifest.json`, `citation-closure.json`,
-`coverage-observation.json`, `missing-pdfs.csv`, `ambiguous-pdfs.csv`, and
-`extra-pdfs.csv`. The package identity binds every payload output and all
+`coverage-observation.json`, `reference-state-projections.json`,
+`missing-pdfs.csv`, `ambiguous-pdfs.csv`, and `extra-pdfs.csv`. The package
+identity binds every payload output and all
 consumed evidence bytes. Source-revision labels remain explicitly asserted;
 only a matching clean Git `HEAD` can add verified commit and tree identity. See
 [Reconciliation packages](docs/reconciliation-packages.md) for the package,
 version, authority, verification, and replay boundaries. The command hashes and
 header-checks managed PDFs, ignores commented LaTeX citations and macro
 placeholders, classifies source/PDF applicability conservatively, and records
-metadata, access, rights, ingestion, and transcript status without changing source
-bibliographies or assets. Ingestion state is accepted only through explicitly
+metadata, access, rights, ingestion, and transcript status without changing
+source bibliographies or assets. Optional schema-4 acquisition evidence and
+actor-provenanced review replay supply known acquisition, access, rights, and
+reading-decision values. Every field-level value names its exact authoritative
+inputs, and disagreements remain explicit rather than being selected by import
+order. Ingestion state is accepted only through explicitly
 injected, canonical `projectkoios.ingestion.reference-evidence@0.1.0` bytes that
 match the managed PDF digest and size; the command never discovers a producer
 workspace or interprets its private filenames. The contract remains Proposed,

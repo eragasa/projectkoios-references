@@ -73,7 +73,7 @@ noncanonical statuses. Materialization writes a candidate-suffixed filename,
 not the canonical `citekey.pdf` shape; any later canonical rename requires a
 separately authorized identity and file migration.
 
-The schema-version-4 SQLite catalog is a provisional local projection with an
+The schema-version-5 SQLite catalog is a provisional local projection with an
 explicit schema fingerprint. `import_candidates` projects complete candidates
 and observations without populating quarantined legacy reference rows. Public
 counts use candidate and observation terminology, and the old unprovenanced

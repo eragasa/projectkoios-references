@@ -78,7 +78,10 @@ normalized-input, source-content, candidate-authority, acquisition, access, and
 rights identities without exposing an absolute machine path. Reconciliation or
 other projections may consume these observations as evidence, but must not
 promote them into rights verification, canonical identity, manuscript
-acceptance, or publication authority.
+acceptance, contract acceptance, or publication authority. The field-level
+state reducer records the manifest identity as the exact authoritative input
+for each consumed acquisition, access, rights, asset-byte, and candidate-
+guardrail value; distinct values remain an unresolved discrepancy.
 
 ## Input columns
 

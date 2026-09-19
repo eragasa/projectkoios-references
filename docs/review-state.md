@@ -109,7 +109,9 @@ and `effective_limits_id`; unsupported or altered profiles fail closed.
 
 ## Catalog schema and migration
 
-Catalog schema 4 adds canonical-JSON-backed technical and human review tables.
+Published catalog schema 4 added canonical-JSON-backed technical and human
+review tables. Current schema 5 preserves those tables unchanged and adds only
+the disposable field-level state-projection cache.
 `ReferenceCatalog.import_review_records` replays the existing and proposed
 records before inserting them in one immediate transaction. Exact replay is
 idempotent. Invalid, stale, concurrent, or partially valid batches roll back
@@ -119,6 +121,8 @@ Schema 3 is recognized only by its exact predecessor fingerprint
 `catalog-schema:sha256:d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa`.
 Migration remains explicit and requires `backup_confirmed=True`. It preserves
 all schema-3 rows exactly and leaves `legacy_review_memberships` quarantined.
+Forward migration from exact published schema 4 preserves every technical and
+human review record without relabeling authority.
 Even a legacy `human-accepted` scalar is not converted into a human decision or
 canonical reference. Existing CSV/JSON corpus reports remain unprovenanced
 projections and are not imported into typed review history; they may be retained

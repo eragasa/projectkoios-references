@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from projectkoios.references.catalog import (
     CatalogConflictError,
+    CatalogSchemaError,
 )
 from projectkoios.references.catalog import (
     ReferenceCatalog as _ReferenceCatalog,
@@ -92,6 +94,7 @@ def test__catalog__round_trips_complete_identity_records(
         "review_memberships": 0,
         "technical_review_records": 0,
         "human_review_decisions": 0,
+        "state_projections": 0,
         "abstracts": 0,
         "citation_source_observations": 0,
         "citation_candidates": 0,
@@ -169,6 +172,18 @@ def test__catalog__source_assets_are_append_only_and_transactional(
         catalog.record_source_assets((conflicting,))
 
     assert catalog.counts()["source_assets"] == 1
+    assert catalog.read_source_assets() == (first,)
+    assert catalog.read_source_assets(max_records=1) == (first,)
+    second = replace(
+        first,
+        sha256="b" * 64,
+        relative_path="second-candidate.pdf",
+    )
+    catalog.record_source_asset(second)
+    with pytest.raises(CatalogSchemaError, match="exceed the requested limit"):
+        catalog.read_source_assets(max_records=1)
+    with pytest.raises(ValueError, match="positive integer"):
+        catalog.read_source_assets(max_records=0)
 
 
 def _citation_graph(*, title: str = "Source title") -> CitationGraph:

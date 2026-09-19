@@ -281,6 +281,7 @@ def test__package_manifest__covers_all_payload_outputs_and_bound_inputs(
         "missing-pdfs.csv",
         "ambiguous-pdfs.csv",
         "extra-pdfs.csv",
+        "reference-state-projections.json",
     }
     assert {item.filename for item in package.outputs} == set(files) - {
         PACKAGE_MANIFEST_FILENAME

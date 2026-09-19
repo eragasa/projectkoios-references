@@ -3,7 +3,8 @@
 ## Status and authority boundary
 
 The reconciliation package is a pre-release, owner-internal evidence projection
-implemented for `REF-PROVENANCE-01`. Its package-manifest schema version is `1`.
+implemented for `REF-PROVENANCE-01`. Its package-manifest schema version is `1`;
+the embedded collection-manifest schema is `4`.
 It is not an accepted cross-repository contract, a canonical-reference decision,
 an ingestion contract, a rights decision, or a scientific or publication
 approval. Bibliography imports used by reconciliation are exact source
@@ -42,8 +43,9 @@ binds:
 - every payload output filename, byte size, and SHA-256 digest.
 
 The payload outputs are `collection-manifest.json`, `citation-closure.json`,
-`coverage-observation.json`, `missing-pdfs.csv`, `ambiguous-pdfs.csv`, and
-`extra-pdfs.csv`. The manifest does not recursively list itself: a file cannot
+`coverage-observation.json`, `reference-state-projections.json`,
+`missing-pdfs.csv`, `ambiguous-pdfs.csv`, and `extra-pdfs.csv`. The manifest does
+not recursively list itself: a file cannot
 contain its own final digest and size. Instead, its serialization is canonical
 and its `reconciliation-package:sha256:...` identity covers all manifest fields.
 A byte edit to the manifest is therefore either a different identified manifest
@@ -85,6 +87,26 @@ The Python API provides:
 Replaying an identical package at an existing destination returns `unchanged`.
 An incomplete, unexpected, or byte-different destination fails closed and is
 not repaired or overwritten.
+
+## Field-level state projections
+
+Collection reconciliation consumes optional schema-4 acquisition projections,
+a replayed actor-provenanced review projection, catalog source-asset records,
+and an asset-discovery plan in addition to candidate, collection, citation,
+coverage, managed-asset, and ingestion evidence. These inputs must be injected
+explicitly through bounded, storage-class-declared API/CLI surfaces. It emits one
+content-addressed state projection per candidate, links each collection row to
+its projection identity, and binds `reference-state-projections.json` into the
+package. Known acquisition, access, rights, and reading-decision evidence is no
+longer replaced by hard-coded unknowns. Distinct authoritative values remain an
+`unresolved-discrepancy`; they are not selected by import order. CSV collection
+rows retain source-byte identity, row index, parser identity, and parsed values,
+so normalization cannot collapse byte-distinct source evidence.
+
+The package continues to report only `unaccepted-candidate` and
+`proposed-noncanonical` identity. State projection cannot grant rights, accept
+scientific support, authorize manuscript use, accept a contract, or authorize
+publication. See [Reference state authority and deterministic projections](reference-state-projections.md).
 
 ## Ingestion evidence boundary
 
