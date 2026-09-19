@@ -78,7 +78,17 @@ against the actual managed PDF identity, and preserves recorded producer audit
 status separately from independent revalidation. See
 [Ingestion reference-evidence consumer](ingestion-reference-evidence.md).
 
-`koios-ref acquisition-create` replaces source-specific manifest scripts for recurring full-source acquisition. It hashes already lawfully held root-relative PDFs and retains proposed identity, DOI, source URL/version, rights status, and asset status. `koios-ref acquisition-verify` rechecks those bytes before downstream use. These commands neither retrieve a source nor convert `unaccepted-candidate` into an accepted reference.
+`koios-ref acquisition-create` replaces source-specific manifest scripts for
+recurring full-source acquisition. Its version-4 immutable manifest hashes
+already held root-relative PDFs, content-identifies normalized input and the
+complete manifest, and retains separate typed acquisition, access, and rights
+observations alongside proposed identity and source metadata. Atomic
+publication accepts only a byte-identical replay; it never repairs or replaces
+a different existing output. `koios-ref acquisition-verify` streams and
+rechecks every bound source before downstream use. These commands neither
+retrieve a source, independently verify a rights assertion, accept manuscript
+use, nor convert `unaccepted-candidate` into an accepted reference. See the
+Proposed [acquisition-observation contract](contracts/acquisition-observation.md).
 
 The initial implementation does not yet perform OCR, equation recognition,
 table reconstruction, semantic figure selection, or automatic recursive

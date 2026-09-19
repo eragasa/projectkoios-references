@@ -22,9 +22,10 @@ the basename of both the reference note and local PDF. See
 the [source-backed citation graph](docs/citation-graph.md), the
 [actor-provenanced review-state model](docs/review-state.md), the
 [reference working catalog](docs/reference-catalog.md), the
-[bounded reference-I/O policy](docs/reference-io-bounds.md), and
-[cloud-placeholder safety](docs/cloud-placeholder-safety.md). Remaining metadata
-and validation work is decomposed in the
+[bounded reference-I/O policy](docs/reference-io-bounds.md),
+[cloud-placeholder safety](docs/cloud-placeholder-safety.md), and the Proposed
+[acquisition-observation contract](docs/contracts/acquisition-observation.md).
+Remaining metadata and validation work is decomposed in the
 [citation and review backlog](docs/tasks/citation-review-backlog.md).
 
 The initial [`ksdft2effmass` review seed](collections/ksdft2effmass/README.md)
@@ -136,21 +137,28 @@ same-directory publication. Provider responses are cached locally under
 is documented in
 [`docs/reference-metadata-providers.md`](docs/reference-metadata-providers.md).
 
-Recurring lawful acquisition uses a separate version-3 manifest. The manifest
-records root storage/probe evidence, complete-coverage status, and the exact
-effective I/O-limit profile. Earlier manifests do not contain all of that
-evidence and are rejected rather than silently relabeled or assigned inferred
-limits.
+Recurring lawful acquisition uses a separate version-4 manifest under the
+Proposed `projectkoios.references.acquisition-observation@0.1.0` contract. The
+manifest records contract and generator identity, normalized-input identity,
+root storage/probe evidence, complete-coverage status, the exact effective
+I/O-limit profile, every source byte identity, and a content-derived manifest
+identity. Earlier manifests do not contain all of that evidence and are
+rejected rather than silently relabeled or assigned inferred identities.
 `acquisition-create` reads bounded CSV metadata, resolves each root-relative PDF
-without permitting traversal, streams one size/hash/header observation per
-unique source, and records its byte size and SHA-256 identity. Required CSV
-columns are `proposed_citekey`, `root_alias`, `relative_path`, `rights_status`,
-`asset_status`, and `identity_status`; optional columns are `doi`, `source_url`,
-and `source_version`. The only permitted identity status is
-`unaccepted-candidate`, so creating or verifying a manifest cannot claim
-accepted-reference authority. `acquisition-verify` streams and rechecks every
-source. Neither command downloads content, bypasses access controls, verifies
-license claims, edits canonical BibLaTeX, or writes a vault.
+without permitting traversal, and streams one size/hash/header observation per
+unique source. Required CSV columns are `proposed_citekey`, `root_alias`,
+`relative_path`, `access_status`, `rights_status`, and `identity_status`;
+`acquisition_status`, `doi`, `source_url`, and `source_version` are optional.
+`asset_status` is retained only as a compatibility alias for `access_status`.
+The only permitted identity status is `unaccepted-candidate`; the manifest also
+fixes `proposed-noncanonical` citekey and `not-assessed` manuscript status.
+Acquisition, access, and rights remain separate typed operator observations and
+are not independently verified by hashing. `acquisition-verify` streams and
+rechecks every source. Publication atomically creates a manifest, accepts an
+existing byte-identical replay as unchanged, and refuses different or partial
+existing output. Neither command downloads content, bypasses access controls,
+verifies rights, edits canonical BibLaTeX, accepts manuscript use, or writes a
+vault.
 
 Repository routing is documented in `projectkoios-bootstrap/maps/repositories.md`.
 

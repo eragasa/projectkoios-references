@@ -11,6 +11,7 @@ from pathlib import Path
 from projectkoios.references.acquisition import (
     AcquisitionManifest,
     create_acquisition_manifest,
+    publish_acquisition_manifest,
     verify_acquisition_manifest,
 )
 from projectkoios.references.assets import (
@@ -708,20 +709,22 @@ def main(arguments: list[str] | None = None) -> int:
             rows=rows,
             roots=tuple(args.source_root),
         )
-        try:
-            write_path_bytes(
-                args.output,
-                manifest.to_json().encode("utf-8"),
-                label="acquisition manifest",
-                root_alias="acquisition-manifest-output",
-                storage_class=args.output_storage_class,
-                replace=False,
+        acquisition_publication = publish_acquisition_manifest(
+            manifest,
+            output_path=args.output,
+            output_storage_class=args.output_storage_class,
+        )
+        print(
+            json.dumps(
+                {
+                    "status": acquisition_publication.status,
+                    "manifest_id": acquisition_publication.manifest_id,
+                    "entries": len(manifest.entries),
+                },
+                indent=2,
+                sort_keys=True,
             )
-        except FileExistsError:
-            raise SystemExit(
-                f"refusing to overwrite manifest: {args.output}"
-            ) from None
-        print(f"wrote {len(manifest.entries)} entries to {args.output}")
+        )
         return 0
     if args.command == "acquisition-verify":
         manifest = AcquisitionManifest.from_json(
@@ -744,11 +747,15 @@ def main(arguments: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "schema_version": manifest.schema_version,
+                    "manifest_id": manifest.manifest_id,
+                    "normalized_input_id": manifest.normalized_input_id,
+                    "contract_id": manifest.contract_id,
+                    "contract_status": manifest.contract_status,
                     "source_id": manifest.source_id,
                     "verified": len(manifest.entries),
-                    "coverage_status": "complete",
-                    "effective_limits": ACQUISITION_IO_LIMITS.to_dict(),
-                    "effective_limits_id": (ACQUISITION_IO_LIMITS.evidence_id),
+                    "coverage_status": manifest.coverage_status,
+                    "effective_limits": manifest.effective_limits.to_dict(),
+                    "effective_limits_id": manifest.effective_limits_id,
                 },
                 indent=2,
             )
@@ -814,6 +821,13 @@ def _bounded_csv_rows(
     try:
         with bounded_csv_field_size(max_text_bytes):
             reader = csv.DictReader(io.StringIO(text, newline=""))
+            fieldnames = reader.fieldnames
+            if fieldnames is None:
+                raise ValueError(f"{label} CSV has no header")
+            if any(not field or not field.strip() for field in fieldnames):
+                raise ValueError(f"{label} CSV has an empty header")
+            if len(fieldnames) != len(set(fieldnames)):
+                raise ValueError(f"{label} CSV has duplicate headers")
             for row_number, row in enumerate(reader, start=1):
                 if row_number > max_rows:
                     raise ReferenceIOLimitError(
@@ -823,10 +837,14 @@ def _bounded_csv_rows(
                         observed=row_number,
                         limits=limits,
                     )
+                if None in row:
+                    raise ValueError(
+                        f"{label} CSV row {row_number} has surplus fields"
+                    )
                 normalized = {
                     str(key): str(value)
                     for key, value in row.items()
-                    if key is not None and value is not None
+                    if value is not None
                 }
                 for field_name, field_value in normalized.items():
                     field_bytes = bounded_utf8_size(

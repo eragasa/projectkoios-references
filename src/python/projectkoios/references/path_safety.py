@@ -642,8 +642,8 @@ class AuthorizedRoot:
                     error,
                     f"cannot safely open {self.label} child: {safe}",
                 )
-            metadata = os.fstat(descriptor)
-            if not stat.S_ISREG(metadata.st_mode):
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
                 raise PathSafetyError(
                     f"{self.label} child is not a regular file: {safe}"
                 )
@@ -655,12 +655,12 @@ class AuthorizedRoot:
                     "max_bytes must be a nonnegative integer within the "
                     "bounded-read ceiling"
                 )
-            if metadata.st_size > max_bytes:
+            if before.st_size > max_bytes:
                 raise PathLimitError(
                     resource=f"{self.label} child {safe}",
                     limit_name="max_file_bytes",
                     limit=max_bytes,
-                    observed=metadata.st_size,
+                    observed=before.st_size,
                 )
             with os.fdopen(descriptor, "rb", closefd=False) as stream:
                 data = stream.read(max_bytes + 1)
@@ -671,6 +671,21 @@ class AuthorizedRoot:
                     limit=max_bytes,
                     observed=len(data),
                 )
+            after = os.fstat(descriptor)
+            if (
+                _file_identity(before) != _file_identity(after)
+                or len(data) != after.st_size
+            ):
+                raise PathSafetyError(
+                    f"{self.label} child changed while it was read: {safe}"
+                )
+            self._require_open_leaf_identity(
+                parent=parent,
+                leaf=safe.parts[-1],
+                opened=after,
+                safe=safe,
+                operation="read",
+            )
             return data
         finally:
             if descriptor >= 0:
@@ -731,7 +746,8 @@ class AuthorizedRoot:
             total = 0
             with os.fdopen(descriptor, "rb", closefd=False) as stream:
                 while True:
-                    block = stream.read(chunk_bytes)
+                    remaining = max_bytes - total
+                    block = stream.read(min(chunk_bytes, remaining + 1))
                     if not block:
                         break
                     total += len(block)
@@ -746,24 +762,19 @@ class AuthorizedRoot:
                     if len(prefix) < prefix_bytes:
                         prefix.extend(block[: prefix_bytes - len(prefix)])
             after = os.fstat(descriptor)
-            before_identity = (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-                before.st_ctime_ns,
-            )
-            after_identity = (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-                after.st_ctime_ns,
-            )
-            if before_identity != after_identity or total != after.st_size:
+            if _file_identity(before) != _file_identity(after) or total != (
+                after.st_size
+            ):
                 raise PathSafetyError(
                     f"{self.label} child changed while it was observed: {safe}"
                 )
+            self._require_open_leaf_identity(
+                parent=parent,
+                leaf=safe.parts[-1],
+                opened=after,
+                safe=safe,
+                operation="observed",
+            )
             return FileObservation(
                 byte_size=total,
                 sha256=digest.hexdigest(),
@@ -773,6 +784,31 @@ class AuthorizedRoot:
             if descriptor >= 0:
                 os.close(descriptor)
             os.close(parent)
+
+    def _require_open_leaf_identity(
+        self,
+        *,
+        parent: int,
+        leaf: str,
+        opened: os.stat_result,
+        safe: PurePosixPath,
+        operation: str,
+    ) -> None:
+        """Require the pathname to still name the opened stable inode."""
+        try:
+            current = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
+        except OSError as error:
+            raise PathSafetyError(
+                f"{self.label} child changed or was replaced while it was "
+                f"{operation}: {safe}"
+            ) from error
+        if not stat.S_ISREG(current.st_mode) or _file_identity(
+            current
+        ) != _file_identity(opened):
+            raise PathSafetyError(
+                f"{self.label} child changed or was replaced while it was "
+                f"{operation}: {safe}"
+            )
 
     def iter_files(
         self,
@@ -1382,6 +1418,18 @@ def assert_safe_explicit_path(
     if state not in {"missing", "regular"}:
         raise PathSafetyError(f"{label} must be a regular file or missing")
     return root.child_path(path.name)
+
+
+def _file_identity(
+    metadata: os.stat_result,
+) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
 
 
 def _open_directory(path: Path, *, label: str) -> int:
