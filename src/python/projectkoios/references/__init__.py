@@ -158,6 +158,13 @@ from projectkoios.references.path_safety import (
     validate_citekey,
     validate_relative_path,
 )
+from projectkoios.references.provided_intake import (
+    InvalidProvidedReference,
+    ProvidedReference,
+    ProvidedReferenceIntakeError,
+    ProvidedReferenceIntakeStore,
+    ProvidedReferenceStatus,
+)
 from projectkoios.references.reconciliation_package import (
     LoadedReconciliationPackage,
     ReconciliationPackageLimitError,
@@ -284,6 +291,7 @@ __all__ = [
     "IDENTITY_IO_LIMITS",
     "IdentityProjection",
     "IdentityRecordError",
+    "InvalidProvidedReference",
     "LegacySeedMapping",
     "LoadedReconciliationPackage",
     "ManagedPdf",
@@ -299,6 +307,10 @@ __all__ = [
     "RootStorageClass",
     "FileObservation",
     "PdfStatus",
+    "ProvidedReference",
+    "ProvidedReferenceIntakeError",
+    "ProvidedReferenceIntakeStore",
+    "ProvidedReferenceStatus",
     "ProcessingEvidence",
     "PublicationResult",
     "REFERENCE_EVIDENCE_CONTRACT_ID",

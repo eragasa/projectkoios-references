@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import sys
@@ -29,6 +30,11 @@ from projectkoios.references.biblatex import (
     load_bibliography,
 )
 from projectkoios.references.catalog import ReferenceCatalog
+from projectkoios.references.citation_draft import (
+    CITATION_DRAFT_MAX_BYTES,
+    parse_citation_drafts,
+    render_bibtex,
+)
 from projectkoios.references.collection_reconciliation import (
     build_citation_closure,
     load_collection_rows,
@@ -195,6 +201,19 @@ def _parser() -> argparse.ArgumentParser:
     import_bib.add_argument("--source-id", required=True)
     import_bib.add_argument("--source-revision")
     import_bib.add_argument("--source-path")
+
+    render_bib = commands.add_parser(
+        "bib-render",
+        help="render bounded noncanonical citation drafts as BibTeX",
+    )
+    render_bib.add_argument("metadata", type=Path)
+    render_bib.add_argument("output", type=Path)
+    render_bib.add_argument(
+        "--metadata-storage-class", type=_storage_class, required=True
+    )
+    render_bib.add_argument(
+        "--output-storage-class", type=_storage_class, required=True
+    )
 
     import_graph = commands.add_parser("graph-import")
     import_graph.add_argument("catalog", type=Path)
@@ -447,6 +466,37 @@ def main(arguments: list[str] | None = None) -> int:
         ReferenceCatalog(
             args.catalog, storage_class=args.catalog_storage_class
         ).initialize()
+        return 0
+    if args.command == "bib-render":
+        metadata = read_path_bytes(
+            args.metadata,
+            label="citation draft metadata",
+            root_alias="citation-draft-metadata",
+            storage_class=args.metadata_storage_class,
+            max_bytes=CITATION_DRAFT_MAX_BYTES,
+        )
+        entries = parse_citation_drafts(metadata)
+        bibliography = render_bibtex(entries)
+        write_path_bytes(
+            args.output,
+            bibliography,
+            label="rendered citation draft",
+            root_alias="rendered-citation-draft",
+            storage_class=args.output_storage_class,
+            replace=False,
+        )
+        print(
+            json.dumps(
+                {
+                    "authority": "proposed-noncanonical",
+                    "entry_count": len(entries),
+                    "output_sha256": hashlib.sha256(
+                        bibliography
+                    ).hexdigest(),
+                },
+                indent=2,
+            )
+        )
         return 0
     if args.command == "bib-import":
         imported = load_bibliography(
@@ -1084,3 +1134,7 @@ def _required_limit(value: int | None, name: str) -> int:
     if value is None:
         raise ValueError(f"command I/O profile must define {name}")
     return value
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

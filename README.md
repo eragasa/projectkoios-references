@@ -40,6 +40,8 @@ The `koios-ref` CLI provides the first reusable operational slice:
 ```bash
 koios-ref catalog-init .koios/references.sqlite3 \
   --catalog-storage-class local
+koios-ref bib-render citation-drafts.json proposed-references.bib \
+  --metadata-storage-class local --output-storage-class local
 koios-ref bib-import .koios/references.sqlite3 references.bib \
   --source-id example --source-revision REV \
   --catalog-storage-class local --bibliography-storage-class local
@@ -85,8 +87,13 @@ koios-ref validate references.bib /path/to/notes /path/to/pdfs \
   --notes-storage-class local --pdf-storage-class local
 ```
 
-`bib-import` observes exact source entries and projects normalized,
-noncanonical candidates into the provisional local catalog. `graph-import`
+`bib-render` converts a closed, bounded metadata document into deterministic
+UTF-8 BibTeX. Every entry remains `proposed-noncanonical`, binds the observed
+source PDF SHA-256 and byte size in its input record, and is published without
+overwriting an existing bibliography. Rendering does not accept a citation key,
+verify metadata, or promote a reference. `bib-import` observes exact source
+entries and projects normalized, noncanonical candidates into the provisional
+local catalog. `graph-import`
 reads a bounded three-file batch, verifies content-derived source, candidate,
 and edge identities and both edge domains, then appends the complete graph in
 one transaction. Import, graph membership, asset matching, validation, and
