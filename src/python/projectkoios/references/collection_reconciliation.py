@@ -1608,7 +1608,7 @@ def publish_reconciliation(
             field="output directory name",
         )
         output_state = parent.state(output_name)
-    except CloudRootMutationError, PlaceholderPreflightError:
+    except (CloudRootMutationError, PlaceholderPreflightError):
         raise
     except PathSafetyError as error:
         raise CollectionReconciliationError(str(error)) from error
