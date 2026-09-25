@@ -186,5 +186,6 @@ __marimo__/
 # Graphify
 graphify-out/
 
-# Local catalogs, provider caches, and discovery plans
+# Local catalogs, provider caches, discovery plans, and worktrees
 .koios/
+.worktree/
