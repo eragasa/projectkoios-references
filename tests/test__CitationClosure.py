@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -333,6 +334,71 @@ def test__citation_closure__enforces_longest_build_graph_depth(
     assert raised.value.observed == 2
 
 
+def test__citation_closure__bounds_bibliography_before_validation(
+    tmp_path: Path,
+) -> None:
+    limits = replace(RECONCILIATION_IO_LIMITS, max_candidates=1)
+
+    with pytest.raises(ReferenceIOLimitError) as raised:
+        build_citation_closure(
+            tmp_path / "root-is-not-opened",
+            storage_class=RootStorageClass.LOCAL,
+            mode=CitationScanMode.BUILD_GRAPH,
+            entrypoint="main.tex",
+            bibliography_keys=("alpha", "not a portable citekey"),
+            source_revision="fixture",
+            limits=limits,
+        )
+
+    assert raised.value.resource == "bibliography citekeys"
+    assert raised.value.limit_name == "max_candidates"
+    assert raised.value.observed == 2
+
+
+@pytest.mark.parametrize(
+    "source",
+    ("\\cite{alpha}\\cite{beta}\n", "\\cites{alpha}{beta}\n"),
+)
+def test__citation_closure__rejects_cumulative_limit_inside_parser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    root = tmp_path / "citation-limit"
+    root.mkdir()
+    (root / "main.tex").write_text(source, encoding="utf-8")
+    limits = replace(RECONCILIATION_IO_LIMITS, max_candidates=1)
+    real_parse = citation_closure_module._parse_source
+    parse_returned = False
+
+    def watched_parse(*args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
+        nonlocal parse_returned
+        parsed = real_parse(*args, **kwargs)
+        parse_returned = True
+        return parsed
+
+    monkeypatch.setattr(
+        citation_closure_module,
+        "_parse_source",
+        watched_parse,
+    )
+
+    with pytest.raises(ReferenceIOLimitError) as raised:
+        build_citation_closure(
+            root,
+            storage_class=RootStorageClass.LOCAL,
+            mode=CitationScanMode.BUILD_GRAPH,
+            entrypoint="main.tex",
+            bibliography_keys=("alpha",),
+            source_revision="fixture",
+            limits=limits,
+        )
+
+    assert not parse_returned
+    assert raised.value.resource == "citation occurrences"
+    assert raised.value.observed == 2
+
+
 def test__citation_closure__parser_token_limit_is_operation_wide(
     tmp_path: Path,
 ) -> None:
@@ -357,6 +423,167 @@ def test__citation_closure__parser_token_limit_is_operation_wide(
 
     assert raised.value.resource == "citation parser tokens"
     assert raised.value.observed == 3
+
+
+def _install_fake_git(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+) -> None:
+    binary_directory = tmp_path / "fake-bin"
+    binary_directory.mkdir()
+    executable = binary_directory / "git"
+    executable.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setenv(
+        "PATH",
+        str(binary_directory) + os.pathsep + os.environ.get("PATH", ""),
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "limits", "message"),
+    (
+        (
+            "printf '?? abcdefghijklmnop\\000'",
+            {"max_bytes": 8, "max_entries": 8, "max_entry_bytes": 32},
+            "byte limit",
+        ),
+        (
+            "printf '?? a\\000?? b\\000'",
+            {"max_bytes": 32, "max_entries": 1, "max_entry_bytes": 8},
+            "entry limit",
+        ),
+        (
+            "printf '?? abcdef\\000'",
+            {"max_bytes": 32, "max_entries": 8, "max_entry_bytes": 4},
+            "entry byte limit",
+        ),
+    ),
+)
+def test__git_status_probe__fails_closed_on_bound_overflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    limits: dict[str, int],
+    message: str,
+) -> None:
+    _install_fake_git(tmp_path, monkeypatch, body)
+
+    with pytest.raises(
+        citation_closure_module._GitProbeError,
+        match=message,
+    ):
+        citation_closure_module._git_status_is_clean(
+            tmp_path,
+            **limits,
+        )
+
+
+def test__git_status_probe__covers_tracked_and_untracked_changes(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "status-evidence"
+    repository.mkdir()
+    tracked = repository / "tracked.txt"
+    tracked.write_text("clean\n", encoding="utf-8")
+    subprocess.run(("git", "init", "-q"), cwd=repository, check=True)
+    subprocess.run(("git", "add", "."), cwd=repository, check=True)
+    subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ),
+        cwd=repository,
+        check=True,
+    )
+    probe = citation_closure_module._git_status_is_clean
+    probe_limits = {
+        "max_bytes": 1024,
+        "max_entries": 8,
+        "max_entry_bytes": 256,
+    }
+
+    assert probe(repository, **probe_limits)
+    tracked.write_text("dirty\n", encoding="utf-8")
+    assert not probe(repository, **probe_limits)
+    subprocess.run(
+        ("git", "reset", "--hard", "-q", "HEAD"),
+        cwd=repository,
+        check=True,
+    )
+    (repository / "untracked.txt").write_text("new\n", encoding="utf-8")
+    assert not probe(repository, **probe_limits)
+
+
+def test__git_status_probe__fails_closed_on_command_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_git(tmp_path, monkeypatch, "exit 9")
+
+    with pytest.raises(
+        citation_closure_module._GitProbeError,
+        match="command failed",
+    ):
+        citation_closure_module._git_status_is_clean(
+            tmp_path,
+            max_bytes=32,
+            max_entries=4,
+            max_entry_bytes=8,
+        )
+
+
+def test__citation_closure__git_probe_failure_omits_verified_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "probe-failure"
+    manuscript = repository / "manuscript"
+    manuscript.mkdir(parents=True)
+    (manuscript / "main.tex").write_text("\\cite{alpha}\n", encoding="utf-8")
+    subprocess.run(("git", "init", "-q"), cwd=repository, check=True)
+    subprocess.run(("git", "add", "."), cwd=repository, check=True)
+    subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ),
+        cwd=repository,
+        check=True,
+    )
+    head = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    def failed_probe(*args: Any, **kwargs: Any) -> bool:
+        raise citation_closure_module._GitProbeError("synthetic failure")
+
+    monkeypatch.setattr(
+        citation_closure_module,
+        "_git_status_is_clean",
+        failed_probe,
+    )
+
+    closure = _build(manuscript, keys=("alpha",), revision=head)
+
+    assert closure.verified_source_tree is None
 
 
 def test__citation_closure__moving_head_cannot_mix_git_identity(

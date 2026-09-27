@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import heapq
+import os
 import posixpath
 import re
+import selectors
 import subprocess
+import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
@@ -35,6 +38,8 @@ from projectkoios.references.reconciliation_package import (
 CITATION_CLOSURE_SCHEMA_VERSION = 5
 CITATION_PARSER_NAME = "projectkoios-bounded-latex-citation-observer"
 CITATION_PARSER_VERSION = "2"
+_GIT_STATUS_CHUNK_BYTES = 8192
+_GIT_STATUS_TIMEOUT_SECONDS = 30.0
 
 _UNSUPPORTED_DEFINITION_COMMANDS = frozenset(
     {
@@ -521,6 +526,10 @@ class _ParseFailure(Exception):
         super().__init__(message)
 
 
+class _GitProbeError(RuntimeError):
+    """Raised when bounded Git provenance cannot be established safely."""
+
+
 def build_citation_closure(
     manuscript_root: Path,
     *,
@@ -558,6 +567,15 @@ def build_citation_closure(
             raise ValueError("all-files observation mode forbids an entrypoint")
         normalized_entrypoint = None
 
+    max_citations = _required_limit(limits.max_candidates, "max_candidates")
+    if len(bibliography_keys) > max_citations:
+        raise ReferenceIOLimitError(
+            resource="bibliography citekeys",
+            limit_name="max_candidates",
+            limit=max_citations,
+            observed=len(bibliography_keys),
+            limits=limits,
+        )
     try:
         bibliography = {
             validate_citekey(key, field="bibliography citekey")
@@ -621,7 +639,6 @@ def build_citation_closure(
     max_total_bytes = _required_limit(
         limits.max_text_total_bytes, "max_text_total_bytes"
     )
-    max_citations = _required_limit(limits.max_candidates, "max_candidates")
     max_include_depth = _required_limit(
         limits.max_nesting_depth, "max_nesting_depth"
     )
@@ -686,6 +703,7 @@ def build_citation_closure(
                 source_path=relative,
                 configuration=parser_configuration,
                 limits=limits,
+                citations_observed=citation_count,
             )
         except _ParseFailure as error:
             line, column = _line_column(text, error.offset)
@@ -898,6 +916,7 @@ def build_citation_closure(
             root,
             asserted_revision=source_revision,
             source_files=source_identities,
+            limits=limits,
         )
         if storage_class is RootStorageClass.LOCAL
         else None
@@ -1023,6 +1042,7 @@ def _parse_source(
     source_path: str,
     configuration: CitationParserConfiguration,
     limits: ReferenceIOLimits,
+    citations_observed: int,
 ) -> _ParsedFile:
     uses: list[tuple[str, CitationLocator]] = []
     edges: list[CitationSourceEdge] = []
@@ -1192,6 +1212,8 @@ def _parse_source(
                 start,
                 configuration,
                 multiple=False,
+                max_groups=None,
+                limits=limits,
             )
         elif canonical in multicite:
             if starred:
@@ -1206,6 +1228,8 @@ def _parse_source(
                 start,
                 configuration,
                 multiple=True,
+                max_groups=max_keys - citations_observed - len(uses),
+                limits=limits,
             )
         else:
             lowered = command.lower()
@@ -1247,6 +1271,8 @@ def _parse_source(
                 canonical,
                 start,
                 max_keys=max_keys,
+                citations_observed=citations_observed + len(uses),
+                limits=limits,
             )
             for key in keys:
                 if key == "*":
@@ -1271,11 +1297,22 @@ def _citation_arguments(
     configuration: CitationParserConfiguration,
     *,
     multiple: bool,
+    max_groups: int | None,
+    limits: ReferenceIOLimits,
 ) -> tuple[tuple[str, ...], int]:
     groups: list[str] = []
     cursor = position
     while True:
         cursor = _skip_space(text, cursor)
+        if max_groups is not None and len(groups) >= max_groups:
+            limit = _required_limit(limits.max_candidates, "max_candidates")
+            raise ReferenceIOLimitError(
+                resource="citation occurrences",
+                limit_name="max_candidates",
+                limit=limit,
+                observed=limit + 1,
+                limits=limits,
+            )
         optional_count = 0
         while cursor < len(text) and text[cursor] == "[":
             optional, cursor = _balanced_group(
@@ -1332,6 +1369,8 @@ def _parse_keys(
     start: int,
     *,
     max_keys: int,
+    citations_observed: int,
+    limits: ReferenceIOLimits,
 ) -> tuple[str, ...]:
     if any(character in group for character in "{}\\%"):
         raise _ParseFailure(
@@ -1339,22 +1378,27 @@ def _parse_keys(
             "citation key group contains unsupported TeX syntax",
             start,
         )
-    raw_keys = group.split(",", max_keys)
-    if len(raw_keys) > max_keys:
-        raise _ParseFailure(
-            "citation-key-limit",
-            "citation command exceeds the key-count contract",
-            start,
-        )
-    if not raw_keys or any(not key.strip() for key in raw_keys):
-        raise _ParseFailure(
-            "empty-citekey",
-            "citation key group contains an empty key",
-            start,
-        )
     keys: list[str] = []
-    for raw in raw_keys:
-        key = raw.strip()
+    cursor = 0
+    raw_count = 0
+    citation_count = 0
+    while True:
+        separator = group.find(",", cursor)
+        end = len(group) if separator < 0 else separator
+        raw_count += 1
+        if raw_count > max_keys:
+            raise _ParseFailure(
+                "citation-key-limit",
+                "citation command exceeds the key-count contract",
+                start,
+            )
+        key = group[cursor:end].strip()
+        if not key:
+            raise _ParseFailure(
+                "empty-citekey",
+                "citation key group contains an empty key",
+                start,
+            )
         if key == "*":
             if command != "nocite":
                 raise _ParseFailure(
@@ -1363,15 +1407,28 @@ def _parse_keys(
                     start,
                 )
             keys.append(key)
-            continue
-        try:
-            keys.append(validate_citekey(key, field="citation key"))
-        except PathSafetyError as error:
-            raise _ParseFailure(
-                "invalid-citekey",
-                "citation key is outside the supported portable syntax",
-                start,
-            ) from error
+        else:
+            observed = citations_observed + citation_count + 1
+            if observed > max_keys:
+                raise ReferenceIOLimitError(
+                    resource="citation occurrences",
+                    limit_name="max_candidates",
+                    limit=max_keys,
+                    observed=observed,
+                    limits=limits,
+                )
+            try:
+                keys.append(validate_citekey(key, field="citation key"))
+            except PathSafetyError as error:
+                raise _ParseFailure(
+                    "invalid-citekey",
+                    "citation key is outside the supported portable syntax",
+                    start,
+                ) from error
+            citation_count += 1
+        if separator < 0:
+            break
+        cursor = separator + 1
     return tuple(keys)
 
 
@@ -1643,6 +1700,7 @@ def _verify_source_tree(
     *,
     asserted_revision: str,
     source_files: tuple[CitationSourceFile, ...],
+    limits: ReferenceIOLimits,
 ) -> VerifiedSourceTree | None:
     if (
         re.fullmatch(r"[0-9a-f]{40,64}", asserted_revision) is None
@@ -1675,7 +1733,16 @@ def _verify_source_tree(
         head = git_text("rev-parse", "HEAD")
         if head != asserted_revision:
             return None
-        if git_bytes("status", "--porcelain=v1", "--untracked-files=all"):
+        if not _git_status_is_clean(
+            git_cwd,
+            max_bytes=_required_limit(
+                limits.max_text_total_bytes, "max_text_total_bytes"
+            ),
+            max_entries=_required_limit(limits.max_entries, "max_entries"),
+            max_entry_bytes=_required_limit(
+                limits.max_text_bytes, "max_text_bytes"
+            ),
+        ):
             return None
         for source in source_files:
             repository_path = (
@@ -1714,7 +1781,16 @@ def _verify_source_tree(
         tree_id = git_text("rev-parse", f"{head}^{{tree}}")
         if git_text("rev-parse", "HEAD") != head:
             return None
-        if git_bytes("status", "--porcelain=v1", "--untracked-files=all"):
+        if not _git_status_is_clean(
+            git_cwd,
+            max_bytes=_required_limit(
+                limits.max_text_total_bytes, "max_text_total_bytes"
+            ),
+            max_entries=_required_limit(limits.max_entries, "max_entries"),
+            max_entry_bytes=_required_limit(
+                limits.max_text_bytes, "max_text_bytes"
+            ),
+        ):
             return None
         root.state(source_files[0].relative_path)
     except (
@@ -1724,6 +1800,7 @@ def _verify_source_tree(
         TimeoutError,
         UnicodeError,
         ValueError,
+        _GitProbeError,
     ):
         return None
     return VerifiedSourceTree(
@@ -1731,3 +1808,102 @@ def _verify_source_tree(
         tree_id=tree_id,
         verification_method="git-clean-head",
     )
+
+
+def _git_status_is_clean(
+    repository_root: Path,
+    *,
+    max_bytes: int,
+    max_entries: int,
+    max_entry_bytes: int,
+    timeout_seconds: float = _GIT_STATUS_TIMEOUT_SECONDS,
+) -> bool:
+    """Stream a complete porcelain status under hard evidence bounds."""
+    for name, value in (
+        ("max_bytes", max_bytes),
+        ("max_entries", max_entries),
+        ("max_entry_bytes", max_entry_bytes),
+    ):
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    try:
+        process = subprocess.Popen(
+            (
+                "git",
+                "-C",
+                str(repository_root),
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as error:
+        raise _GitProbeError("cannot start bounded Git status probe") from error
+    stream = process.stdout
+    if stream is None:
+        process.kill()
+        process.wait()
+        raise _GitProbeError("Git status probe has no output stream")
+    selector = selectors.DefaultSelector()
+    deadline = time.monotonic() + timeout_seconds
+    total_bytes = 0
+    entries = 0
+    entry_bytes = 0
+    try:
+        selector.register(stream, selectors.EVENT_READ)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not selector.select(remaining):
+                raise _GitProbeError("Git status probe timed out")
+            chunk = os.read(
+                stream.fileno(),
+                min(
+                    _GIT_STATUS_CHUNK_BYTES,
+                    max_bytes - total_bytes + 1,
+                ),
+            )
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > max_bytes:
+                raise _GitProbeError("Git status byte limit exceeded")
+            fields = chunk.split(b"\x00")
+            entry_bytes += len(fields[0])
+            if entry_bytes > max_entry_bytes:
+                raise _GitProbeError("Git status entry byte limit exceeded")
+            for field in fields[1:]:
+                entries += 1
+                if entries > max_entries:
+                    raise _GitProbeError("Git status entry limit exceeded")
+                entry_bytes = len(field)
+                if entry_bytes > max_entry_bytes:
+                    raise _GitProbeError("Git status entry byte limit exceeded")
+        if entry_bytes:
+            raise _GitProbeError("Git status output is not NUL-terminated")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise _GitProbeError("Git status probe timed out")
+        try:
+            return_code = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired as error:
+            raise _GitProbeError("Git status probe timed out") from error
+        if return_code != 0:
+            raise _GitProbeError("Git status probe command failed")
+        return total_bytes == 0
+    except (OSError, ValueError) as error:
+        raise _GitProbeError("Git status probe failed") from error
+    finally:
+        selector.close()
+        stream.close()
+        if process.poll() is None:
+            process.kill()
+            try:
+                process.wait(timeout=1)
+            except subprocess.SubprocessError:
+                pass

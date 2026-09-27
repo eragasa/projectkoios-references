@@ -111,7 +111,12 @@ sources therefore prevent verified-tree evidence. Git or any other external
 consumer is never invoked for a cloud-backed root.
 Cloud-placeholder preflight, descriptor-confined reads, symlink/root/leaf-race
 checks, UTF-8 checks, per-file/total/file-count/depth/token/citation limits, and
-no implicit hydration remain in force.
+no implicit hydration remain in force. Bibliography cardinality is rejected
+before normalization, and citation occurrences are rejected while parsing,
+before an over-limit parsed file can be retained. Local Git cleanliness output
+is streamed as NUL-delimited evidence under the recorded text-byte,
+text-entry-byte, and entry-count bounds plus an explicit timeout; overflow,
+malformed output, timeout, or command failure omits verified-tree evidence.
 
 Collection reconciliation schema 5 binds the closure JSON and every relevant
 source identity into package inputs. Candidate state receives only the
