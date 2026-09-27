@@ -8,6 +8,7 @@ from dataclasses import FrozenInstanceError, fields, is_dataclass, replace
 from pathlib import Path
 
 import pytest
+from projectkoios.references.citation_closure import CitationScanMode
 from projectkoios.references.collection_reconciliation import (
     CollectionReconciliationError,
     parse_reconciliation_package,
@@ -63,6 +64,8 @@ def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
 
 def build_citation_closure(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
     kwargs["storage_class"] = RootStorageClass.LOCAL
+    kwargs["mode"] = CitationScanMode.ALL_FILES_OBSERVATION
+    kwargs["entrypoint"] = None
     return _build_citation_closure(*args, **kwargs)  # type: ignore[arg-type]
 
 
@@ -273,6 +276,9 @@ def test__package_manifest__covers_all_payload_outputs_and_bound_inputs(
     package = outputs.package_manifest
     files = dict(outputs.files)
 
+    assert outputs.manifest.schema_version == 5
+    assert outputs.citation_closure is not None
+    assert outputs.citation_closure.schema_version == 5
     assert set(files) == {
         PACKAGE_MANIFEST_FILENAME,
         "collection-manifest.json",
@@ -519,6 +525,55 @@ def _assert_no_mutable_nested_containers(value: object) -> None:
     elif isinstance(value, tuple):
         for item in value:
             _assert_no_mutable_nested_containers(item)
+
+
+def test__source_revision__does_not_verify_active_ignored_source(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    manuscript = repository / "manuscript"
+    manuscript.mkdir(parents=True)
+    (repository / ".gitignore").write_text(
+        "manuscript/ignored.tex\n", encoding="utf-8"
+    )
+    (manuscript / "main.tex").write_text(
+        "\\input{ignored}\\cite{example2026}\n", encoding="utf-8"
+    )
+    subprocess.run(("git", "init", "-q"), cwd=repository, check=True)
+    subprocess.run(("git", "add", "."), cwd=repository, check=True)
+    subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ),
+        cwd=repository,
+        check=True,
+    )
+    head = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (manuscript / "ignored.tex").write_text(
+        "\\cite{example2026}\n", encoding="utf-8"
+    )
+
+    closure = build_citation_closure(
+        manuscript,
+        bibliography_keys=("example2026",),
+        source_revision=head,
+    )
+
+    assert closure.cited_and_defined == ("example2026",)
+    assert closure.verified_source_tree is None
 
 
 def test__source_revision__is_asserted_unless_git_identity_is_verified(

@@ -20,6 +20,7 @@ the basename of both the reference note and local PDF. See
 [reconciliation package model](docs/reconciliation-packages.md), the
 [ingestion reference-evidence consumer](docs/ingestion-reference-evidence.md),
 the [source-backed citation graph](docs/citation-graph.md), the
+[bounded citation-key closure](docs/citation-closure.md), the
 [actor-provenanced review-state model](docs/review-state.md), the
 [field-level state projection model](docs/reference-state-projections.md), the
 [reference working catalog](docs/reference-catalog.md), the
@@ -80,6 +81,7 @@ koios-ref collection-reconcile seed.bib corpus.csv /managed/pdfs \
   --asset-plan-storage-class local \
   --manuscript-root /isolated/source/docs/publications \
   --manuscript-storage-class local \
+  --manuscript-mode build-graph --manuscript-entrypoint main.tex \
   --reference-evidence example2026=/explicit/evidence/example2026.json \
   --reference-evidence-storage-class example2026=local
 koios-ref validate references.bib /path/to/notes /path/to/pdfs \
@@ -117,7 +119,8 @@ review scalars remain quarantined without authority upgrade; no operator catalog
 is migrated by these commands. See
 [Reference working catalog](docs/reference-catalog.md).
 
-`collection-reconcile` creates an immutable, replayable package containing
+`collection-reconcile` creates an immutable, replayable schema-5 projection
+package containing
 `package-manifest.json`, `collection-manifest.json`, `citation-closure.json`,
 `coverage-observation.json`, `reference-state-projections.json`,
 `missing-pdfs.csv`, `ambiguous-pdfs.csv`, and `extra-pdfs.csv`. The package
@@ -126,8 +129,14 @@ consumed evidence bytes. Source-revision labels remain explicitly asserted;
 only a matching clean Git `HEAD` can add verified commit and tree identity. See
 [Reconciliation packages](docs/reconciliation-packages.md) for the package,
 version, authority, verification, and replay boundaries. The command hashes and
-header-checks managed PDFs, ignores commented LaTeX citations and macro
-placeholders, classifies source/PDF applicability conservatively, and records
+header-checks managed PDFs. Citation closure uses an explicitly selected,
+versioned bounded parser contract and either a literal include/input build graph
+from a declared entrypoint or an explicitly named all-files observation. It
+supports exact configured citation and multi-cite commands, optional arguments,
+aliases, `nocite`, comments, and configured verbatim-like regions without
+claiming full LaTeX semantics. Unsupported or ambiguous syntax is typed
+incomplete rather than absence. It classifies source/PDF applicability
+conservatively and records
 metadata, access, rights, ingestion, and transcript status without changing
 source bibliographies or assets. Optional schema-4 acquisition evidence and
 actor-provenanced review replay supply known acquisition, access, rights, and

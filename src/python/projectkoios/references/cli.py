@@ -30,6 +30,7 @@ from projectkoios.references.biblatex import (
     load_bibliography,
 )
 from projectkoios.references.catalog import ReferenceCatalog
+from projectkoios.references.citation_closure import CitationScanMode
 from projectkoios.references.citation_draft import (
     CITATION_DRAFT_MAX_BYTES,
     parse_citation_drafts,
@@ -281,6 +282,12 @@ def _parser() -> argparse.ArgumentParser:
         type=_storage_class,
     )
     reconcile.add_argument(
+        "--manuscript-mode",
+        type=CitationScanMode,
+        choices=tuple(CitationScanMode),
+    )
+    reconcile.add_argument("--manuscript-entrypoint")
+    reconcile.add_argument(
         "--reference-evidence-storage-class",
         action="append",
         type=_keyed_storage_class,
@@ -445,12 +452,28 @@ def main(arguments: list[str] | None = None) -> int:
             args.asset_plan_storage_class,
             label="asset-plan",
         )
-        if (args.manuscript_root is None) != (
-            args.manuscript_storage_class is None
+        manuscript_values = (
+            args.manuscript_root,
+            args.manuscript_storage_class,
+            args.manuscript_mode,
+        )
+        if any(value is not None for value in manuscript_values) and any(
+            value is None for value in manuscript_values
         ):
             raise SystemExit(
-                "--manuscript-root and --manuscript-storage-class must be "
-                "supplied together"
+                "--manuscript-root, --manuscript-storage-class, and "
+                "--manuscript-mode must be supplied together"
+            )
+        if args.manuscript_mode is CitationScanMode.BUILD_GRAPH:
+            if args.manuscript_entrypoint is None:
+                raise SystemExit(
+                    "build-graph manuscript mode requires "
+                    "--manuscript-entrypoint"
+                )
+        elif args.manuscript_entrypoint is not None:
+            raise SystemExit(
+                "--manuscript-entrypoint is permitted only in build-graph "
+                "manuscript mode"
             )
         _bind_reference_evidence(
             args.reference_evidence,
@@ -607,6 +630,8 @@ def main(arguments: list[str] | None = None) -> int:
             build_citation_closure(
                 args.manuscript_root,
                 storage_class=args.manuscript_storage_class,
+                mode=args.manuscript_mode,
+                entrypoint=args.manuscript_entrypoint,
                 bibliography_keys=tuple(
                     sorted(
                         record.proposed_citekey

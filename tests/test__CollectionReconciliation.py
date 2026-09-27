@@ -16,6 +16,7 @@ from projectkoios.references.acquisition import (
     RightsObservation,
 )
 from projectkoios.references.assets import AssetDiscoveryPlanner, SearchRoot
+from projectkoios.references.citation_closure import CitationScanMode
 from projectkoios.references.collection_reconciliation import (
     CitationStatus,
     CollectionReconciliationError,
@@ -66,6 +67,8 @@ def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
 
 def build_citation_closure(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
     kwargs["storage_class"] = RootStorageClass.LOCAL
+    kwargs["mode"] = CitationScanMode.ALL_FILES_OBSERVATION
+    kwargs["entrypoint"] = None
     return _build_citation_closure(*args, **kwargs)  # type: ignore[arg-type]
 
 

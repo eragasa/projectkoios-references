@@ -4,7 +4,7 @@
 
 The reconciliation package is a pre-release, owner-internal evidence projection
 implemented for `REF-PROVENANCE-01`. Its package-manifest schema version is `1`;
-the embedded collection-manifest schema is `4`.
+the embedded collection-manifest and citation-closure schema is `5`.
 It is not an accepted cross-repository contract, a canonical-reference decision,
 an ingestion contract, a rights decision, or a scientific or publication
 approval. Bibliography imports used by reconciliation are exact source
@@ -29,9 +29,11 @@ binds:
 - the exact collection-row bytes when loaded through the repository parser;
 - the exact supplied coverage and legacy discovery documents;
 - every managed asset by logical filename, byte size, and SHA-256 digest;
-- every citation-source file by relative logical filename, byte size, and
-  SHA-256 digest;
-- the complete citation-closure record;
+- every citation-relevant source file by relative logical filename, byte size,
+  and SHA-256 digest;
+- the complete citation-closure record, including explicit build/all-files
+  mode, entrypoint, relative locators, literal include graph, parser
+  configuration/version, effective limits, and authority limitations;
 - exact explicitly injected canonical ingestion reference-evidence bytes,
   source-bound status projections, and adapter observations under logical names
   rather than producer paths;
@@ -56,6 +58,13 @@ Package schema, generator/package, component, and content identities are
 separate fields. These fields are included only to make package replay
 identifiable. They do not define API compatibility, claim contract conformance,
 or resolve the broader version policy deferred to `REF-PACKAGE-VERSION-01`.
+
+Citation closure schema 5 is a bounded citation-key-resolution projection, not
+full LaTeX semantics. Unsupported/ambiguous commands or source graphs and all
+limit failures are typed incomplete and cannot become complete absence. Build
+mode follows only literal `input`/`include` edges from its declared entrypoint;
+unreachable templates do not affect that scope. See
+[Bounded citation-key closure](citation-closure.md).
 
 ## Asserted and verified source identity
 

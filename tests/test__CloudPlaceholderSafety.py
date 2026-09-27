@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 from projectkoios.references import (
     AuthorizedRoot,
+    CitationScanMode,
     CloudPlaceholderProbe,
     CloudRootMutationError,
     PlaceholderObservation,
@@ -417,12 +418,14 @@ def test__cloud_manuscript_verification__never_invokes_git(
         raise AssertionError("cloud-backed source verification invoked Git")
 
     monkeypatch.setattr(
-        "projectkoios.references.collection_reconciliation.subprocess.run",
+        "projectkoios.references.citation_closure.subprocess.run",
         forbidden_run,
     )
     closure = build_citation_closure(
         manuscript,
         storage_class=RootStorageClass.CLOUD_BACKED,
+        mode=CitationScanMode.ALL_FILES_OBSERVATION,
+        entrypoint=None,
         placeholder_probe=probe,
         bibliography_keys=("example2026",),
         source_revision="a" * 40,

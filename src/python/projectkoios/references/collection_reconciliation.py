@@ -7,17 +7,23 @@ import json
 import re
 import secrets
 import shutil
-import subprocess
 from collections import defaultdict
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, TypeVar, cast, overload
+from typing import TypeVar, overload
 from urllib.parse import urlparse
 
 from projectkoios.references.acquisition import AcquisitionProjection
 from projectkoios.references.assets import AssetDiscoveryPlan
+from projectkoios.references.citation_closure import (
+    CITATION_PARSER_VERSION,
+    CitationClosure,
+)
+from projectkoios.references.citation_closure import (
+    build_citation_closure as _build_citation_closure,
+)
 from projectkoios.references.coverage import (
     AmbiguityEvaluation,
     CoverageAccessState,
@@ -60,7 +66,6 @@ from projectkoios.references.reconciliation_package import (
     ReconciliationPackageError,
     ReconciliationPackageManifest,
     SoftwareIdentity,
-    VerifiedSourceTree,
     canonical_json_bytes,
     load_reconciliation_package,
     parse_package_files,
@@ -74,23 +79,18 @@ from projectkoios.references.state_projection import (
     build_reference_state_projection,
 )
 
-_SCHEMA_VERSION = 4
-_PROCESSOR_VERSION = "0.9.0"
-_CITATION_PARSER_VERSION = "1"
+_SCHEMA_VERSION = 5
+_PROCESSOR_VERSION = "0.10.0"
 _COLLECTION_ROWS_PARSER_VERSION = "1"
 _SOURCE_DISCOVERY_PARSER_VERSION = "1"
 _REFERENCE_EVIDENCE_CONSUMER_VERSION = "1"
+build_citation_closure = _build_citation_closure
 _MAX_RECORDS = 10_000
 _MAX_INPUT_JSON_BYTES = 10_000_000
 _MAX_COLLECTION_ROWS_BYTES = 50_000_000
 _MAX_TEX_FILES = 10_000
 _MAX_TEX_BYTES = 50_000_000
 _MAX_PDF_BYTES = 4_000_000_000
-_CITATION = re.compile(
-    r"\\(?:[A-Za-z]*cite[A-Za-z]*|nocite)\s*"
-    r"(?:\[[^\]]*\]\s*){0,2}\{([^{}]+)\}",
-    re.MULTILINE,
-)
 _EXPECTED_PDF_TYPES = frozenset(
     {
         "article",
@@ -392,35 +392,6 @@ class ManagedPdfScan(Sequence[ManagedPdf]):
 
     def __len__(self) -> int:
         return len(self.pdfs)
-
-
-@dataclass(frozen=True)
-class CitationUse:
-    citekey: str
-    source_files: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class CitationClosure:
-    schema_version: int
-    asserted_source_revision: str
-    root_preflight: RootPreflightEvidence
-    bibliography_keys: tuple[str, ...]
-    explicit_uses: tuple[CitationUse, ...]
-    cited_and_defined: tuple[str, ...]
-    cited_but_undefined: tuple[str, ...]
-    defined_but_uncited: tuple[str, ...]
-    nocite_all: bool
-    source_files: tuple[str, ...]
-    source_file_evidence: tuple[ContentEvidence, ...]
-    closure_id: str
-    verified_source_tree: VerifiedSourceTree | None = field(
-        default=None,
-        init=False,
-    )
-
-    def to_json(self) -> str:
-        return pretty_json(self)
 
 
 @dataclass(frozen=True)
@@ -804,165 +775,6 @@ def scan_managed_pdfs(
     )
 
 
-def build_citation_closure(
-    manuscript_root: Path,
-    *,
-    storage_class: RootStorageClass,
-    placeholder_probe: CloudPlaceholderProbe | None = None,
-    bibliography_keys: tuple[str, ...],
-    source_revision: str,
-    limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS,
-) -> CitationClosure:
-    try:
-        root = AuthorizedRoot.existing(
-            manuscript_root,
-            label="manuscript root",
-            root_alias="manuscript-sources",
-            storage_class=storage_class,
-            placeholder_probe=placeholder_probe,
-        )
-        source_files = root.iter_files(
-            suffix=".tex",
-            recursive=True,
-            max_files=_required_limit(limits.max_files, "max_files"),
-            max_entries=_required_limit(limits.max_entries, "max_entries"),
-            max_depth=64,
-        )
-    except PathLimitError as error:
-        raise _limit_error(error, limits) from error
-    except PathSafetyError as error:
-        raise CollectionReconciliationError(str(error)) from error
-
-    uses: dict[str, set[str]] = defaultdict(set)
-    nocite_all = False
-    relative_files: list[str] = []
-    source_file_evidence: list[ContentEvidence] = []
-    total_bytes = 0
-    for relative_path in source_files:
-        try:
-            content = root.read_bytes(
-                relative_path,
-                max_bytes=_required_limit(
-                    limits.max_text_file_bytes,
-                    "max_text_file_bytes",
-                ),
-            )
-            text = content.decode("utf-8")
-        except PathLimitError as error:
-            raise _limit_error(error, limits) from error
-        except (PathSafetyError, UnicodeDecodeError) as error:
-            raise CollectionReconciliationError(
-                f"cannot safely read TeX source: {relative_path}"
-            ) from error
-        total_bytes += len(content)
-        max_text_bytes = _required_limit(
-            limits.max_text_total_bytes,
-            "max_text_total_bytes",
-        )
-        if total_bytes > max_text_bytes:
-            raise ReferenceIOLimitError(
-                resource="TeX sources",
-                limit_name="max_text_total_bytes",
-                limit=max_text_bytes,
-                observed=total_bytes,
-                limits=limits,
-            )
-        relative = relative_path.as_posix()
-        relative_files.append(relative)
-        source_file_evidence.append(
-            ContentEvidence.from_bytes(
-                role="citation-source",
-                filename=f"inputs/citation-source/{relative}",
-                content=content,
-            )
-        )
-        uncommented = "\n".join(
-            _strip_latex_comment(line) for line in text.splitlines()
-        )
-        for match in _CITATION.finditer(uncommented):
-            for raw_key in match.group(1).split(","):
-                key = raw_key.strip()
-                if not key:
-                    continue
-                if key == "*":
-                    nocite_all = True
-                    continue
-                try:
-                    validate_citekey(key)
-                except PathSafetyError:
-                    continue
-                uses[key].add(relative)
-
-    try:
-        bibliography = {
-            validate_citekey(key, field="bibliography citekey")
-            for key in bibliography_keys
-        }
-    except PathSafetyError as error:
-        raise CollectionReconciliationError(str(error)) from error
-    cited = set(uses)
-    verified_source_tree = (
-        _verify_source_tree(
-            root.path,
-            asserted_revision=source_revision,
-        )
-        if storage_class is RootStorageClass.LOCAL
-        else None
-    )
-    payload: dict[str, Any] = {
-        "schema_version": _SCHEMA_VERSION,
-        "asserted_source_revision": source_revision,
-        "root_preflight": root.preflight_evidence,
-        "verified_source_tree": verified_source_tree,
-        "bibliography_keys": sorted(bibliography),
-        "explicit_uses": [
-            {
-                "citekey": key,
-                "source_files": sorted(uses[key]),
-            }
-            for key in sorted(uses)
-        ],
-        "cited_and_defined": sorted(cited & bibliography),
-        "cited_but_undefined": sorted(cited - bibliography),
-        "defined_but_uncited": sorted(bibliography - cited),
-        "nocite_all": nocite_all,
-        "source_files": sorted(relative_files),
-        "source_file_evidence": sorted(
-            source_file_evidence,
-            key=_content_evidence_key,
-        ),
-    }
-    closure_id = _stable_id("citation-closure", payload)
-    closure = CitationClosure(
-        schema_version=_SCHEMA_VERSION,
-        asserted_source_revision=source_revision,
-        root_preflight=root.preflight_evidence,
-        bibliography_keys=tuple(payload["bibliography_keys"]),
-        explicit_uses=tuple(
-            CitationUse(
-                citekey=item["citekey"],
-                source_files=tuple(item["source_files"]),
-            )
-            for item in payload["explicit_uses"]
-        ),
-        cited_and_defined=tuple(payload["cited_and_defined"]),
-        cited_but_undefined=tuple(payload["cited_but_undefined"]),
-        defined_but_uncited=tuple(payload["defined_but_uncited"]),
-        nocite_all=nocite_all,
-        source_files=tuple(payload["source_files"]),
-        source_file_evidence=tuple(
-            cast(list[ContentEvidence], payload["source_file_evidence"])
-        ),
-        closure_id=closure_id,
-    )
-    object.__setattr__(
-        closure,
-        "verified_source_tree",
-        verified_source_tree,
-    )
-    return closure
-
-
 def reconcile_collection(
     records: tuple[ReferenceCandidate, ...],
     *,
@@ -1172,13 +984,17 @@ def reconcile_collection(
         raise CollectionReconciliationError(
             f"collection row coverage differs: missing={missing}, extra={extra}"
         )
-    if citation_closure is not None and (
-        citation_closure.asserted_source_revision != source_revision
-        or set(citation_closure.bibliography_keys) != set(citekeys)
-    ):
-        raise CollectionReconciliationError(
-            "citation closure does not match bibliography source"
-        )
+    if citation_closure is not None:
+        if not isinstance(citation_closure, CitationClosure):
+            raise CollectionReconciliationError(
+                "citation closure must be a complete typed closure"
+            )
+        if citation_closure.asserted_source_revision != source_revision or set(
+            citation_closure.bibliography_keys
+        ) != set(citekeys):
+            raise CollectionReconciliationError(
+                "citation closure does not match bibliography source"
+            )
 
     by_citekey = {item.citekey: item for item in managed_pdfs}
     preflight_by_citekey: dict[str, PlaceholderObservation] = {}
@@ -1551,7 +1367,11 @@ def reconcile_collection(
             ),
             SoftwareIdentity(
                 name="latex-citation-parser",
-                version=_CITATION_PARSER_VERSION,
+                version=(
+                    citation_closure.parser_configuration.parser_version
+                    if citation_closure is not None
+                    else CITATION_PARSER_VERSION
+                ),
             ),
             SoftwareIdentity(
                 name="bibliography-parser",
@@ -1939,49 +1759,6 @@ def _content_evidence_key(
     return (value.role, value.filename, value.byte_size, value.sha256)
 
 
-def _verify_source_tree(
-    source_root: Path,
-    *,
-    asserted_revision: str,
-) -> VerifiedSourceTree | None:
-    if re.fullmatch(r"[0-9a-f]{40,64}", asserted_revision) is None:
-        return None
-
-    def git(*arguments: str) -> str:
-        completed = subprocess.run(
-            ("git", "-C", str(source_root), *arguments),
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return completed.stdout.strip()
-
-    try:
-        repository_root = Path(git("rev-parse", "--show-toplevel"))
-        source_root.resolve(strict=True).relative_to(
-            repository_root.resolve(strict=True)
-        )
-        head = git("rev-parse", "HEAD")
-        if head != asserted_revision:
-            return None
-        if git("status", "--porcelain=v1", "--untracked-files=all"):
-            return None
-        tree_id = git("rev-parse", "HEAD^{tree}")
-    except (
-        FileNotFoundError,
-        subprocess.SubprocessError,
-        TimeoutError,
-        ValueError,
-    ):
-        return None
-    return VerifiedSourceTree(
-        commit_id=head,
-        tree_id=tree_id,
-        verification_method="git-clean-head",
-    )
-
-
 def _load_source_discovery(
     path: Path | None,
     *,
@@ -2136,20 +1913,6 @@ def _validate_json_depth(
             pending.extend((child, depth + 1) for child in item.values())
         elif isinstance(item, list):
             pending.extend((child, depth + 1) for child in item)
-
-
-def _strip_latex_comment(line: str) -> str:
-    for index, character in enumerate(line):
-        if character != "%":
-            continue
-        preceding = 0
-        cursor = index - 1
-        while cursor >= 0 and line[cursor] == "\\":
-            preceding += 1
-            cursor -= 1
-        if preceding % 2 == 0:
-            return line[:index]
-    return line
 
 
 def _classify_pdf_status(
