@@ -25,6 +25,7 @@ output publication, and do not publish partial evidence.
 | --- | ---: | ---: | ---: | ---: | --- |
 | BibLaTeX import | 1 | 50 MB | 50 MB | 10,000 entries | 1 MB verbatim entry; nesting 128 |
 | asset discovery/materialization | 10,000 | 4 GB | 40 GB | 20,000 reference inputs; 100,000 matches | 100,000 indexed match evaluations; directory entries and JSON plans bounded |
+| generic PDF corpus discovery | 10,000 | 4 GB | 40 GB | 100,000 directory entries | traversal depth 64; JSON 20 MB/depth 64; text 4,096 bytes |
 | acquisition create/verify | 256 | 4 GB | 40 GB | 256 CSV rows | CSV/JSON 1 MB; JSON depth 64 |
 | collection reconciliation | 10,000 | 4 GB | 40 GB | 10,000 CSV rows | CSV 50 MB; JSON 20 MB/depth 64; TeX 50 MB |
 | reconciliation package verification | 100,000 | 50 MB | 100 MB | 100,000 entries | manifest 20 MB; JSON depth 64 |
@@ -46,12 +47,19 @@ file produces multiple candidate associations. Materialization streams into a
 same-directory temporary file, verifies the planned digest and size, fsyncs,
 and atomically publishes without loading the PDF into memory.
 
-Directory walks cap entries before sorting, cap matching files, reject
-symlinks, and limit recursion depth. Candidate roots also require an explicit
-`local` or `cloud-backed` declaration. Cloud-backed roots require a supported,
-injected metadata-only placeholder probe; the default unsupported capability
-fails before root inventory and cannot become empty or complete coverage. See
-[cloud-placeholder safety](cloud-placeholder-safety.md). CSV readers stop on the first row beyond
+Directory walks cap entries before sorting, cap matching files, reject or
+retain symlinks as typed skips, and limit recursion depth. Generic PDF corpus
+discovery rejects overlapping roots and retains cross-device child directories
+without descending under the wrong storage declaration. It inventories names
+before byte observation and retains limits and other skipped objects in
+canonical `incomplete` plans; bibliography-oriented
+`AssetDiscoveryPlan` semantics remain unchanged and still publish only complete
+plans. Candidate roots require an explicit `local` or `cloud-backed`
+declaration. Cloud-backed roots require a supported, injected metadata-only
+placeholder probe; the default unsupported capability fails or remains typed
+incomplete before root inventory and cannot become empty or complete coverage.
+See [cloud-placeholder safety](cloud-placeholder-safety.md) and
+[generic PDF corpus discovery](pdf-corpus-discovery.md). CSV readers stop on the first row beyond
 the active limit. JSON and BibLaTeX nesting are checked before parser
 allocation; arrays, text fields, candidates, and graph breadth are checked
 before durable mutation.

@@ -490,6 +490,14 @@ class AssetDiscoveryPlan:
             raise ValueError(
                 "asset-plan root preflights must be alias-sorted and unique"
             )
+        if any(
+            item.storage_class is RootStorageClass.CLOUD_BACKED
+            and item.probe_support is not PlaceholderProbeSupport.SUPPORTED
+            for item in self.root_preflights
+        ):
+            raise ValueError(
+                "complete asset plans require supported cloud preflights"
+            )
         root_evidence = {item.root_alias: item for item in self.root_preflights}
         if not isinstance(self.file_observations, tuple):
             raise ValueError("asset-plan file observations must be a tuple")

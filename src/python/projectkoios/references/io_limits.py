@@ -197,6 +197,19 @@ ASSET_DISCOVERY_IO_LIMITS: Final = ReferenceIOLimits(
     max_entries=20_000,
 )
 
+PDF_CORPUS_DISCOVERY_IO_LIMITS: Final = ReferenceIOLimits(
+    profile="pdf-corpus-discovery-v1",
+    max_files=10_000,
+    max_file_bytes=4_000_000_000,
+    max_total_bytes=40_000_000_000,
+    max_json_bytes=20_000_000,
+    max_json_depth=64,
+    max_nesting_depth=64,
+    max_text_bytes=4_096,
+    max_candidates=100_000,
+    max_entries=100_000,
+)
+
 ACQUISITION_IO_LIMITS: Final = ReferenceIOLimits(
     profile="acquisition-v1",
     max_files=256,

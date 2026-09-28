@@ -6,8 +6,9 @@ import os
 import re
 import secrets
 import stat
+import sys
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Literal, Never, Protocol
@@ -118,6 +119,7 @@ class PlaceholderProbeSupport(StrEnum):
 
     SUPPORTED = "supported"
     UNSUPPORTED_PLATFORM = "unsupported-platform"
+    AMBIGUOUS = "ambiguous"
 
 
 class PlaceholderStatus(StrEnum):
@@ -234,6 +236,159 @@ class UnsupportedCloudPlaceholderProbe:
 UNSUPPORTED_CLOUD_PLACEHOLDER_PROBE = UnsupportedCloudPlaceholderProbe()
 
 
+def _normalized_runtime_root(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(os.fspath(path.expanduser())))
+
+
+@dataclass(frozen=True)
+class MacOSFileProviderPlaceholderProbe:
+    """Classify macOS File Provider objects using no-follow stat metadata.
+
+    The probe captures one explicitly authorized root at construction.  It
+    opens only directory descriptors and obtains leaf metadata with
+    ``follow_symlinks=False``; it never opens or reads candidate file bytes.
+    """
+
+    root_path: Path
+    probe_id = "macos-file-provider-stat-sf-dataless-v1"
+    _normalized_root: str = field(init=False, repr=False, compare=False)
+    _root_identity: tuple[int, int] | None = field(
+        init=False,
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.root_path, Path):
+            raise ValueError("macOS File Provider root must be a Path")
+        object.__setattr__(
+            self,
+            "_normalized_root",
+            _normalized_runtime_root(self.root_path),
+        )
+
+    def matches_root_path(self, root_path: Path) -> bool:
+        """Return whether a declaration names this exact captured root."""
+        return (
+            isinstance(root_path, Path)
+            and _normalized_runtime_root(root_path) == self._normalized_root
+        )
+
+    def bind_authorized_root(
+        self,
+        root_path: Path,
+        *,
+        device: int,
+        inode: int,
+    ) -> bool:
+        """Bind the probe to the same directory identity as byte access."""
+        if not self.matches_root_path(root_path):
+            return False
+        descriptor = -1
+        try:
+            descriptor = os.open(self._normalized_root, _DIRECTORY_FLAGS)
+            metadata = os.fstat(descriptor)
+        except OSError:
+            return False
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        identity = (metadata.st_dev, metadata.st_ino)
+        if identity != (device, inode):
+            return False
+        prior = self._root_identity
+        if prior is not None and prior != identity:
+            return False
+        object.__setattr__(self, "_root_identity", identity)
+        return True
+
+    def support(
+        self,
+        *,
+        root_alias: str,
+    ) -> PlaceholderProbeSupport:
+        validate_root_alias(root_alias)
+        if sys.platform != "darwin" or not hasattr(stat, "SF_DATALESS"):
+            return PlaceholderProbeSupport.UNSUPPORTED_PLATFORM
+        return PlaceholderProbeSupport.SUPPORTED
+
+    def observe(
+        self,
+        *,
+        root_alias: str,
+        relative_path: PurePosixPath,
+    ) -> PlaceholderStatus:
+        validate_root_alias(root_alias)
+        safe = validate_relative_path(relative_path)
+        if (
+            self.support(root_alias=root_alias)
+            is not PlaceholderProbeSupport.SUPPORTED
+        ):
+            return PlaceholderStatus.UNSUPPORTED_PLATFORM
+        descriptor = -1
+        try:
+            try:
+                descriptor = os.open(
+                    self._normalized_root,
+                    _DIRECTORY_FLAGS,
+                )
+            except FileNotFoundError:
+                return PlaceholderStatus.MISSING
+            except PermissionError:
+                return PlaceholderStatus.ACCESS_CONTROLLED
+            except OSError:
+                return PlaceholderStatus.AMBIGUOUS
+            root_metadata = os.fstat(descriptor)
+            if (
+                self._root_identity is None
+                or (
+                    root_metadata.st_dev,
+                    root_metadata.st_ino,
+                )
+                != self._root_identity
+            ):
+                return PlaceholderStatus.AMBIGUOUS
+            for part in safe.parts[:-1]:
+                try:
+                    child = os.open(part, _DIRECTORY_FLAGS, dir_fd=descriptor)
+                except FileNotFoundError:
+                    return PlaceholderStatus.MISSING
+                except PermissionError:
+                    return PlaceholderStatus.ACCESS_CONTROLLED
+                except OSError:
+                    return PlaceholderStatus.AMBIGUOUS
+                os.close(descriptor)
+                descriptor = child
+            try:
+                metadata = os.stat(
+                    safe.parts[-1],
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                return PlaceholderStatus.MISSING
+            except PermissionError:
+                return PlaceholderStatus.ACCESS_CONTROLLED
+            except OSError:
+                return PlaceholderStatus.AMBIGUOUS
+            if not stat.S_ISREG(metadata.st_mode):
+                return PlaceholderStatus.AMBIGUOUS
+            read_bits = stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+            if metadata.st_mode & read_bits == 0:
+                return PlaceholderStatus.UNREADABLE
+            flags = getattr(metadata, "st_flags", None)
+            sf_dataless = getattr(stat, "SF_DATALESS", None)
+            if type(flags) is not int or type(sf_dataless) is not int:
+                return PlaceholderStatus.AMBIGUOUS
+            if flags & sf_dataless:
+                return PlaceholderStatus.CLOUD_PLACEHOLDER
+            return PlaceholderStatus.ORDINARY_FILE
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+
+
 def _validate_probe_id(value: object) -> str:
     if (
         not isinstance(value, str)
@@ -284,13 +439,18 @@ def authorize_root_preflight(
             status=PlaceholderStatus.AMBIGUOUS,
         )
         raise PlaceholderPreflightError(observation)
-    if support is PlaceholderProbeSupport.UNSUPPORTED_PLATFORM:
+    if support is not PlaceholderProbeSupport.SUPPORTED:
+        status = (
+            PlaceholderStatus.UNSUPPORTED_PLATFORM
+            if support is PlaceholderProbeSupport.UNSUPPORTED_PLATFORM
+            else PlaceholderStatus.AMBIGUOUS
+        )
         observation = PlaceholderObservation(
             root_alias=root_alias,
             relative_path=None,
             storage_class=storage_class,
             probe_id=probe_id,
-            status=PlaceholderStatus.UNSUPPORTED_PLATFORM,
+            status=status,
         )
         raise PlaceholderPreflightError(observation)
     return RootPreflightEvidence(
@@ -308,6 +468,99 @@ class FileObservation:
     byte_size: int
     sha256: str
     prefix: bytes
+
+
+class FilesystemIssueKind(StrEnum):
+    """Typed metadata-only outcomes from a bounded directory inventory."""
+
+    ACCESS_CONTROLLED = "access-controlled"
+    UNREADABLE = "unreadable"
+    SYMLINK = "symlink"
+    UNSUPPORTED_OBJECT = "unsupported-object"
+    FILESYSTEM_BOUNDARY = "filesystem-boundary"
+    NONPORTABLE_NAME = "nonportable-name"
+    ENTRY_LIMIT = "entry-limit"
+    FILE_LIMIT = "file-limit"
+    DEPTH_LIMIT = "depth-limit"
+
+
+@dataclass(frozen=True)
+class FilesystemInventoryIssue:
+    relative_path: PurePosixPath | None
+    kind: FilesystemIssueKind
+    limit_name: str | None = None
+    limit: int | None = None
+    observed: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.relative_path is not None:
+            validate_relative_path(self.relative_path)
+        if not isinstance(self.kind, FilesystemIssueKind):
+            raise ValueError("filesystem inventory issue kind is invalid")
+        limit_kinds = {
+            FilesystemIssueKind.ENTRY_LIMIT: "max_entries",
+            FilesystemIssueKind.FILE_LIMIT: "max_files",
+            FilesystemIssueKind.DEPTH_LIMIT: "max_depth",
+        }
+        expected_name = limit_kinds.get(self.kind)
+        if expected_name is None:
+            if any(
+                value is not None
+                for value in (self.limit_name, self.limit, self.observed)
+            ):
+                raise ValueError("non-limit inventory issue carries a limit")
+        elif (
+            self.limit_name != expected_name
+            or type(self.limit) is not int
+            or type(self.observed) is not int
+            or self.limit <= 0
+            or self.observed <= self.limit
+        ):
+            raise ValueError("filesystem inventory limit issue is invalid")
+
+
+@dataclass(frozen=True)
+class FilesystemInventory:
+    files: tuple[PurePosixPath, ...]
+    issues: tuple[FilesystemInventoryIssue, ...]
+    entries_seen: int
+
+    def __post_init__(self) -> None:
+        if tuple(sorted(self.files, key=lambda item: item.as_posix())) != (
+            self.files
+        ) or len(self.files) != len(set(self.files)):
+            raise ValueError("filesystem inventory files are not canonical")
+        issue_keys = tuple(_filesystem_issue_key(item) for item in self.issues)
+        if issue_keys != tuple(sorted(issue_keys)) or len(issue_keys) != len(
+            set(issue_keys)
+        ):
+            raise ValueError("filesystem inventory issues are not canonical")
+        if type(self.entries_seen) is not int or self.entries_seen < 0:
+            raise ValueError("filesystem inventory entry count is invalid")
+
+    @property
+    def limit_exceeded(self) -> bool:
+        return any(
+            item.kind
+            in {
+                FilesystemIssueKind.ENTRY_LIMIT,
+                FilesystemIssueKind.FILE_LIMIT,
+                FilesystemIssueKind.DEPTH_LIMIT,
+            }
+            for item in self.issues
+        )
+
+
+def _filesystem_issue_key(
+    issue: FilesystemInventoryIssue,
+) -> tuple[str, str, str, int, int]:
+    return (
+        "" if issue.relative_path is None else issue.relative_path.as_posix(),
+        issue.kind.value,
+        issue.limit_name or "",
+        issue.limit or 0,
+        issue.observed or 0,
+    )
 
 
 def validate_citekey(value: object, *, field: str = "citekey") -> str:
@@ -421,6 +674,20 @@ class AuthorizedRoot:
             placeholder_probe=placeholder_probe,
         )
         supplied = path.expanduser()
+        concrete_probe = (
+            placeholder_probe
+            if isinstance(
+                placeholder_probe,
+                MacOSFileProviderPlaceholderProbe,
+            )
+            else None
+        )
+        if concrete_probe is not None and not concrete_probe.matches_root_path(
+            supplied
+        ):
+            raise PathSafetyError(
+                "macOS File Provider probe is bound to a different root"
+            )
         if supplied.is_symlink():
             raise PathSafetyError(f"{label} must not be a symlink")
         try:
@@ -434,6 +701,16 @@ class AuthorizedRoot:
             metadata = os.fstat(descriptor)
         finally:
             os.close(descriptor)
+        if concrete_probe is not None and not (
+            concrete_probe.bind_authorized_root(
+                supplied,
+                device=metadata.st_dev,
+                inode=metadata.st_ino,
+            )
+        ):
+            raise PathSafetyError(
+                "macOS File Provider probe root identity is ambiguous"
+            )
         return cls(
             path=resolved,
             label=label,
@@ -943,6 +1220,70 @@ class AuthorizedRoot:
             os.close(root)
         return tuple(sorted(found, key=lambda item: item.as_posix()))
 
+    def inventory_files(
+        self,
+        *,
+        suffix: str,
+        recursive: bool,
+        max_files: int,
+        max_entries: int,
+        max_depth: int,
+        case_sensitive_suffix: bool = True,
+    ) -> FilesystemInventory:
+        """Inventory names and typed skips without following symlinks.
+
+        Unlike :meth:`iter_files`, this API retains inaccessible, symlinked,
+        unsupported, and depth-limited objects as observations so a caller can
+        publish explicitly incomplete coverage.  Entry and file-count limits
+        stop the inventory before candidate bytes are accessed.
+        """
+        if not suffix or not isinstance(suffix, str):
+            raise ValueError("inventory suffix must be a non-empty string")
+        if type(case_sensitive_suffix) is not bool:
+            raise ValueError("case_sensitive_suffix must be a bool")
+        for name, value, ceiling in (
+            ("max_files", max_files, _MAX_DIRECTORY_ENTRIES),
+            ("max_entries", max_entries, _MAX_DIRECTORY_ENTRIES),
+            ("max_depth", max_depth, _MAX_DIRECTORY_DEPTH),
+        ):
+            if type(value) is not int or not 0 < value <= ceiling:
+                raise ValueError(
+                    f"{name} must be positive and no greater than {ceiling}"
+                )
+        root = self._open_root()
+        found: list[PurePosixPath] = []
+        issues: list[FilesystemInventoryIssue] = []
+        entries_seen = [0]
+        abort = [False]
+        try:
+            self._walk_inventory(
+                root,
+                prefix=(),
+                suffix=suffix,
+                recursive=recursive,
+                case_sensitive_suffix=case_sensitive_suffix,
+                found=found,
+                issues=issues,
+                entries_seen=entries_seen,
+                abort=abort,
+                max_files=max_files,
+                max_entries=max_entries,
+                max_depth=max_depth,
+            )
+        finally:
+            os.close(root)
+        ordered_issues = tuple(sorted(set(issues), key=_filesystem_issue_key))
+        ordered_files = (
+            ()
+            if abort[0]
+            else tuple(sorted(set(found), key=lambda item: item.as_posix()))
+        )
+        return FilesystemInventory(
+            files=ordered_files,
+            issues=ordered_issues,
+            entries_seen=entries_seen[0],
+        )
+
     def create_directory(
         self,
         relative: str | PurePosixPath,
@@ -1301,6 +1642,200 @@ class AuthorizedRoot:
             os.close(descriptor)
             raise
 
+    def _walk_inventory(
+        self,
+        descriptor: int,
+        *,
+        prefix: tuple[str, ...],
+        suffix: str,
+        recursive: bool,
+        case_sensitive_suffix: bool,
+        found: list[PurePosixPath],
+        issues: list[FilesystemInventoryIssue],
+        entries_seen: list[int],
+        abort: list[bool],
+        max_files: int,
+        max_entries: int,
+        max_depth: int,
+    ) -> None:
+        if abort[0]:
+            return
+        current = PurePosixPath(*prefix) if prefix else None
+        try:
+            ordered: list[os.DirEntry[str]] = []
+            with os.scandir(descriptor) as entries:
+                for entry in entries:
+                    entries_seen[0] += 1
+                    if entries_seen[0] > max_entries:
+                        issues.append(
+                            FilesystemInventoryIssue(
+                                current,
+                                FilesystemIssueKind.ENTRY_LIMIT,
+                                "max_entries",
+                                max_entries,
+                                entries_seen[0],
+                            )
+                        )
+                        abort[0] = True
+                        return
+                    ordered.append(entry)
+        except PermissionError:
+            issues.append(
+                FilesystemInventoryIssue(
+                    current,
+                    FilesystemIssueKind.ACCESS_CONTROLLED,
+                )
+            )
+            return
+        except OSError:
+            issues.append(
+                FilesystemInventoryIssue(
+                    current,
+                    FilesystemIssueKind.UNREADABLE,
+                )
+            )
+            return
+        ordered.sort(key=lambda item: item.name)
+        expected_suffix = suffix if case_sensitive_suffix else suffix.casefold()
+        for entry in ordered:
+            if abort[0]:
+                return
+            relative = PurePosixPath(*prefix, entry.name)
+            try:
+                validate_relative_path(relative)
+            except PathSafetyError:
+                issues.append(
+                    FilesystemInventoryIssue(
+                        current,
+                        FilesystemIssueKind.NONPORTABLE_NAME,
+                    )
+                )
+                continue
+            try:
+                if entry.is_symlink():
+                    issues.append(
+                        FilesystemInventoryIssue(
+                            relative,
+                            FilesystemIssueKind.SYMLINK,
+                        )
+                    )
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    if not recursive:
+                        continue
+                    if len(relative.parts) > max_depth:
+                        issues.append(
+                            FilesystemInventoryIssue(
+                                relative,
+                                FilesystemIssueKind.DEPTH_LIMIT,
+                                "max_depth",
+                                max_depth,
+                                len(relative.parts),
+                            )
+                        )
+                        continue
+                    try:
+                        child = os.open(
+                            entry.name,
+                            _DIRECTORY_FLAGS,
+                            dir_fd=descriptor,
+                        )
+                    except PermissionError:
+                        issues.append(
+                            FilesystemInventoryIssue(
+                                relative,
+                                FilesystemIssueKind.ACCESS_CONTROLLED,
+                            )
+                        )
+                        continue
+                    except OSError as error:
+                        kind = (
+                            FilesystemIssueKind.SYMLINK
+                            if error.errno == errno.ELOOP
+                            else FilesystemIssueKind.UNREADABLE
+                        )
+                        issues.append(FilesystemInventoryIssue(relative, kind))
+                        continue
+                    try:
+                        child_metadata = os.fstat(child)
+                    except OSError:
+                        os.close(child)
+                        issues.append(
+                            FilesystemInventoryIssue(
+                                relative,
+                                FilesystemIssueKind.UNREADABLE,
+                            )
+                        )
+                        continue
+                    if child_metadata.st_dev != self.device:
+                        os.close(child)
+                        issues.append(
+                            FilesystemInventoryIssue(
+                                relative,
+                                FilesystemIssueKind.FILESYSTEM_BOUNDARY,
+                            )
+                        )
+                        continue
+                    try:
+                        self._walk_inventory(
+                            child,
+                            prefix=(*prefix, entry.name),
+                            suffix=suffix,
+                            recursive=True,
+                            case_sensitive_suffix=case_sensitive_suffix,
+                            found=found,
+                            issues=issues,
+                            entries_seen=entries_seen,
+                            abort=abort,
+                            max_files=max_files,
+                            max_entries=max_entries,
+                            max_depth=max_depth,
+                        )
+                    finally:
+                        os.close(child)
+                    continue
+                if entry.is_file(follow_symlinks=False):
+                    name = (
+                        entry.name
+                        if case_sensitive_suffix
+                        else entry.name.casefold()
+                    )
+                    if name.endswith(expected_suffix):
+                        found.append(relative)
+                        if len(found) > max_files:
+                            issues.append(
+                                FilesystemInventoryIssue(
+                                    relative,
+                                    FilesystemIssueKind.FILE_LIMIT,
+                                    "max_files",
+                                    max_files,
+                                    len(found),
+                                )
+                            )
+                            abort[0] = True
+                            return
+                    continue
+                issues.append(
+                    FilesystemInventoryIssue(
+                        relative,
+                        FilesystemIssueKind.UNSUPPORTED_OBJECT,
+                    )
+                )
+            except PermissionError:
+                issues.append(
+                    FilesystemInventoryIssue(
+                        relative,
+                        FilesystemIssueKind.ACCESS_CONTROLLED,
+                    )
+                )
+            except OSError:
+                issues.append(
+                    FilesystemInventoryIssue(
+                        relative,
+                        FilesystemIssueKind.UNREADABLE,
+                    )
+                )
+
     def _walk(
         self,
         descriptor: int,
@@ -1357,6 +1892,20 @@ class AuthorizedRoot:
                     _raise_path_error(
                         error,
                         f"cannot safely traverse {self.label}: {relative}",
+                    )
+                try:
+                    child_metadata = os.fstat(child)
+                except OSError as error:
+                    os.close(child)
+                    raise PathSafetyError(
+                        f"cannot classify filesystem boundary in "
+                        f"{self.label}: {relative}"
+                    ) from error
+                if child_metadata.st_dev != self.device:
+                    os.close(child)
+                    raise PathSafetyError(
+                        f"{self.label} crosses a filesystem boundary: "
+                        f"{relative}"
                     )
                 try:
                     self._walk(

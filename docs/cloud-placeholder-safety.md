@@ -3,15 +3,21 @@
 ## Status and activation condition
 
 `REF-CLOUD-SAFETY-01` defines a provider-neutral, fail-closed preflight
-boundary. It does not authorize a real cloud-backed root, hydrate or download
-an object, or implement Dropbox, Google Drive, iCloud Drive, OneDrive, operating
-system, or provider-specific behavior.
+boundary. It does not authorize a cloud-backed root, hydrate or download an
+object, or implement Dropbox, Google Drive, OneDrive, account, credential,
+network, or provider API behavior.
 
-This safety boundary is blocking before any cloud-backed root is authorized.
-The repository currently has no native or provider adapter, so the default
-capability for every root declared `cloud-backed` is
-`unsupported-platform`. Such a root is rejected before its filesystem path is
-opened or inventoried and cannot produce empty, missing, or complete coverage.
+The repository provides one explicitly injected production adapter:
+`MacOSFileProviderPlaceholderProbe`. On macOS with `stat.SF_DATALESS`, it uses
+only no-follow stat metadata and directory descriptors to classify a regular
+File Provider/iCloud object. It never opens candidate bytes. There is no
+automatic adapter selection: the default capability for a root declared
+`cloud-backed` without an injected supported probe remains
+`unsupported-platform`. Such a root is rejected by existing single-file APIs
+or retained as incomplete by generic corpus discovery before its filesystem
+path is opened or inventoried; it cannot produce empty, missing, or complete
+coverage. See [generic PDF corpus discovery](pdf-corpus-discovery.md)
+for the library-only corpus API.
 
 ## Explicit root declarations
 
@@ -46,22 +52,33 @@ identity and metadata-only candidate states:
 - `unsupported-platform`; or
 - `ambiguous`.
 
-The default probe reports `unsupported-platform`. Tests use only synthetic,
-injected probes. There are no native calls, provider credentials, account
-access, network requests, or live cloud fixtures.
+The default probe reports `unsupported-platform`. Generic probe tests use only
+synthetic temporary fixtures. Production-probe tests also use only temporary
+synthetic files and injected stat metadata; they do not scan user roots or use
+live cloud fixtures. The package uses no provider credentials or account API,
+opens no network connection, launches no external process, and makes no
+explicit hydration call. OS/File Provider activity caused by filesystem
+metadata enumeration is outside package visibility and control.
 
-Unsupported or ambiguous evidence raises `PlaceholderPreflightError` and does
-not become absence or complete coverage. A known placeholder is represented by
-root alias, normalized relative path, declared storage class, probe identity,
-and typed status. Absolute paths are excluded. Hashing, PDF-header reads,
-verification, reconciliation, validation reads, and materialization recheck the
-preflight before opening candidate bytes. A placeholder, inaccessible file, or other non-ordinary observation makes
-asset discovery, managed-PDF scanning, and validation explicitly `incomplete`;
-it cannot produce or replay complete evidence. The typed diagnostic has a
-stable code and privacy-reduced JSON.
+Unsupported or ambiguous evidence does not become absence or complete
+coverage. Existing fail-closed single-file APIs raise
+`PlaceholderPreflightError`; generic corpus discovery retains the state as a
+typed skipped observation in an `incomplete` canonical plan. A known
+placeholder is represented by root alias, normalized relative path, declared
+storage class, probe identity, and typed status. Absolute paths are excluded.
+Hashing, PDF-header reads, verification, reconciliation, validation reads,
+rebind, and materialization recheck preflight before opening candidate bytes. A
+placeholder, inaccessible file, or other non-ordinary observation cannot
+produce complete evidence. Typed diagnostics and plan JSON are privacy reduced.
 All generic mutation methods reject cloud-backed destinations even when an
 injected probe reports supported. Materialization remains a separate explicit
-local-destination operation and never hydrates a placeholder.
+local-destination operation and never requests placeholder hydration.
+
+Generic corpus discovery also rejects duplicate or overlapping roots before
+traversal and rechecks resolved paths after metadata binding. It does not cross
+a child-directory device boundary under the parent root's storage declaration;
+the boundary is retained as an incomplete skip and must be handled as a
+separately classified, non-overlapping operation.
 
 ## Safe operational path
 
@@ -75,3 +92,18 @@ materialize its local bytes.
 That workflow does not make the external hydration evidence part of a scan,
 does not grant rights or canonical identity, and does not turn a cloud root into
 a local root by relabeling it.
+
+## macOS probe scope and state changes
+
+The macOS probe captures one normalized root path. Binding rejects a different
+runtime root and binds the probe to the same device/inode used by
+`AuthorizedRoot`; each observation rechecks that identity. `SF_DATALESS` is
+`cloud-placeholder`. A readable regular file with available flags and no
+`SF_DATALESS` may be `ordinary-file`; uncertain metadata is `ambiguous`.
+
+Metadata preflight and byte opening are separate system calls. The implementation
+rechecks immediately before access and detects bound-root, open-leaf, size,
+hash, and metadata changes where possible, but cannot make provider metadata
+and byte access atomic. A concurrent/provider state transition is residual
+TOCTOU risk and fails closed when detected. Use a separately authorized local
+export when that provider risk is unacceptable.

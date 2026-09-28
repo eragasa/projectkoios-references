@@ -5,9 +5,10 @@ Reference management and citation handling for Project Koios.
 ## Prototype status
 
 The integrated command set remains a pre-release prototype under adversarial
-remediation. It is not yet a safe generic scanner, final missing-PDF census,
-canonical-promotion gate, accepted ingestion interface, or accepted
-cross-repository reconciliation contract. Each use must follow the open owner
+remediation. Its bounded generic PDF inventory is a Proposed library contract,
+not a final missing-PDF census, canonical-promotion gate, accepted ingestion
+interface, or accepted cross-repository reconciliation contract. Each use must
+follow the open owner
 issues and supplied-root limitations; failed or absent evidence must not be
 promoted into an availability, rights, relevance, or scientific claim.
 
@@ -26,6 +27,7 @@ the [source-backed citation graph](docs/citation-graph.md), the
 [reference working catalog](docs/reference-catalog.md), the
 [bounded reference-I/O policy](docs/reference-io-bounds.md),
 [cloud-placeholder safety](docs/cloud-placeholder-safety.md),
+[generic PDF corpus discovery](docs/pdf-corpus-discovery.md),
 [reference asset heuristics and canonical
 materialization](docs/reference-assets.md), and the Proposed
 [acquisition-observation contract](docs/contracts/acquisition-observation.md).
@@ -101,6 +103,24 @@ and edge identities and both edge domains, then appends the complete graph in
 one transaction. Import, graph membership, asset matching, validation, and
 reconciliation do not produce canonical or relevant references; only replay of
 a valid actor-provenanced identity decision can produce canonical identity.
+
+The library-only generic PDF corpus API accepts explicit local or cloud-backed
+`PdfCorpusRoot` declarations, recursively inventories `.pdf` names without
+following symlinks, metadata-preflights every cloud candidate, and retains
+permission, object, placeholder, ambiguity, and limit skips as typed
+`incomplete` observations. Ordinary files receive exact streaming SHA-256,
+size, and `%PDF-` header observations; invalid-header extension candidates stay
+recorded but are excluded from `plan.processable_sources`. Canonical strict JSON
+contains aliases and relative paths, never absolute roots. The optional macOS
+File Provider/iCloud probe uses no-follow stat metadata and treats
+`SF_DATALESS` as a placeholder; the package opens no network connection,
+invokes no provider API, external process, or model, and requests no hydration.
+OS/File Provider metadata activity caused by filesystem traversal remains
+outside package control. Duplicate/overlapping roots fail before traversal, and
+cross-device child directories remain typed incomplete skips. Metadata checks
+and later byte opens are not atomic, so detected state changes fail closed and
+residual TOCTOU risk remains documented. There is no corpus-discovery CLI. See
+[Generic PDF corpus discovery](docs/pdf-corpus-discovery.md).
 
 The public Python review API keeps processor outcomes, reading, claim-support
 checks, and review-collection inclusion in separate immutable records. Complete

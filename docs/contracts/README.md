@@ -8,6 +8,7 @@ by `projectkoios-references`.
 | `projectkoios.references.candidate-manifest` | [`reference-evidence.md`](reference-evidence.md#contract-metadata-candidate-manifest) | Candidate bibliographic identity, access, rights, and discrepancies |
 | `projectkoios.references.claim-locator` | [`reference-evidence.md`](reference-evidence.md#contract-metadata-claim-locator) | Claim-to-source locator and verification evidence |
 | `projectkoios.references.acquisition-observation` | [`acquisition-observation.md`](acquisition-observation.md) | Content-bound lawful-acquisition, access, and rights observations |
+| `projectkoios.references.pdf-corpus-discovery` | [`../pdf-corpus-discovery.md`](../pdf-corpus-discovery.md) | Bounded, privacy-reduced, bibliography-independent PDF source inventory |
 
 Cross-repository discovery is provided by the
 [Project Koios contract catalog](https://github.com/eragasa/projectkoios/blob/main/docs/contracts/README.md).
