@@ -57,10 +57,13 @@ broader root.
 
 Discovery recursively inventories case-insensitive `.pdf` extensions in
 deterministic alias/path order. Traversal uses no-follow directory descriptors.
-Symlinks are observations and are never traversed. An opened child directory
-whose device differs from the authorized root is retained as a typed
-`filesystem-boundary` skip and is not descended. Special objects, nonportable
-names, inaccessible directories, unreadable files, missing or changed objects,
+Symlinks are observations and are never traversed. Every opened parent
+directory and candidate leaf is checked against the authorized root device.
+A differing device is retained as a typed `filesystem-boundary` skip and is not
+descended or read, including a mounted leaf or a directory replaced after name
+inventory. Rebinding performs the same checks and fails rather than crossing
+the boundary. Special objects, nonportable names, inaccessible directories,
+unreadable files, missing or changed objects,
 cloud placeholders, unsupported or ambiguous provider states, and
 entry/file/depth/byte limits remain typed `PdfSkippedObservation` values. Any
 skip makes `coverage_status` equal `incomplete`; incomplete never means that an
@@ -84,13 +87,18 @@ view.
 `PdfCorpusDiscoveryPlan.to_json()` emits one canonical strict JSON form,
 `PdfCorpusDiscoveryPlan.from_json()` rejects unknown, malformed, over-limit,
 tampered, or noncanonical input, and `plan.plan_id` identifies the entire
-canonical plan. The plan also records the complete effective I/O profile and
-its content identity.
+canonical plan. Source and skipped relative paths are checked against the
+recorded path-text and traversal-depth limits, in addition to file, total-byte,
+count, JSON, and identity checks. The plan records the complete effective I/O
+profile and its content identity.
 
 Before processing or copying bytes, an application can call
 `rebind_pdf_source(source, roots)`. Rebinding resolves the alias against newly
-supplied explicit runtime roots, rechecks cloud metadata preflight, PDF header,
-size, and SHA-256, and returns a runtime-only `ReboundPdfSource`. Its
+supplied explicit runtime roots, enforces the caller's active path-text,
+traversal-depth, per-file, and total-byte limits before reopening, then rechecks
+cloud metadata preflight, root/leaf device, PDF header, size, and SHA-256. The
+byte observation uses the smaller of the active per-file and total-byte limits
+and returns a runtime-only `ReboundPdfSource`. Its
 `AuthorizedRoot` and `PurePosixPath` can be passed to the existing
 `AuthorizedRoot.copy_file_from` descriptor-confined copy primitive. Rebinding
 never hydrates or copies by itself.
@@ -113,7 +121,8 @@ other uncertain states are `ambiguous`.
 The concrete probe captures one normalized runtime root. `AuthorizedRoot`
 rejects a different declared path, binds the probe to the same root
 device/inode, and makes every later probe observation recheck that root
-identity. Generic injected probes remain caller-attested under the
+identity. Intermediate parent and candidate-leaf metadata must also remain on
+the bound device. Generic injected probes remain caller-attested under the
 `CloudPlaceholderProbe` protocol.
 
 Metadata preflight and the later descriptor open/read are necessarily separate

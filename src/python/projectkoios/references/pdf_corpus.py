@@ -20,6 +20,7 @@ from projectkoios.references.io_limits import (
 from projectkoios.references.path_safety import (
     AuthorizedRoot,
     CloudPlaceholderProbe,
+    FilesystemBoundaryError,
     FilesystemInventoryIssue,
     FilesystemIssueKind,
     MacOSFileProviderPlaceholderProbe,
@@ -432,6 +433,19 @@ class PdfCorpusDiscoveryPlan:
             self.effective_limits.max_candidates,
             "max_candidates",
         )
+        for source_item in self.source_observations:
+            _validate_relative_path_limits(
+                source_item.relative_path,
+                limits=self.effective_limits,
+                resource="PDF source relative path",
+            )
+        for skipped_item in self.skipped_observations:
+            if skipped_item.relative_path is not None:
+                _validate_relative_path_limits(
+                    skipped_item.relative_path,
+                    limits=self.effective_limits,
+                    resource="PDF skipped relative path",
+                )
         if len(self.root_preflights) > max_entries:
             raise ValueError("PDF root count exceeds recorded limits")
         if (
@@ -788,6 +802,15 @@ def discover_pdf_corpus(
                 )
             )
             continue
+        except FilesystemBoundaryError:
+            skipped.append(
+                _simple_skip(
+                    evidence,
+                    relative,
+                    PdfSkipReason.FILESYSTEM_BOUNDARY,
+                )
+            )
+            continue
         except PathSafetyError:
             skipped.append(
                 _simple_skip(
@@ -873,6 +896,15 @@ def discover_pdf_corpus(
                     evidence,
                     relative,
                     PdfSkipReason.ACCESS_CONTROLLED,
+                )
+            )
+            continue
+        except FilesystemBoundaryError:
+            skipped.append(
+                _simple_skip(
+                    evidence,
+                    relative,
+                    PdfSkipReason.FILESYSTEM_BOUNDARY,
                 )
             )
             continue
@@ -965,6 +997,52 @@ def rebind_pdf_source(
     if len(aliases) != len(set(aliases)):
         raise ValueError("PDF corpus root aliases must be unique")
     _reject_declared_root_overlaps(roots)
+    relative = validate_relative_path(source.relative_path)
+    max_text = _required_limit(limits.max_text_bytes, "max_text_bytes")
+    observed_text = bounded_utf8_size(relative.as_posix(), max_bytes=max_text)
+    if observed_text > max_text:
+        raise ReferenceIOLimitError(
+            resource="PDF source rebind path",
+            limit_name="max_text_bytes",
+            limit=max_text,
+            observed=observed_text,
+            limits=limits,
+        )
+    max_depth = _required_limit(
+        limits.max_nesting_depth,
+        "max_nesting_depth",
+    )
+    directory_depth = max(0, len(relative.parts) - 1)
+    if directory_depth > max_depth:
+        raise ReferenceIOLimitError(
+            resource="PDF source rebind path",
+            limit_name="max_nesting_depth",
+            limit=max_depth,
+            observed=directory_depth,
+            limits=limits,
+        )
+    max_file_bytes = _required_limit(limits.max_file_bytes, "max_file_bytes")
+    max_total_bytes = _required_limit(
+        limits.max_total_bytes,
+        "max_total_bytes",
+    )
+    if source.byte_size > max_file_bytes:
+        raise ReferenceIOLimitError(
+            resource="PDF source rebind",
+            limit_name="max_file_bytes",
+            limit=max_file_bytes,
+            observed=source.byte_size,
+            limits=limits,
+        )
+    if source.byte_size > max_total_bytes:
+        raise ReferenceIOLimitError(
+            resource="PDF source rebind",
+            limit_name="max_total_bytes",
+            limit=max_total_bytes,
+            observed=source.byte_size,
+            limits=limits,
+        )
+    observation_limit = min(max_file_bytes, max_total_bytes)
     matches = tuple(root for root in roots if root.alias == source.root_alias)
     if len(matches) != 1:
         raise ValueError("PDF source root alias must resolve exactly once")
@@ -980,30 +1058,26 @@ def rebind_pdf_source(
     )
     if safe_root.preflight_evidence.probe_id != source.probe_id:
         raise ValueError("PDF source placeholder probe changed")
-    relative = validate_relative_path(source.relative_path)
     preflight = safe_root.preflight_file(relative)
     if preflight.status is not PlaceholderStatus.ORDINARY_FILE:
         raise PlaceholderPreflightError(preflight)
-    max_file_bytes = _required_limit(limits.max_file_bytes, "max_file_bytes")
-    if source.byte_size > max_file_bytes:
-        raise ReferenceIOLimitError(
-            resource="PDF source rebind",
-            limit_name="max_file_bytes",
-            limit=max_file_bytes,
-            observed=source.byte_size,
-            limits=limits,
-        )
     try:
         observed = safe_root.observe_file(
             relative,
-            max_bytes=max_file_bytes,
+            max_bytes=observation_limit,
             prefix_bytes=5,
         )
     except PathLimitError as error:
+        if error.observed > max_file_bytes:
+            limit_name = "max_file_bytes"
+            limit = max_file_bytes
+        else:
+            limit_name = "max_total_bytes"
+            limit = max_total_bytes
         raise ReferenceIOLimitError(
             resource=error.resource,
-            limit_name=error.limit_name,
-            limit=error.limit,
+            limit_name=limit_name,
+            limit=limit,
             observed=error.observed,
             limits=limits,
         ) from error
@@ -1282,6 +1356,9 @@ def _placeholder_skip(
             PdfSkipReason.UNSUPPORTED_PLATFORM
         ),
         PlaceholderStatus.AMBIGUOUS: PdfSkipReason.AMBIGUOUS,
+        PlaceholderStatus.FILESYSTEM_BOUNDARY: (
+            PdfSkipReason.FILESYSTEM_BOUNDARY
+        ),
     }
     reason = reasons.get(observation.status)
     if reason is None:
@@ -1419,6 +1496,27 @@ def _stable_id(kind: str, value: object) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return f"{kind}:sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+def _validate_relative_path_limits(
+    relative_path: str | PurePosixPath,
+    *,
+    limits: ReferenceIOLimits,
+    resource: str,
+) -> PurePosixPath:
+    safe = validate_relative_path(relative_path)
+    max_text = _required_limit(limits.max_text_bytes, "max_text_bytes")
+    observed_text = bounded_utf8_size(safe.as_posix(), max_bytes=max_text)
+    if observed_text > max_text:
+        raise ValueError(f"{resource} exceeds recorded max_text_bytes")
+    max_depth = _required_limit(
+        limits.max_nesting_depth,
+        "max_nesting_depth",
+    )
+    directory_depth = max(0, len(safe.parts) - 1)
+    if directory_depth > max_depth:
+        raise ValueError(f"{resource} exceeds recorded max_nesting_depth")
+    return safe
 
 
 def _validate_probe_id(value: object) -> str:

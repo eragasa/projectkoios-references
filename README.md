@@ -117,7 +117,8 @@ File Provider/iCloud probe uses no-follow stat metadata and treats
 invokes no provider API, external process, or model, and requests no hydration.
 OS/File Provider metadata activity caused by filesystem traversal remains
 outside package control. Duplicate/overlapping roots fail before traversal, and
-cross-device child directories remain typed incomplete skips. Metadata checks
+cross-device parents or leaves remain typed incomplete skips before byte
+access. Metadata checks
 and later byte opens are not atomic, so detected state changes fail closed and
 residual TOCTOU risk remains documented. There is no corpus-discovery CLI. See
 [Generic PDF corpus discovery](docs/pdf-corpus-discovery.md).

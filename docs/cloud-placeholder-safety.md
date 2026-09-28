@@ -49,8 +49,9 @@ identity and metadata-only candidate states:
 - `missing`;
 - `access-controlled`;
 - `unreadable`;
-- `unsupported-platform`; or
-- `ambiguous`.
+- `unsupported-platform`;
+- `ambiguous`; or
+- `filesystem-boundary`.
 
 The default probe reports `unsupported-platform`. Generic probe tests use only
 synthetic temporary fixtures. Production-probe tests also use only temporary
@@ -75,10 +76,12 @@ injected probe reports supported. Materialization remains a separate explicit
 local-destination operation and never requests placeholder hydration.
 
 Generic corpus discovery also rejects duplicate or overlapping roots before
-traversal and rechecks resolved paths after metadata binding. It does not cross
-a child-directory device boundary under the parent root's storage declaration;
-the boundary is retained as an incomplete skip and must be handled as a
-separately classified, non-overlapping operation.
+traversal and rechecks resolved paths after metadata binding. Every subsequently
+opened parent and candidate leaf must remain on the authorized root device, so
+post-inventory replacement, child mounts, and mounted leaves are retained as
+incomplete filesystem-boundary skips rather than read. Rebind applies the same
+boundary and fails. A boundary must be handled as a separately classified,
+non-overlapping operation.
 
 ## Safe operational path
 
@@ -97,7 +100,8 @@ a local root by relabeling it.
 
 The macOS probe captures one normalized root path. Binding rejects a different
 runtime root and binds the probe to the same device/inode used by
-`AuthorizedRoot`; each observation rechecks that identity. `SF_DATALESS` is
+`AuthorizedRoot`; each observation rechecks that identity and the device of
+every intermediate directory and candidate leaf. `SF_DATALESS` is
 `cloud-placeholder`. A readable regular file with available flags and no
 `SF_DATALESS` may be `ordinary-file`; uncertain metadata is `ambiguous`.
 

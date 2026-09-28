@@ -49,10 +49,11 @@ and atomically publishes without loading the PDF into memory.
 
 Directory walks cap entries before sorting, cap matching files, reject or
 retain symlinks as typed skips, and limit recursion depth. Generic PDF corpus
-discovery rejects overlapping roots and retains cross-device child directories
-without descending under the wrong storage declaration. It inventories names
-before byte observation and retains limits and other skipped objects in
-canonical `incomplete` plans; bibliography-oriented
+discovery rejects overlapping roots and device-checks every opened parent and
+candidate leaf, retaining stable or post-inventory cross-device boundaries
+without descending or reading under the wrong storage declaration. It
+inventories names before byte observation and retains limits and other skipped
+objects in canonical `incomplete` plans; bibliography-oriented
 `AssetDiscoveryPlan` semantics remain unchanged and still publish only complete
 plans. Candidate roots require an explicit `local` or `cloud-backed`
 declaration. Cloud-backed roots require a supported, injected metadata-only

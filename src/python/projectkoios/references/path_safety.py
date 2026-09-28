@@ -53,6 +53,12 @@ class CloudRootMutationError(PathSafetyError):
     code = "cloud-root-mutation-forbidden"
 
 
+class FilesystemBoundaryError(PathSafetyError):
+    """Raised when a confined operation would cross the root device."""
+
+    code = "filesystem-boundary"
+
+
 class PlaceholderPreflightError(PathSafetyError):
     """Raised when cloud-placeholder safety cannot permit byte access."""
 
@@ -132,6 +138,7 @@ class PlaceholderStatus(StrEnum):
     UNREADABLE = "unreadable"
     UNSUPPORTED_PLATFORM = "unsupported-platform"
     AMBIGUOUS = "ambiguous"
+    FILESYSTEM_BOUNDARY = "filesystem-boundary"
 
 
 @dataclass(frozen=True)
@@ -358,6 +365,14 @@ class MacOSFileProviderPlaceholderProbe:
                     return PlaceholderStatus.ACCESS_CONTROLLED
                 except OSError:
                     return PlaceholderStatus.AMBIGUOUS
+                try:
+                    child_metadata = os.fstat(child)
+                except OSError:
+                    os.close(child)
+                    return PlaceholderStatus.AMBIGUOUS
+                if child_metadata.st_dev != self._root_identity[0]:
+                    os.close(child)
+                    return PlaceholderStatus.FILESYSTEM_BOUNDARY
                 os.close(descriptor)
                 descriptor = child
             try:
@@ -372,6 +387,8 @@ class MacOSFileProviderPlaceholderProbe:
                 return PlaceholderStatus.ACCESS_CONTROLLED
             except OSError:
                 return PlaceholderStatus.AMBIGUOUS
+            if metadata.st_dev != self._root_identity[0]:
+                return PlaceholderStatus.FILESYSTEM_BOUNDARY
             if not stat.S_ISREG(metadata.st_mode):
                 return PlaceholderStatus.AMBIGUOUS
             read_bits = stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
@@ -781,6 +798,7 @@ class AuthorizedRoot:
                 )
             except FileNotFoundError:
                 return "missing"
+            self._require_root_device(metadata, safe=safe)
             if stat.S_ISLNK(metadata.st_mode):
                 raise PathSafetyError(
                     f"{self.label} child must not be a symlink: {safe}"
@@ -827,6 +845,10 @@ class AuthorizedRoot:
             parent = self._open_parent(safe.parts[:-1])
         except FileNotFoundError:
             return self._preflight_observation(safe, PlaceholderStatus.MISSING)
+        except FilesystemBoundaryError:
+            return self._preflight_observation(
+                safe, PlaceholderStatus.FILESYSTEM_BOUNDARY
+            )
         except PermissionError:
             return self._preflight_observation(
                 safe, PlaceholderStatus.ACCESS_CONTROLLED
@@ -845,6 +867,10 @@ class AuthorizedRoot:
             except PermissionError:
                 return self._preflight_observation(
                     safe, PlaceholderStatus.ACCESS_CONTROLLED
+                )
+            if metadata.st_dev != self.device:
+                return self._preflight_observation(
+                    safe, PlaceholderStatus.FILESYSTEM_BOUNDARY
                 )
             if stat.S_ISLNK(metadata.st_mode):
                 raise PathSafetyError(
@@ -920,6 +946,7 @@ class AuthorizedRoot:
                     f"cannot safely open {self.label} child: {safe}",
                 )
             before = os.fstat(descriptor)
+            self._require_root_device(before, safe=safe)
             if not stat.S_ISREG(before.st_mode):
                 raise PathSafetyError(
                     f"{self.label} child is not a regular file: {safe}"
@@ -1007,6 +1034,7 @@ class AuthorizedRoot:
                     f"cannot safely open {self.label} child: {safe}",
                 )
             before = os.fstat(descriptor)
+            self._require_root_device(before, safe=safe)
             if not stat.S_ISREG(before.st_mode):
                 raise PathSafetyError(
                     f"{self.label} child is not a regular file: {safe}"
@@ -1091,6 +1119,7 @@ class AuthorizedRoot:
                     f"cannot safely open {self.label} child: {safe}",
                 )
             before = os.fstat(descriptor)
+            self._require_root_device(before, safe=safe)
             if not stat.S_ISREG(before.st_mode):
                 raise PathSafetyError(
                     f"{self.label} child is not a regular file: {safe}"
@@ -1144,6 +1173,17 @@ class AuthorizedRoot:
                 os.close(descriptor)
             os.close(parent)
 
+    def _require_root_device(
+        self,
+        metadata: os.stat_result,
+        *,
+        safe: PurePosixPath,
+    ) -> None:
+        if metadata.st_dev != self.device:
+            raise FilesystemBoundaryError(
+                f"{self.label} crosses a filesystem boundary: {safe}"
+            )
+
     def _require_open_leaf_identity(
         self,
         *,
@@ -1154,6 +1194,7 @@ class AuthorizedRoot:
         operation: str,
     ) -> None:
         """Require the pathname to still name the opened stable inode."""
+        self._require_root_device(opened, safe=safe)
         try:
             current = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
         except OSError as error:
@@ -1161,6 +1202,7 @@ class AuthorizedRoot:
                 f"{self.label} child changed or was replaced while it was "
                 f"{operation}: {safe}"
             ) from error
+        self._require_root_device(current, safe=safe)
         if not stat.S_ISREG(current.st_mode) or _file_identity(
             current
         ) != _file_identity(opened):
@@ -1297,6 +1339,7 @@ class AuthorizedRoot:
             os.mkdir(safe.parts[-1], mode=0o700, dir_fd=parent)
             child = os.open(safe.parts[-1], _DIRECTORY_FLAGS, dir_fd=parent)
             metadata = os.fstat(child)
+            self._require_root_device(metadata, safe=safe)
             os.fsync(parent)
         except FileExistsError:
             raise FileExistsError(self.child_path(safe)) from None
@@ -1375,6 +1418,7 @@ class AuthorizedRoot:
             except FileNotFoundError:
                 existing = None
             if existing is not None:
+                self._require_root_device(existing, safe=safe)
                 if stat.S_ISLNK(existing.st_mode):
                     raise PathSafetyError(
                         f"{self.label} destination must not be a symlink: "
@@ -1506,6 +1550,7 @@ class AuthorizedRoot:
                     f"{safe_source}",
                 )
             before = os.fstat(source_descriptor)
+            source_root._require_root_device(before, safe=safe_source)
             if not stat.S_ISREG(before.st_mode):
                 raise PathSafetyError(
                     f"{source_root.label} child is not a regular file: "
@@ -1626,7 +1671,7 @@ class AuthorizedRoot:
     def _open_parent(self, parts: tuple[str, ...]) -> int:
         descriptor = self._open_root()
         try:
-            for part in parts:
+            for index, part in enumerate(parts):
                 try:
                     child = os.open(part, _DIRECTORY_FLAGS, dir_fd=descriptor)
                 except OSError as error:
@@ -1634,6 +1679,18 @@ class AuthorizedRoot:
                         error,
                         f"{self.label} path contains a symlink or "
                         f"non-directory component: {part}",
+                    )
+                try:
+                    child_metadata = os.fstat(child)
+                except OSError:
+                    os.close(child)
+                    raise
+                if child_metadata.st_dev != self.device:
+                    os.close(child)
+                    relative = PurePosixPath(*parts[: index + 1])
+                    raise FilesystemBoundaryError(
+                        f"{self.label} crosses a filesystem boundary: "
+                        f"{relative}"
                     )
                 os.close(descriptor)
                 descriptor = child

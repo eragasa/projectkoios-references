@@ -5,7 +5,7 @@ import json
 import os
 import stat
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
@@ -25,9 +25,11 @@ from projectkoios.references import (
     PdfCorpusDiscoveryPlan,
     PdfCorpusRoot,
     PdfSkipReason,
+    PdfSourceObservation,
     PlaceholderPreflightError,
     PlaceholderProbeSupport,
     PlaceholderStatus,
+    ReferenceIOLimitError,
     RootStorageClass,
     discover_pdf_corpus,
     rebind_pdf_source,
@@ -277,6 +279,91 @@ def test__pdf_corpus__filesystem_boundary_is_typed_and_not_descended(
     assert plan.coverage_status == "incomplete"
 
 
+def test__pdf_corpus__post_inventory_device_change_is_typed_before_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "source.pdf").write_bytes(b"%PDF- must not be read")
+    nested_inode = nested.stat().st_ino
+    real_fstat = os.fstat
+    original_inventory = AuthorizedRoot.inventory_files
+    inventory_complete = False
+
+    def changing_inventory(
+        self: AuthorizedRoot,
+        **kwargs: object,
+    ):  # type: ignore[no-untyped-def]
+        nonlocal inventory_complete
+        result = original_inventory(self, **kwargs)  # type: ignore[arg-type]
+        inventory_complete = True
+        return result
+
+    def changed_device(descriptor: int) -> object:
+        metadata = real_fstat(descriptor)
+        if inventory_complete and metadata.st_ino == nested_inode:
+            return SimpleNamespace(st_dev=metadata.st_dev + 1)
+        return metadata
+
+    def forbidden_observe(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("post-inventory mount reached candidate bytes")
+
+    monkeypatch.setattr(AuthorizedRoot, "inventory_files", changing_inventory)
+    monkeypatch.setattr(
+        "projectkoios.references.path_safety.os.fstat",
+        changed_device,
+    )
+    monkeypatch.setattr(AuthorizedRoot, "observe_file", forbidden_observe)
+    plan = discover_pdf_corpus(
+        (PdfCorpusRoot("root", tmp_path, RootStorageClass.LOCAL),)
+    )
+
+    assert plan.source_observations == ()
+    assert any(
+        item.relative_path == "nested/source.pdf"
+        and item.reason is PdfSkipReason.FILESYSTEM_BOUNDARY
+        for item in plan.skipped_observations
+    )
+
+
+def test__pdf_corpus__mounted_leaf_is_typed_before_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "mounted.pdf").write_bytes(b"%PDF- must not be read")
+    real_stat = os.stat
+
+    def mounted_leaf(
+        path: object,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        metadata = real_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+        if path == "mounted.pdf" and kwargs.get("dir_fd") is not None:
+            return SimpleNamespace(st_dev=metadata.st_dev + 1)
+        return metadata
+
+    def forbidden_observe(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("mounted leaf reached candidate bytes")
+
+    monkeypatch.setattr(
+        "projectkoios.references.path_safety.os.stat",
+        mounted_leaf,
+    )
+    monkeypatch.setattr(AuthorizedRoot, "observe_file", forbidden_observe)
+    plan = discover_pdf_corpus(
+        (PdfCorpusRoot("root", tmp_path, RootStorageClass.LOCAL),)
+    )
+
+    assert plan.source_observations == ()
+    assert plan.skipped_observations[0].reason is (
+        PdfSkipReason.FILESYSTEM_BOUNDARY
+    )
+
+
 def test__pdf_corpus__cloud_preflights_every_candidate_before_byte_access(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -420,6 +507,57 @@ def test__pdf_corpus__strict_replay_rejects_tamper_and_noncanonical_json(
         )
 
 
+def test__pdf_corpus__strict_replay_enforces_recorded_source_depth(
+    tmp_path: Path,
+) -> None:
+    content = b"%PDF- fixture"
+    (tmp_path / "source.pdf").write_bytes(content)
+    plan = discover_pdf_corpus(
+        (PdfCorpusRoot("root", tmp_path, RootStorageClass.LOCAL),)
+    )
+    original = plan.source_observations[0]
+    deep = PdfSourceObservation.create(
+        root_alias=original.root_alias,
+        relative_path="one/two/source.pdf",
+        storage_class=original.storage_class,
+        probe_id=original.probe_id,
+        sha256=original.sha256,
+        byte_size=original.byte_size,
+        pdf_header_valid=original.pdf_header_valid,
+    )
+    recorded = replace(plan.effective_limits, max_nesting_depth=1)
+    value = json.loads(plan.to_json())
+    value["effective_limits"] = recorded.to_dict()
+    value["effective_limits_id"] = recorded.evidence_id
+    value["source_observations"] = [asdict(deep)]
+    canonical = (
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    )
+
+    with pytest.raises(ValueError, match="recorded max_nesting_depth"):
+        PdfCorpusDiscoveryPlan.from_json(canonical)
+
+
+def test__pdf_corpus__strict_replay_enforces_recorded_skipped_text(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a.pdf").write_bytes(b"%PDF- fixture")
+    (tmp_path / "long-link.pdf").symlink_to("a.pdf")
+    plan = discover_pdf_corpus(
+        (PdfCorpusRoot("root", tmp_path, RootStorageClass.LOCAL),)
+    )
+    recorded = replace(plan.effective_limits, max_text_bytes=8)
+    value = json.loads(plan.to_json())
+    value["effective_limits"] = recorded.to_dict()
+    value["effective_limits_id"] = recorded.evidence_id
+    canonical = (
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    )
+
+    with pytest.raises(ValueError, match="recorded max_text_bytes"):
+        PdfCorpusDiscoveryPlan.from_json(canonical)
+
+
 def test__rebind_pdf_source__rechecks_exact_identity_and_cloud_preflight(
     tmp_path: Path,
 ) -> None:
@@ -450,6 +588,114 @@ def test__rebind_pdf_source__rechecks_exact_identity_and_cloud_preflight(
     probe.statuses["source.pdf"] = PlaceholderStatus.CLOUD_PLACEHOLDER
     with pytest.raises(PlaceholderPreflightError):
         rebind_pdf_source(source, roots)
+
+
+@pytest.mark.parametrize(
+    ("limit_kind", "expected_name"),
+    (
+        ("total", "max_total_bytes"),
+        ("depth", "max_nesting_depth"),
+        ("text", "max_text_bytes"),
+    ),
+)
+def test__rebind_pdf_source__enforces_tightened_limits_before_reopen(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    limit_kind: str,
+    expected_name: str,
+) -> None:
+    nested = tmp_path / "one" / "two"
+    nested.mkdir(parents=True)
+    candidate = nested / "source.pdf"
+    candidate.write_bytes(b"%PDF- bounded source")
+    root = PdfCorpusRoot("root", tmp_path, RootStorageClass.LOCAL)
+    source = discover_pdf_corpus((root,)).processable_sources[0]
+    if limit_kind == "total":
+        limits = replace(
+            PDF_CORPUS_DISCOVERY_IO_LIMITS,
+            max_total_bytes=source.byte_size - 1,
+        )
+    elif limit_kind == "depth":
+        limits = replace(
+            PDF_CORPUS_DISCOVERY_IO_LIMITS,
+            max_nesting_depth=1,
+        )
+    else:
+        limits = replace(
+            PDF_CORPUS_DISCOVERY_IO_LIMITS,
+            max_text_bytes=len(source.relative_path.encode("utf-8")) - 1,
+        )
+
+    def forbidden_existing(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("tightened limit reached root reopen")
+
+    monkeypatch.setattr(AuthorizedRoot, "existing", forbidden_existing)
+    with pytest.raises(ReferenceIOLimitError) as caught:
+        rebind_pdf_source(source, (root,), limits=limits)
+
+    assert caught.value.limit_name == expected_name
+
+
+def test__rebind_pdf_source__bounds_observation_by_total_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = tmp_path / "source.pdf"
+    original = b"%PDF- original"
+    candidate.write_bytes(original)
+    root = PdfCorpusRoot("root", tmp_path, RootStorageClass.LOCAL)
+    source = discover_pdf_corpus((root,)).processable_sources[0]
+    limits = replace(
+        PDF_CORPUS_DISCOVERY_IO_LIMITS,
+        max_total_bytes=len(original),
+    )
+    candidate.write_bytes(original + b" changed")
+
+    def forbidden_fdopen(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("over-total rebind read candidate bytes")
+
+    monkeypatch.setattr(
+        "projectkoios.references.path_safety.os.fdopen",
+        forbidden_fdopen,
+    )
+    with pytest.raises(ReferenceIOLimitError) as caught:
+        rebind_pdf_source(source, (root,), limits=limits)
+
+    assert caught.value.limit_name == "max_total_bytes"
+    assert caught.value.observed == len(original + b" changed")
+
+
+def test__rebind_pdf_source__fails_on_cross_device_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    candidate = nested / "source.pdf"
+    candidate.write_bytes(b"%PDF- source")
+    root = PdfCorpusRoot("root", tmp_path, RootStorageClass.LOCAL)
+    source = discover_pdf_corpus((root,)).processable_sources[0]
+    nested_inode = nested.stat().st_ino
+    real_fstat = os.fstat
+
+    def mounted_parent(descriptor: int) -> object:
+        metadata = real_fstat(descriptor)
+        if metadata.st_ino == nested_inode:
+            return SimpleNamespace(st_dev=metadata.st_dev + 1)
+        return metadata
+
+    monkeypatch.setattr(
+        "projectkoios.references.path_safety.os.fstat",
+        mounted_parent,
+    )
+    with pytest.raises(PlaceholderPreflightError) as caught:
+        rebind_pdf_source(source, (root,))
+
+    assert caught.value.observation.status is (
+        PlaceholderStatus.FILESYSTEM_BOUNDARY
+    )
 
 
 def test__rebind_pdf_source__rejects_overlapping_roots_before_reopen(
@@ -495,6 +741,60 @@ def test__macos_file_provider_probe__root_mismatch_fails_closed(
         )
 
 
+def test__macos_file_provider_probe__rejects_cross_device_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if sys.platform != "darwin" or not hasattr(stat, "SF_DATALESS"):
+        pytest.skip("macOS SF_DATALESS metadata is unavailable")
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "candidate.pdf").write_bytes(b"must not be inspected")
+    child_inode = child.stat().st_ino
+    probe = MacOSFileProviderPlaceholderProbe(tmp_path)
+    AuthorizedRoot.existing(
+        tmp_path,
+        label="synthetic iCloud root",
+        root_alias="icloud",
+        storage_class=RootStorageClass.CLOUD_BACKED,
+        placeholder_probe=probe,
+    )
+    real_fstat = os.fstat
+    real_stat = os.stat
+
+    def mounted_parent(descriptor: int) -> object:
+        metadata = real_fstat(descriptor)
+        if metadata.st_ino == child_inode:
+            return SimpleNamespace(st_dev=metadata.st_dev + 1)
+        return metadata
+
+    def forbidden_leaf_stat(
+        path: object,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        if path == "candidate.pdf":
+            raise AssertionError("probe crossed device boundary")
+        return real_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        "projectkoios.references.path_safety.os.fstat",
+        mounted_parent,
+    )
+    monkeypatch.setattr(
+        "projectkoios.references.path_safety.os.stat",
+        forbidden_leaf_stat,
+    )
+
+    assert (
+        probe.observe(
+            root_alias="icloud",
+            relative_path=PurePosixPath("child/candidate.pdf"),
+        )
+        is PlaceholderStatus.FILESYSTEM_BOUNDARY
+    )
+
+
 def test__macos_file_provider_probe__uses_nofollow_metadata_not_leaf_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -528,6 +828,7 @@ def test__macos_file_provider_probe__uses_nofollow_metadata_not_leaf_bytes(
         stat_calls.append((path, bool(follow)))
         if path == "candidate.pdf" and kwargs.get("dir_fd") is not None:
             return SimpleNamespace(
+                st_dev=result.st_dev,
                 st_mode=result.st_mode,
                 st_flags=sf_dataless if dataless else 0,
             )
