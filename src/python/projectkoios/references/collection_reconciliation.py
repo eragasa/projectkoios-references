@@ -5,13 +5,11 @@ import hashlib
 import io
 import json
 import re
-import secrets
-import shutil
 from collections import defaultdict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TypeVar, overload
 from urllib.parse import urlparse
 
@@ -111,6 +109,12 @@ _EXPECTED_PDF_TYPES = frozenset(
 
 class CollectionReconciliationError(RuntimeError):
     """Raised when collection evidence cannot be reconciled safely."""
+
+
+class IncompleteReconciliationPublicationError(CollectionReconciliationError):
+    """A claimed output directory lacks a verified completion state."""
+
+    code = "reconciliation-publication-incomplete"
 
 
 _Value = TypeVar("_Value")
@@ -1401,6 +1405,69 @@ def reconcile_collection(
     )
 
 
+def _verify_reconciliation_publication(
+    directory: AuthorizedRoot,
+    expected: dict[str, bytes],
+) -> None:
+    if directory.state(PACKAGE_MANIFEST_FILENAME) != "regular":
+        raise IncompleteReconciliationPublicationError(
+            "reconciliation output has no completion manifest"
+        )
+    directory_limit = min(
+        _required_limit(
+            RECONCILIATION_PACKAGE_IO_LIMITS.max_entries,
+            "max_entries",
+        ),
+        len(expected) + 1,
+    )
+    actual_names = {
+        path.name
+        for path in directory.iter_files(
+            suffix="",
+            recursive=False,
+            reject_directories=True,
+            max_files=directory_limit,
+            max_entries=directory_limit,
+            max_depth=1,
+        )
+    }
+    if actual_names != set(expected):
+        raise IncompleteReconciliationPublicationError(
+            "reconciliation output is incomplete or unexpected"
+        )
+    max_package_file_bytes = _required_limit(
+        RECONCILIATION_PACKAGE_IO_LIMITS.max_file_bytes,
+        "max_file_bytes",
+    )
+    for name, content in expected.items():
+        observation = directory.observe_file(
+            name,
+            max_bytes=max_package_file_bytes,
+        )
+        if (
+            observation.byte_size != len(content)
+            or observation.sha256 != hashlib.sha256(content).hexdigest()
+        ):
+            raise CollectionReconciliationError(
+                "existing reconciliation output differs"
+            )
+
+
+def _bind_reconciliation_publication(
+    parent: AuthorizedRoot,
+    output_name: PurePosixPath,
+    expected: dict[str, bytes],
+) -> AuthorizedRoot:
+    existing = AuthorizedRoot.existing(
+        parent.child_path(output_name),
+        label="reconciliation output directory",
+        root_alias="reconciliation-output",
+        storage_class=RootStorageClass.LOCAL,
+    )
+    _verify_reconciliation_publication(existing, expected)
+    return existing
+
+
 def publish_reconciliation(
     outputs: ReconciliationOutputs,
     *,
@@ -1438,50 +1505,7 @@ def publish_reconciliation(
         )
     if output_state == "directory":
         try:
-            existing = AuthorizedRoot.existing(
-                parent.child_path(output_name),
-                label="reconciliation output directory",
-                root_alias="reconciliation-output",
-                storage_class=RootStorageClass.LOCAL,
-            )
-            directory_limit = min(
-                _required_limit(
-                    RECONCILIATION_PACKAGE_IO_LIMITS.max_entries,
-                    "max_entries",
-                ),
-                len(expected) + 1,
-            )
-            actual_names = {
-                path.name
-                for path in existing.iter_files(
-                    suffix="",
-                    recursive=False,
-                    reject_directories=True,
-                    max_files=directory_limit,
-                    max_entries=directory_limit,
-                    max_depth=1,
-                )
-            }
-            if actual_names != set(expected):
-                raise CollectionReconciliationError(
-                    "existing reconciliation output is incomplete or unexpected"
-                )
-            max_package_file_bytes = _required_limit(
-                RECONCILIATION_PACKAGE_IO_LIMITS.max_file_bytes,
-                "max_file_bytes",
-            )
-            for name, content in expected.items():
-                observation = existing.observe_file(
-                    name,
-                    max_bytes=max_package_file_bytes,
-                )
-                if (
-                    observation.byte_size != len(content)
-                    or observation.sha256 != hashlib.sha256(content).hexdigest()
-                ):
-                    raise CollectionReconciliationError(
-                        "existing reconciliation output differs"
-                    )
+            _bind_reconciliation_publication(parent, output_name, expected)
         except PathLimitError as error:
             raise _limit_error(
                 error,
@@ -1495,19 +1519,42 @@ def publish_reconciliation(
             package_id=outputs.package_manifest.package_id,
         )
 
-    temporary_name = f".{output_name.name}.{secrets.token_hex(12)}.temporary"
     try:
-        temporary = parent.create_directory(temporary_name)
-        for name, content in expected.items():
-            temporary.write_bytes(name, content, replace=False)
-        published = parent.rename_child(temporary_name, output_name)
-    except BaseException:
-        temporary_path = parent.child_path(temporary_name)
-        shutil.rmtree(temporary_path, ignore_errors=True)
-        raise
+        published = parent.create_directory(output_name)
+    except FileExistsError:
+        try:
+            _bind_reconciliation_publication(parent, output_name, expected)
+        except PathLimitError as error:
+            raise _limit_error(
+                error,
+                RECONCILIATION_PACKAGE_IO_LIMITS,
+            ) from error
+        except PathSafetyError as error:
+            raise CollectionReconciliationError(str(error)) from error
+        return PublicationResult(
+            status="unchanged",
+            output_directory=parent.child_path(output_name),
+            package_id=outputs.package_manifest.package_id,
+        )
+
+    try:
+        for name in sorted(set(expected) - {PACKAGE_MANIFEST_FILENAME}):
+            published.write_bytes(name, expected[name], replace=False)
+        published.write_bytes(
+            PACKAGE_MANIFEST_FILENAME,
+            expected[PACKAGE_MANIFEST_FILENAME],
+            replace=False,
+        )
+        _verify_reconciliation_publication(published, expected)
+    except Exception as error:
+        if isinstance(error, IncompleteReconciliationPublicationError):
+            raise
+        raise IncompleteReconciliationPublicationError(
+            "reconciliation publication was claimed but did not complete"
+        ) from error
     return PublicationResult(
         status="created",
-        output_directory=published,
+        output_directory=parent.child_path(output_name),
         package_id=outputs.package_manifest.package_id,
     )
 

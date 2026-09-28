@@ -93,9 +93,24 @@ The Python API provides:
 - `replay_reconciliation` for deterministic immutable publication; and
 - `publish_reconciliation` for create-once publication.
 
-Replaying an identical package at an existing destination returns `unchanged`.
-An incomplete, unexpected, or byte-different destination fails closed and is
-not repaired or overwritten.
+Publication atomically claims the final directory name with an exclusive
+`mkdir`; it does not use check-then-rename. The former
+`AuthorizedRoot.rename_child` API is disabled because portable Python does not
+provide an atomic no-replace directory rename. Payloads are written through the
+claimed directory, and `package-manifest.json` is written last as the completion
+marker. Exact names, sizes, and hashes are reverified before success is
+returned. A concurrent losing publisher only verifies the winner and never
+mutates or removes it.
+
+Replaying an identical, completely verified package at an existing destination
+returns `unchanged`. A claimed directory without the completion manifest raises
+typed `IncompleteReconciliationPublicationError`; interrupted publication
+leaves that recognizable incomplete directory for operator recovery rather than
+racing to remove it. An incomplete, unexpected, extra-file, or byte-different
+destination fails closed and is not repaired or overwritten. Completion-marker
+publication is portable and bounded, but does not make the whole directory
+invisible while payload files are being written; readers must require and
+verify the completion manifest.
 
 ## Field-level state projections
 

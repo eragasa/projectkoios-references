@@ -131,6 +131,39 @@ def test__authorized_root__detects_root_replacement_before_read(
         root.read_bytes("evidence.txt")
 
 
+def test__authorized_root__rename_child_is_disabled_before_rename_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    (root_path / "source").mkdir()
+    root = AuthorizedRoot.existing(
+        root_path,
+        label="fixture root",
+        root_alias="fixture-root",
+        storage_class=RootStorageClass.LOCAL,
+    )
+    invoked = False
+
+    def forbidden_rename(*args: object, **kwargs: object) -> None:
+        nonlocal invoked
+        del args, kwargs
+        invoked = True
+        raise AssertionError("disabled rename_child invoked os.rename")
+
+    monkeypatch.setattr(
+        "projectkoios.references.path_safety.os.rename",
+        forbidden_rename,
+    )
+    with pytest.raises(PathSafetyError, match="disabled"):
+        root.rename_child("source", "destination")
+
+    assert not invoked
+    assert (root_path / "source").is_dir()
+    assert not (root_path / "destination").exists()
+
+
 def test__authorized_root__rejects_leaf_and_directory_symlink_swaps(
     tmp_path: Path,
 ) -> None:

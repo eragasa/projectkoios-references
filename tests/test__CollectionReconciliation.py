@@ -21,8 +21,10 @@ from projectkoios.references.collection_reconciliation import (
     CitationStatus,
     CollectionReconciliationError,
     CollectionRowEvidence,
+    IncompleteReconciliationPublicationError,
     PdfExpectation,
     PdfStatus,
+    ReconciliationOutputs,
     reconcile_collection,
 )
 from projectkoios.references.collection_reconciliation import (
@@ -48,7 +50,7 @@ from projectkoios.references.ingestion_evidence import (
     load_ingestion_reference_evidence,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.path_safety import AuthorizedRoot, RootStorageClass
 from projectkoios.references.review import (
     HumanReviewDecision,
     HumanReviewDimension,
@@ -568,13 +570,11 @@ def test__reconcile_collection__distinguishes_websites_and_preprints() -> None:
     assert reconciled["preprint2024"].pdf_status is PdfStatus.NOT_YET_SEARCHED
 
 
-def test__publish_reconciliation__is_immutable_and_replayable(
-    tmp_path: Path,
-) -> None:
+def _publication_outputs(tmp_path: Path) -> ReconciliationOutputs:
     corpus, pdfs, discovery, pdf_bytes = _inputs(tmp_path)
     del pdf_bytes
     records = _records()
-    outputs = reconcile_collection(
+    return reconcile_collection(
         records,
         bibliography_bytes=b"fixture bibliography",
         collection_id="fixture",
@@ -592,6 +592,12 @@ def test__publish_reconciliation__is_immutable_and_replayable(
             source_revision="abc123",
         ),
     )
+
+
+def test__publish_reconciliation__is_immutable_and_replayable(
+    tmp_path: Path,
+) -> None:
+    outputs = _publication_outputs(tmp_path)
     destination = tmp_path / "output" / "fixture"
 
     created = publish_reconciliation(outputs, output_directory=destination)
@@ -611,6 +617,143 @@ def test__publish_reconciliation__is_immutable_and_replayable(
         match="differs",
     ):
         publish_reconciliation(outputs, output_directory=destination)
+
+
+def test__publish_reconciliation__writes_completion_manifest_last(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = _publication_outputs(tmp_path)
+    destination = tmp_path / "output" / "fixture"
+    writes: list[str] = []
+    original_write = AuthorizedRoot.write_bytes
+
+    def tracked_write(
+        self: AuthorizedRoot,
+        relative: str,
+        content: bytes,
+        *,
+        replace: bool,
+    ) -> Path:
+        writes.append(str(relative))
+        return original_write(self, relative, content, replace=replace)
+
+    monkeypatch.setattr(AuthorizedRoot, "write_bytes", tracked_write)
+    result = publish_reconciliation(outputs, output_directory=destination)
+
+    assert result.status == "created"
+    assert writes[-1] == "package-manifest.json"
+    assert set(writes) == {name for name, _content in outputs.files}
+
+
+def test__publish_reconciliation__mkdir_race_never_mutates_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = _publication_outputs(tmp_path)
+    destination = tmp_path / "output" / "fixture"
+    original_create = AuthorizedRoot.create_directory
+    injected = False
+
+    def raced_create(
+        self: AuthorizedRoot,
+        relative: str,
+    ) -> AuthorizedRoot:
+        nonlocal injected
+        if not injected and str(relative) == "fixture":
+            injected = True
+            raced = self.child_path(relative)
+            raced.mkdir()
+            (raced / "winner-owned.txt").write_text(
+                "winner",
+                encoding="utf-8",
+            )
+        return original_create(self, relative)
+
+    monkeypatch.setattr(AuthorizedRoot, "create_directory", raced_create)
+    with pytest.raises(
+        IncompleteReconciliationPublicationError,
+        match="completion manifest",
+    ):
+        publish_reconciliation(outputs, output_directory=destination)
+
+    assert injected
+    assert sorted(path.name for path in destination.iterdir()) == [
+        "winner-owned.txt"
+    ]
+    assert (destination / "winner-owned.txt").read_text(encoding="utf-8") == (
+        "winner"
+    )
+
+
+def test__publish_reconciliation__write_failure_leaves_incomplete_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = _publication_outputs(tmp_path)
+    destination = tmp_path / "output" / "fixture"
+    original_write = AuthorizedRoot.write_bytes
+    failed = False
+
+    def fail_payload_once(
+        self: AuthorizedRoot,
+        relative: str,
+        content: bytes,
+        *,
+        replace: bool,
+    ) -> Path:
+        nonlocal failed
+        if not failed and str(relative) != "package-manifest.json":
+            failed = True
+            raise OSError("synthetic payload write failure")
+        return original_write(self, relative, content, replace=replace)
+
+    monkeypatch.setattr(AuthorizedRoot, "write_bytes", fail_payload_once)
+    with pytest.raises(IncompleteReconciliationPublicationError) as caught:
+        publish_reconciliation(outputs, output_directory=destination)
+
+    assert caught.value.code == "reconciliation-publication-incomplete"
+    assert destination.is_dir()
+    assert not (destination / "package-manifest.json").exists()
+
+
+def test__publish_reconciliation__extra_file_fails_exact_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = _publication_outputs(tmp_path)
+    destination = tmp_path / "output" / "fixture"
+    original_write = AuthorizedRoot.write_bytes
+
+    def inject_extra_before_completion(
+        self: AuthorizedRoot,
+        relative: str,
+        content: bytes,
+        *,
+        replace: bool,
+    ) -> Path:
+        if str(relative) == "package-manifest.json":
+            self.child_path("unexpected.txt").write_text(
+                "raced",
+                encoding="utf-8",
+            )
+        return original_write(self, relative, content, replace=replace)
+
+    monkeypatch.setattr(
+        AuthorizedRoot,
+        "write_bytes",
+        inject_extra_before_completion,
+    )
+    with pytest.raises(
+        IncompleteReconciliationPublicationError,
+        match="incomplete or unexpected",
+    ):
+        publish_reconciliation(outputs, output_directory=destination)
+
+    assert (destination / "package-manifest.json").is_file()
+    assert (destination / "unexpected.txt").read_text(encoding="utf-8") == (
+        "raced"
+    )
 
 
 def test__reconcile_collection__uses_injected_source_bound_evidence(

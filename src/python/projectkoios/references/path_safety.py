@@ -1366,37 +1366,14 @@ class AuthorizedRoot:
         source: str | PurePosixPath,
         destination: str | PurePosixPath,
     ) -> Path:
-        """Rename a confined child while refusing an existing destination."""
+        """Deprecated: directory no-replace rename is not portable or safe."""
         self._require_local_mutation()
-        safe_source = validate_relative_path(source, field="source")
-        safe_destination = validate_relative_path(
-            destination,
-            field="destination",
+        validate_relative_path(source, field="source")
+        validate_relative_path(destination, field="destination")
+        raise PathSafetyError(
+            "rename_child is disabled because portable atomic no-replace "
+            "directory rename is unavailable"
         )
-        if safe_source.parts[:-1] != safe_destination.parts[:-1]:
-            raise PathSafetyError("rename source and destination must be peers")
-        parent = self._open_parent(safe_source.parts[:-1])
-        try:
-            try:
-                os.stat(
-                    safe_destination.parts[-1],
-                    dir_fd=parent,
-                    follow_symlinks=False,
-                )
-            except FileNotFoundError:
-                pass
-            else:
-                raise FileExistsError(self.child_path(safe_destination))
-            os.rename(
-                safe_source.parts[-1],
-                safe_destination.parts[-1],
-                src_dir_fd=parent,
-                dst_dir_fd=parent,
-            )
-            os.fsync(parent)
-        finally:
-            os.close(parent)
-        return self.child_path(safe_destination)
 
     def write_bytes(
         self,
