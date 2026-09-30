@@ -29,7 +29,12 @@ namespaces = true
 projectkoios = { git = "https://github.com/eragasa/projectkoios.git", rev = "233f36900b9b44c943ecc5e27f2968ad4bee97ad" }
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.8", "mypy>=1.13"]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.0",
+    "ruff>=0.8",
+    "setuptools>=61.0.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

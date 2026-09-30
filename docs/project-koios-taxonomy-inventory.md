@@ -148,11 +148,30 @@ Inventory inputs are repository-tracked Python files under
 top-level classes and public/private functions; import smoke can compare
 `set(__all__)` with `dir()`.
 
-Dependency verification must inspect installed `direct_url.json` for the exact
-owner commit. Package verification must build offline from the lock, install the
-wheel into an isolated Python 3.14 environment with the exact owner source,
-confirm `projectkoios.references.cli` is absent, inspect the `koios-ref` entry
-point, and run `koios-ref --help` outside the checkout.
+The executable owner sequence is:
+
+```bash
+scripts/verify_taxonomy_milestone.py \
+  --owner-commit 233f36900b9b44c943ecc5e27f2968ad4bee97ad \
+  --owner-tree b7c3ffd23086e7ef184c990267d48a56dd87282b
+```
+
+It requires the existing `.venv/bin/python` Python 3.14 environment with the
+locked development and build tools. It performs no installation or network
+access. The script verifies the published commit/tree pair from the embedded
+Git commit payload, checks installed `direct_url.json` and the exact runtime
+`base.py` digest, runs the fixed taxonomy/CLI tests and source checks, archives
+`HEAD`, and builds offline without isolation inside a trap-cleaned temporary
+directory. Wheel smoke imports directly from the archive; it does not install
+the wheel. The smoke confirms the removed package CLI is absent, inspects the
+entry point and dependency metadata, loads the canonical base subclasses, and
+runs operator help. The script fails closed on a dirty tree, identity drift,
+missing provisioned tools, archive-shape drift, or any failed check.
+
+This verifier is intentionally not a generic harness. It does not resolve or
+install dependencies, contact the owner repository or an index, inspect private
+data, test uncommitted changes, certify scientific/reference correctness, or
+verify out-of-scope action families beyond the fixed regression tests.
 
 This inventory is structural. It does not infer external consumers, modify
 unchanged persisted contracts, authorize later action-family migrations, or
