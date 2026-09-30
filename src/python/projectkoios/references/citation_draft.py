@@ -1,16 +1,29 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-from dataclasses import dataclass
+import warnings
+from dataclasses import asdict, dataclass, field
 from urllib.parse import urlparse
 
+from projectkoios.base import (
+    DataObjectActionizer,
+    DataObjectActionRequest,
+    DataObjectActionResult,
+    DataObjectModel,
+)
 from projectkoios.references.models import normalize_doi
 from projectkoios.references.path_safety import validate_citekey
 
 CITATION_DRAFT_SCHEMA_VERSION = 1
 CITATION_DRAFT_AUTHORITY = "proposed-noncanonical"
 CITATION_DRAFT_MAX_BYTES = 262_144
+CITATION_DRAFT_PARSE_CONTRACT_ID = (
+    "projectkoios.references.citation-draft-parse@0.1.0"
+)
+CITATION_DRAFT_PARSER_NAME = "projectkoios-references-citation-draft-parser"
+CITATION_DRAFT_PARSER_VERSION = "0.1.0"
 
 _ENTRY_TYPES = frozenset({"book", "manual", "misc", "techreport"})
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -42,8 +55,8 @@ class CitationDraftError(ValueError):
     """Raised when a noncanonical citation draft is unsafe or malformed."""
 
 
-@dataclass(frozen=True)
-class CitationDraftEntry:
+@dataclass(frozen=True, slots=True)
+class CitationDraftEntry(DataObjectModel):
     proposed_citekey: str
     entry_type: str
     title: str
@@ -71,13 +84,13 @@ class CitationDraftEntry:
             )
         if self.entry_type not in _ENTRY_TYPES:
             raise CitationDraftError("unsupported citation entry type")
-        _text(self.title, "title")
+        self._validate_text(self.title, "title")
         if not self.personal_authors and not self.corporate_authors:
             raise CitationDraftError("citation draft requires an author")
         if len(self.personal_authors) + len(self.corporate_authors) > 32:
             raise CitationDraftError("citation draft has too many authors")
         for author in (*self.personal_authors, *self.corporate_authors):
-            _text(author, "author", maximum=200)
+            self._validate_text(author, "author", maximum=200)
         if not _YEAR.fullmatch(self.year):
             raise CitationDraftError("year must be a four-digit string")
         if not _SHA256.fullmatch(self.source_sha256):
@@ -94,15 +107,50 @@ class CitationDraftEntry:
         ):
             value = getattr(self, name)
             if value is not None:
-                _text(value, name)
+                self._validate_text(value, name)
         if normalize_doi(self.doi) != self.doi:
             raise CitationDraftError("doi must be normalized")
         if self.url is not None:
-            _https_url(self.url)
+            self._validate_https_url(self.url)
         if self.urldate is not None and not _DATE.fullmatch(self.urldate):
             raise CitationDraftError("urldate must be YYYY-MM-DD")
         if self.entry_type == "techreport" and self.institution is None:
             raise CitationDraftError("techreport requires institution")
+
+    @property
+    def entry_id(self) -> str:
+        """Return the deterministic identity of this proposed entry."""
+        canonical = json.dumps(
+            asdict(self),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return (
+            "citation-draft-entry:sha256:"
+            + hashlib.sha256(canonical).hexdigest()
+        )
+
+    @staticmethod
+    def _validate_text(
+        value: object,
+        name: str,
+        *,
+        maximum: int = 4096,
+    ) -> str:
+        if not isinstance(value, str) or not value or len(value) > maximum:
+            raise CitationDraftError(f"{name} must be bounded non-empty text")
+        if any(ord(character) < 0x20 for character in value):
+            raise CitationDraftError(f"{name} contains a control character")
+        if any(character in value for character in "{}\\"):
+            raise CitationDraftError(f"{name} contains unsafe BibTeX syntax")
+        return value
+
+    @staticmethod
+    def _validate_https_url(value: str) -> None:
+        parsed = urlparse(value)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username:
+            raise CitationDraftError("url must be an unauthenticated HTTPS URL")
 
     @classmethod
     def from_dict(cls, value: object) -> CitationDraftEntry:
@@ -174,38 +222,170 @@ class CitationDraftEntry:
         )
 
 
-def parse_citation_drafts(content: bytes) -> tuple[CitationDraftEntry, ...]:
-    """Parse one bounded, closed citation-draft document."""
-    if (
-        not isinstance(content, bytes)
-        or len(content) > CITATION_DRAFT_MAX_BYTES
-    ):
-        raise CitationDraftError("citation draft exceeds the byte limit")
-    try:
-        value = json.loads(
-            content.decode("utf-8", errors="strict"),
-            object_pairs_hook=_without_duplicates,
-            parse_constant=_reject_constant,
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CitationDraftParseRequest(DataObjectActionRequest):
+    """Request parsing of one bounded citation-draft document."""
+
+    content: bytes
+    request_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.content, bytes)
+            or len(self.content) > CITATION_DRAFT_MAX_BYTES
+        ):
+            raise CitationDraftError("citation draft exceeds the byte limit")
+        object.__setattr__(
+            self,
+            "request_id",
+            self.identity_for(content=self.content),
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
-        raise CitationDraftError("citation draft is malformed JSON") from error
-    if not isinstance(value, dict) or set(value) != {
-        "schema_version",
-        "entries",
-    }:
-        raise CitationDraftError("citation draft root fields differ")
-    if value["schema_version"] != CITATION_DRAFT_SCHEMA_VERSION:
-        raise CitationDraftError("unsupported citation-draft schema")
-    raw_entries = value["entries"]
-    if not isinstance(raw_entries, list) or not raw_entries:
-        raise CitationDraftError("citation draft entries must be non-empty")
-    if len(raw_entries) > 256:
-        raise CitationDraftError("citation draft exceeds the entry limit")
-    entries = tuple(CitationDraftEntry.from_dict(item) for item in raw_entries)
-    keys = tuple(item.proposed_citekey for item in entries)
-    if len(keys) != len(set(keys)):
-        raise CitationDraftError("citation draft contains duplicate citekeys")
-    return entries
+
+    @staticmethod
+    def identity_for(*, content: bytes) -> str:
+        payload = {
+            "contract_id": CITATION_DRAFT_PARSE_CONTRACT_ID,
+            "content_byte_size": len(content),
+            "content_sha256": hashlib.sha256(content).hexdigest(),
+        }
+        canonical = json.dumps(
+            payload,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return (
+            "citation-draft-parse-request:sha256:"
+            + hashlib.sha256(canonical).hexdigest()
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CitationDraftParseResult(DataObjectActionResult):
+    """Bind one parse request to its immutable proposed entries."""
+
+    request: CitationDraftParseRequest
+    entries: tuple[CitationDraftEntry, ...]
+    result_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if type(self.request) is not CitationDraftParseRequest:
+            raise TypeError("request must be a CitationDraftParseRequest")
+        if not isinstance(self.entries, tuple) or any(
+            not isinstance(entry, CitationDraftEntry) for entry in self.entries
+        ):
+            raise TypeError("entries must be a CitationDraftEntry tuple")
+        if not self.entries:
+            raise CitationDraftError("parsed entries must be non-empty")
+        object.__setattr__(
+            self,
+            "result_id",
+            self.identity_for(request=self.request, entries=self.entries),
+        )
+
+    @staticmethod
+    def identity_for(
+        *,
+        request: CitationDraftParseRequest,
+        entries: tuple[CitationDraftEntry, ...],
+    ) -> str:
+        payload = {
+            "contract_id": CITATION_DRAFT_PARSE_CONTRACT_ID,
+            "entry_ids": [entry.entry_id for entry in entries],
+            "parser_name": CITATION_DRAFT_PARSER_NAME,
+            "parser_version": CITATION_DRAFT_PARSER_VERSION,
+            "request_id": request.request_id,
+        }
+        canonical = json.dumps(
+            payload,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return (
+            "citation-draft-parse-result:sha256:"
+            + hashlib.sha256(canonical).hexdigest()
+        )
+
+
+class CitationDraftParser(
+    DataObjectActionizer[CitationDraftParseRequest, CitationDraftParseResult]
+):
+    """Parse bounded citation-draft documents without granting authority."""
+
+    __slots__ = ()
+
+    def action(
+        self,
+        *,
+        request: CitationDraftParseRequest,
+    ) -> CitationDraftParseResult:
+        """Return the result of the requested citation-draft parse."""
+        return self.parse(request=request)
+
+    def parse(
+        self,
+        *,
+        request: CitationDraftParseRequest,
+    ) -> CitationDraftParseResult:
+        """Parse one bounded, closed citation-draft document."""
+        if type(request) is not CitationDraftParseRequest:
+            raise TypeError("request must be a CitationDraftParseRequest")
+        try:
+            value = json.loads(
+                request.content.decode("utf-8", errors="strict"),
+                object_pairs_hook=self._without_duplicates,
+                parse_constant=self._reject_constant,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+            raise CitationDraftError(
+                "citation draft is malformed JSON"
+            ) from error
+        if not isinstance(value, dict) or set(value) != {
+            "schema_version",
+            "entries",
+        }:
+            raise CitationDraftError("citation draft root fields differ")
+        if value["schema_version"] != CITATION_DRAFT_SCHEMA_VERSION:
+            raise CitationDraftError("unsupported citation-draft schema")
+        raw_entries = value["entries"]
+        if not isinstance(raw_entries, list) or not raw_entries:
+            raise CitationDraftError("citation draft entries must be non-empty")
+        if len(raw_entries) > 256:
+            raise CitationDraftError("citation draft exceeds the entry limit")
+        entries = tuple(
+            CitationDraftEntry.from_dict(item) for item in raw_entries
+        )
+        keys = tuple(item.proposed_citekey for item in entries)
+        if len(keys) != len(set(keys)):
+            raise CitationDraftError(
+                "citation draft contains duplicate citekeys"
+            )
+        return CitationDraftParseResult(request=request, entries=entries)
+
+    @staticmethod
+    def _without_duplicates(
+        pairs: list[tuple[str, object]],
+    ) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise CitationDraftError(f"duplicate JSON member: {key}")
+            result[key] = value
+        return result
+
+    @staticmethod
+    def _reject_constant(value: str) -> None:
+        raise CitationDraftError(f"unsupported JSON constant: {value}")
+
+
+def parse_citation_drafts(content: bytes) -> tuple[CitationDraftEntry, ...]:
+    """Deprecated compatibility entry point for citation-draft parsing."""
+    warnings.warn(
+        "parse_citation_drafts is deprecated; use CitationDraftParser",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    request = CitationDraftParseRequest(content=content)
+    return CitationDraftParser().parse(request=request).entries
 
 
 def render_bibtex(entries: tuple[CitationDraftEntry, ...]) -> bytes:
@@ -251,39 +431,10 @@ def _escaped_authors(values: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _escape(value: str) -> str:
-    _text(value, "BibTeX value")
+    CitationDraftEntry._validate_text(value, "BibTeX value")
     return (
         value.replace("&", r"\&")
         .replace("%", r"\%")
         .replace("#", r"\#")
         .replace("_", r"\_")
     )
-
-
-def _text(value: object, name: str, *, maximum: int = 4096) -> str:
-    if not isinstance(value, str) or not value or len(value) > maximum:
-        raise CitationDraftError(f"{name} must be bounded non-empty text")
-    if any(ord(character) < 0x20 for character in value):
-        raise CitationDraftError(f"{name} contains a control character")
-    if any(character in value for character in "{}\\"):
-        raise CitationDraftError(f"{name} contains unsafe BibTeX syntax")
-    return value
-
-
-def _https_url(value: str) -> None:
-    parsed = urlparse(value)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username:
-        raise CitationDraftError("url must be an unauthenticated HTTPS URL")
-
-
-def _without_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise CitationDraftError(f"duplicate JSON member: {key}")
-        result[key] = value
-    return result
-
-
-def _reject_constant(value: str) -> None:
-    raise CitationDraftError(f"unsupported JSON constant: {value}")

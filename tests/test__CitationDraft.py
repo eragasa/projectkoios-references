@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 import json
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
+from projectkoios.base import (
+    DataObjectActionizer,
+    DataObjectActionRequest,
+    DataObjectActionResult,
+    DataObjectModel,
+)
 from projectkoios.references.citation_draft import (
+    CitationDraftEntry,
     CitationDraftError,
+    CitationDraftParser,
+    CitationDraftParseRequest,
+    CitationDraftParseResult,
     parse_citation_drafts,
     render_bibtex,
 )
@@ -42,8 +53,35 @@ def _payload(entry: dict[str, object] | None = None) -> bytes:
     ).encode()
 
 
+def _parse(content: bytes) -> CitationDraftParseResult:
+    return CitationDraftParser().parse(
+        request=CitationDraftParseRequest(content=content)
+    )
+
+
+def test__citation_draft_parser__uses_canonical_base_roles_and_identities() -> (
+    None
+):
+    request = CitationDraftParseRequest(content=_payload())
+    parser = CitationDraftParser()
+
+    parsed = parser.parse(request=request)
+
+    assert issubclass(CitationDraftEntry, DataObjectModel)
+    assert issubclass(CitationDraftParseRequest, DataObjectActionRequest)
+    assert issubclass(CitationDraftParseResult, DataObjectActionResult)
+    assert issubclass(CitationDraftParser, DataObjectActionizer)
+    assert parser.action(request=request) == parsed
+    assert parsed.request is request
+    assert parsed == _parse(_payload())
+    assert parsed.result_id != request.request_id
+    assert parsed.entries[0].entry_id.startswith("citation-draft-entry:sha256:")
+    with pytest.raises(FrozenInstanceError):
+        request.content = b"{}"  # type: ignore[misc]
+
+
 def test__citation_draft__renders_deterministic_bibtex() -> None:
-    entries = parse_citation_drafts(_payload())
+    entries = _parse(_payload()).entries
 
     assert render_bibtex(entries).decode() == (
         "@techreport{nistButcherEtAl2023AppendixC,\n"
@@ -60,15 +98,22 @@ def test__citation_draft__renders_deterministic_bibtex() -> None:
     )
 
 
-def test__citation_draft__rejects_duplicate_members_and_authority() -> None:
+def test__citation_draft_parser__rejects_duplicate_members_and_authority() -> (
+    None
+):
     with pytest.raises(CitationDraftError, match="malformed JSON"):
-        parse_citation_drafts(
-            b'{"schema_version":1,"schema_version":1,"entries":[]}'
-        )
+        _parse(b'{"schema_version":1,"schema_version":1,"entries":[]}')
     entry = _entry()
     entry["authority"] = "canonical"
     with pytest.raises(CitationDraftError, match="candidate authority"):
-        parse_citation_drafts(_payload(entry))
+        _parse(_payload(entry))
+
+
+def test__legacy_parse_entry_point__warns_and_forwards() -> None:
+    with pytest.warns(DeprecationWarning, match="CitationDraftParser"):
+        entries = parse_citation_drafts(_payload())
+
+    assert entries == _parse(_payload()).entries
 
 
 def test__bib_render_cli__publishes_without_overwrite(
@@ -92,7 +137,7 @@ def test__bib_render_cli__publishes_without_overwrite(
     summary = json.loads(capsys.readouterr().out)
     assert summary["authority"] == "proposed-noncanonical"
     assert output.read_bytes() == render_bibtex(
-        parse_citation_drafts(metadata.read_bytes())
+        _parse(metadata.read_bytes()).entries
     )
     with pytest.raises(FileExistsError):
         main(arguments)
