@@ -31,6 +31,18 @@ from projectkoios.references.identity import (
 )
 
 
+class _EncodeTrap(str):
+    def encode(
+        self,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+    ) -> bytes:
+        del encoding, errors
+        raise AssertionError(
+            "overlength identity must be rejected before encode"
+        )
+
+
 def _observation(citekey: str) -> SourceBibliographyObservation:
     entry = f"@article{{{citekey}}}\n"
     return SourceBibliographyObservation.create(
@@ -223,30 +235,30 @@ def test__projector__uses_base_roles_one_logic_path_and_stable_ids() -> None:
         projected.items = ()  # type: ignore[misc]
 
 
-def test__projector__distinguishes_accepted_identity_without_active_key() -> (
-    None
-):
+def test__reserved_no_active_citekey_status__enforces_item_invariants() -> None:
     projection, _, _, active_id = _merged_projection()
-    without_name = copy.copy(projection)
-    object.__setattr__(
-        without_name,
-        "name_history",
-        tuple(
-            binding for binding in projection.name_history if not binding.active
+
+    item = CitationIdentityProjectionItem(
+        requested_identity_id=active_id,
+        projection_id=projection.projection_id,
+        status=(
+            CitationIdentityProjectionStatus.ACCEPTED_WITHOUT_ACTIVE_CITEKEY
         ),
+        reference_id=active_id,
     )
 
-    item = (
-        CitationIdentityProjector()
-        .project(request=_request(without_name, active_id))
-        .items[0]
-    )
-
-    assert item.status is (
-        CitationIdentityProjectionStatus.ACCEPTED_WITHOUT_ACTIVE_CITEKEY
-    )
-    assert item.reference_id == active_id
     assert item.canonical_citekey is None
+    assert item.proposed_citekey is None
+    with pytest.raises(ValueError, match="non-key outcome fields"):
+        CitationIdentityProjectionItem(
+            requested_identity_id=active_id,
+            projection_id=projection.projection_id,
+            status=(
+                CitationIdentityProjectionStatus.ACCEPTED_WITHOUT_ACTIVE_CITEKEY
+            ),
+            reference_id=active_id,
+            canonical_citekey="notActive",
+        )
 
 
 def test__request__rejects_duplicates_order_bounds_and_malformed_ids() -> None:
@@ -278,12 +290,17 @@ def test__request__rejects_duplicates_order_bounds_and_malformed_ids() -> None:
                 )
             ),
         )
-    for malformed in (" leading-space", "x" * 513, "control\x7f", "\ud800"):
+    for malformed in (" leading-space", "control\x7f", "\ud800"):
         with pytest.raises(ValueError, match="malformed"):
             CitationIdentityProjectionRequest(
                 projection=projection,
                 identity_ids=(malformed,),
             )
+    with pytest.raises(ValueError, match="malformed"):
+        CitationIdentityProjectionRequest(
+            projection=projection,
+            identity_ids=(_EncodeTrap("x" * 513),),
+        )
     with pytest.raises(TypeError, match="string tuple"):
         CitationIdentityProjectionRequest(
             projection=projection,
@@ -291,22 +308,22 @@ def test__request__rejects_duplicates_order_bounds_and_malformed_ids() -> None:
         )
 
 
-def test__projector__fails_closed_on_ambiguous_active_citekeys() -> None:
+def test__request__rejects_forged_projection_with_retained_identity() -> None:
     projection, _, _, active_id = _merged_projection()
+    forged = copy.copy(projection)
     active_binding = next(
         binding for binding in projection.name_history if binding.active
     )
-    ambiguous = copy.copy(projection)
-    object.__setattr__(
-        ambiguous,
-        "name_history",
-        (*projection.name_history, active_binding),
+    forged_binding = copy.copy(active_binding)
+    forged_binding.__dict__["canonical_citekey"] = "forgedKey"
+    forged.__dict__["name_history"] = tuple(
+        forged_binding if binding is active_binding else binding
+        for binding in projection.name_history
     )
 
-    with pytest.raises(ValueError, match="ambiguous active citekeys"):
-        CitationIdentityProjector().project(
-            request=_request(ambiguous, active_id)
-        )
+    assert forged.projection_id == projection.projection_id
+    with pytest.raises(ValueError, match="does not match replay"):
+        _request(forged, active_id)
 
 
 def test__item_and_result__reject_authority_and_correlation_ambiguity() -> None:

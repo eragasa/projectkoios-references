@@ -16,10 +16,11 @@ network access, target inspection, or authority decision.
 ## Outcomes
 
 The closed statuses distinguish an active accepted reference with its canonical
-citekey, an accepted reference without an active citekey, a candidate with only
-its proposed noncanonical key, an inactive superseded reference, and an
-unresolved opaque identity. A requested candidate ID remains a candidate even
-when it participates in an accepted reference.
+citekey, a candidate with only its proposed noncanonical key, an inactive
+superseded reference, and an unresolved opaque identity. The
+accepted-without-active-citekey status is reserved for a future valid replay
+state and is unreachable under current replay semantics. A requested candidate
+ID remains a candidate even when it participates in an accepted reference.
 
 ## Authority boundary
 

@@ -6,6 +6,7 @@ classDiagram
     class DataObjectModel
     class DataObjectActionResult
     class DataObjectActionizer
+    class IdentityProjection
     class CitationIdentityProjectionStatus
     class CitationIdentityProjectionRequest {
         +IdentityProjection projection
@@ -32,6 +33,7 @@ classDiagram
         +project(request)
     }
     DataObjectActionRequest <|-- CitationIdentityProjectionRequest
+    CitationIdentityProjectionRequest --> IdentityProjection : replay verifies exact equality
     DataObjectModel <|-- CitationIdentityProjectionItem
     DataObjectActionResult <|-- CitationIdentityProjectionResult
     DataObjectActionizer <|-- CitationIdentityProjector

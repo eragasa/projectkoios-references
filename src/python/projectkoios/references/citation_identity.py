@@ -15,6 +15,7 @@ from projectkoios.references.identity import (
     AcceptedReference,
     IdentityProjection,
     ReferenceCandidate,
+    replay_identity_decisions,
 )
 from projectkoios.references.path_safety import validate_citekey
 
@@ -43,6 +44,12 @@ class CitationIdentityProjectionRequest(DataObjectActionRequest):
     def __post_init__(self) -> None:
         if type(self.projection) is not IdentityProjection:
             raise TypeError("projection must be an IdentityProjection")
+        replayed = replay_identity_decisions(
+            self.projection.candidates,
+            self.projection.decisions,
+        )
+        if replayed != self.projection:
+            raise ValueError("identity projection does not match replay")
         if not isinstance(self.identity_ids, tuple) or any(
             not isinstance(identity_id, str)
             for identity_id in self.identity_ids
@@ -69,6 +76,8 @@ class CitationIdentityProjectionRequest(DataObjectActionRequest):
 
     @staticmethod
     def _validate_identity_id(identity_id: str) -> None:
+        if len(identity_id) > CITATION_IDENTITY_PROJECTION_MAX_ID_BYTES:
+            raise ValueError("bibliographic identity ID is malformed")
         try:
             encoded = identity_id.encode("utf-8")
         except UnicodeEncodeError as error:
