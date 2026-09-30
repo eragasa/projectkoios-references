@@ -13,7 +13,7 @@ The packaged `scripts` package remains outside the migrated slice.
 
 ## Current migrated slice
 
-- [`projectkoios.references.citation_identity_projection`](projectkoios/references/citation_identity_projection/index.md)
+- [`projectkoios.references.citation_identity`](projectkoios/references/citation_identity/index.md)
 
 The current source tree requires 284 component-architecture pages under the
 established convention. This slice supplies 15 pages; 269 remain unmigrated.

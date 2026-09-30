@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 ARCHITECTURE = REPOSITORY / "docs" / "architecture"
-MODULE_NAME = "citation_identity_projection"
+MODULE_NAME = "citation_identity"
 MODULE_DIRECTORY = ARCHITECTURE / "projectkoios" / "references" / MODULE_NAME
 PUBLIC_CLASSES = {
     "CitationIdentityProjectionItem",

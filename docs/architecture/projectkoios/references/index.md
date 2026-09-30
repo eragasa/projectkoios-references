@@ -7,7 +7,7 @@ manuscript use, rights clearance, or publication acceptance.
 
 ## Documented module
 
-- [`citation_identity_projection`](citation_identity_projection/index.md) — a
+- [`citation_identity`](citation_identity/index.md) — a
   bounded citation-facing projection over replay-derived identity state.
 
 All other package modules remain listed as unmigrated in the

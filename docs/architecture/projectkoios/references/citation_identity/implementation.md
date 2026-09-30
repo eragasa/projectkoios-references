@@ -37,7 +37,7 @@ the input `projection_id` without altering the identity projection.
 
 Evidence:
 
-- source: [`citation_identity_projection.py`](../../../../../src/python/projectkoios/references/citation_identity_projection.py)
+- source: [`citation_identity.py`](../../../../../src/python/projectkoios/references/citation_identity.py)
 - synthetic tests: [`test__CitationIdentityProjection.py`](../../../../../tests/test__CitationIdentityProjection.py)
 
 - [Module index](index.md)

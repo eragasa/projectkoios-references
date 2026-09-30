@@ -10,7 +10,7 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
-from projectkoios.references.citation_identity_projection import (
+from projectkoios.references.citation_identity import (
     CITATION_IDENTITY_PROJECTION_MAX_IDENTITIES,
     CitationIdentityProjectionItem,
     CitationIdentityProjectionRequest,

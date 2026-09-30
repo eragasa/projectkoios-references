@@ -1,4 +1,4 @@
-# `projectkoios.references.citation_identity_projection`
+# `projectkoios.references.citation_identity`
 
 This module projects replay-derived identity state into a bounded,
 citation-facing result while preserving the caller's identity correlation and
@@ -34,6 +34,6 @@ contract status remains in the
 
 - [Schematic](schematic.md)
 - [Implementation](implementation.md)
-- source: [`citation_identity_projection.py`](../../../../../src/python/projectkoios/references/citation_identity_projection.py)
+- source: [`citation_identity.py`](../../../../../src/python/projectkoios/references/citation_identity.py)
 - tests: [`test__CitationIdentityProjection.py`](../../../../../tests/test__CitationIdentityProjection.py)
 - [Package index](../index.md)
