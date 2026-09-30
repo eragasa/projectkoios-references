@@ -12,7 +12,6 @@ from projectkoios.references.catalog import (
 from projectkoios.references.catalog import (
     ReferenceCatalog as _ReferenceCatalog,
 )
-from projectkoios.references.cli import main
 from projectkoios.references.graph import (
     CitationCandidate,
     CitationEdge,
@@ -24,6 +23,8 @@ from projectkoios.references.graph import (
 from projectkoios.references.graph import (
     load_candidate_graph as _load_candidate_graph,
 )
+
+from scripts.koios_ref import main
 
 
 def load_candidate_graph(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]

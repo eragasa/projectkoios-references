@@ -11,14 +11,15 @@ authors = [
 dependencies = ["projectkoios==0.0.0", "pybtex>=0.25"]
 
 [project.scripts]
-koios-ref = "projectkoios.references.cli:main"
+koios-ref = "scripts.koios_ref:main"
 
 [build-system]
 requires = ["setuptools>=61.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src/python"]
+where = ["src/python", "."]
+include = ["projectkoios.references*", "scripts*"]
 namespaces = true
 
 [tool.setuptools.package-data]

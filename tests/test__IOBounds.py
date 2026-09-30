@@ -33,7 +33,6 @@ from projectkoios.references import (
 from projectkoios.references import (
     load_candidate_graph as _load_candidate_graph,
 )
-from projectkoios.references.cli import main
 from projectkoios.references.enrichment import (
     CrossrefClient as _CrossrefClient,
 )
@@ -43,6 +42,8 @@ from projectkoios.references.enrichment import (
     TransportResponse,
 )
 from test_asset_authorization_helpers import authorize_asset
+
+from scripts.koios_ref import main
 
 
 def load_bibliography(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]

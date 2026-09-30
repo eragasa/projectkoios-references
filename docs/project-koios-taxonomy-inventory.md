@@ -1,25 +1,22 @@
 # Project Koios taxonomy inventory
 
-This inventory is bounded to `projectkoios-references` at clean baseline
-`b7581cb`. It records the existing Python package shape before any
-`projectkoios.base` inheritance is introduced. It does not redefine the
-cross-repository taxonomy or authorize a persisted contract change.
+This inventory began at clean baseline `b7581cb` and describes the current
+bounded taxonomy milestone in `projectkoios-references`. It does not redefine
+cross-repository policy or authorize later persisted-contract changes.
 
 ## Dispositions
 
-- **IMPLEMENT_NOW** — safe, repository-local work that does not require a new
-  dependency, a public removal, or a domain identity decision.
-- **NO_ACTION** — already suitable for this bounded pass, or unsafe to change
-  without a separate compatibility migration.
-- **DOMAIN_DECISION** — request/result identity, action ownership, or dependency
-  ownership must be decided before implementation.
+- **IMPLEMENT_NOW** — safe repository-local work in this milestone.
+- **NO_ACTION** — complete for this milestone or intentionally unchanged.
+- **DOMAIN_DECISION** — a later request/result identity or action-owner decision
+  is required before implementation.
 
 ## Package and test inventory
 
 The counts below are top-level source declarations. “Actions” counts public
-module functions; public methods on performers and stores are called out in the
-notes. “Helpers” counts private module-level functions, not private methods.
-The root-facade count includes constants, records, exceptions, and functions.
+module functions; public methods on performers and stores are called out below.
+“Helpers” counts private module-level functions, not private methods. The
+root-facade count includes constants, records, exceptions, and functions.
 
 | Family | Objects | Actions | Helpers | Root facade | Primary tests | Disposition |
 |---|---:|---:|---:|---:|---|---|
@@ -28,10 +25,9 @@ The root-facade count includes constants, records, exceptions, and functions.
 | `biblatex` | 3 | 2 | 4 | 2 | `test__BibLaTeXImport.py` | DOMAIN_DECISION |
 | `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | DOMAIN_DECISION |
 | `citation_closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | DOMAIN_DECISION |
-| `citation_draft` | 2 | 2 | 7 | 0 | `test__CitationDraft.py` | DOMAIN_DECISION |
-| `cli` | 0 | 1 | 11 | 0 | command tests across feature files | NO_ACTION |
+| `citation_draft` | 8 | 2 deprecated forwards | 0 | 0 | `test__CitationDraft.py` | NO_ACTION |
 | `collection_reconciliation` | 15 | 7 | 24 | 19 | `test__CollectionReconciliation.py` | DOMAIN_DECISION |
-| `coverage` | 7 public + 1 focused private collaborator | 0 | 0 after this increment | 7 | `test__CoverageObservation.py` | IMPLEMENT_NOW |
+| `coverage` | 7 public + 1 focused private collaborator | 0 | 0 | 7 | `test__CoverageObservation.py` | NO_ACTION |
 | `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | DOMAIN_DECISION |
 | `graph` | 7 | 1 | 21 | 8 | `test__CitationGraph.py`, `test__CitationGraphSeed.py` | DOMAIN_DECISION |
 | `identity` | 17 | 1 | 28 | 13 | `test__ReferenceIdentity.py` | DOMAIN_DECISION |
@@ -51,101 +47,116 @@ The suite contains 25 maintained `tests/test*.py` files. Cross-family I/O,
 placeholder, reconciliation, catalog, and state tests exercise the same public
 objects in addition to the primary tests named above.
 
-## Object and action boundaries
+## Implemented citation-draft families
 
-The current object groups are:
+`CitationDraftEntry` is an immutable, slotted `DataObjectModel` and retains the
+existing proposed/noncanonical authority and exact wire fields. Its derived
+`entry_id` does not change the citation-draft document schema.
 
-- immutable observations, records, plans, projections, manifests, enums, and
-  results in `acquisition`, `assets`, `coverage`, `graph`, `identity`,
-  `ingestion_evidence`, `pdf_corpus`, `review`, and `state_projection`;
-- stateful performers/stores at `AssetDiscoveryPlanner.scan`,
-  `ReferenceCatalog` methods, `CrossrefClient.fetch`,
-  `ProvidedReferenceIntakeStore` methods, and `AuthorizedRoot` methods;
-- module action entry points for create/load/parse/build/discover/rebind/replay,
-  reconcile/publish/verify/materialize/render/validate operations; and
-- transport protocols and transport request/response records confined to the
-  metadata provider boundary in `enrichment`.
+Parsing now has one canonical flow:
 
-No concrete class currently inherits `DataObject`, `DataObjectModel`,
-`DataObjectActionRequest`, `DataObjectActionResult`, or
-`DataObjectActionizer`. No `*Actionizer`, `Utils`, or `Helpers` class exists.
-The repository has no `projectkoios` distribution dependency; its only runtime
-requirement is `pybtex>=0.25`.
+```text
+CitationDraftParseRequest
+  -> CitationDraftParser.action/parse
+  -> CitationDraftParseResult
+```
 
-The material module functions generally accept multiple scalar, path, or
-record arguments and return an existing record, tuple, bytes value, boolean, or
-`None`. They therefore do not yet expose the uniform
-`action(*, request)` boundary. Converting them requires coherent immutable
-Request/Result types and explicit request/result identity rules, not mechanical
-wrapping.
+Rendering has a separate canonical flow:
 
-## Initializer and public imports
+```text
+CitationDraftRenderRequest
+  -> CitationDraftRenderer.action/render
+  -> CitationDraftRenderResult
+```
 
-`src/python/projectkoios/references/__init__.py` is an import-only facade: 19
-explicit feature import blocks, one future import, and an explicit 216-name
-`__all__`. It contains no domain implementation. Imported names and `__all__`
-agree exactly, with no missing or duplicate exports. These modules remain
-module-only surfaces:
+Both performers directly inherit the exact `DataObjectActionizer` generic.
+`action(*, request)` delegates to the semantic method, and the semantic method
+owns the only implementation path. Frozen requests/results have deterministic,
+distinct identities that bind their operation contract, input identities,
+performer identity, and output identity. Expected malformed-document and
+render-limit outcomes retain `CitationDraftError`.
+
+The module has no private module-level helper functions. Entry invariants belong
+to `CitationDraftEntry`; parse helpers belong to `CitationDraftParser`; render
+helpers belong to `CitationDraftRenderer`. The old module functions
+`parse_citation_drafts` and `render_bibtex` remain warning-emitting deprecated
+forwarders only. The canonical types remain a module API and were deliberately
+not added to the root facade.
+
+## Other object and action boundaries
+
+The unchanged object groups remain immutable observations, records, plans,
+projections, manifests, enums, and results. Existing stateful performers/stores
+include `AssetDiscoveryPlanner.scan`, `ReferenceCatalog` methods,
+`CrossrefClient.fetch`, `ProvidedReferenceIntakeStore` methods, and
+`AuthorizedRoot` methods. Other module action entry points still cover
+create/load/build/discover/rebind/replay/reconcile/publish/verify/materialize and
+validate operations. Those families require their own bounded Request/Result
+and persisted-identity decisions; this milestone does not mechanically wrap or
+rename them.
+
+`naming` already has the desired ownership shape: immutable
+`ReferenceFilenames` owns `from_citekey` and has no free private helpers.
+`io_limits` contains intentional reusable public boundary guards. `coverage`
+uses the focused `_CoverageDocumentSchema` collaborator and has no module-level
+private helpers.
+
+## Dependency identity
+
+The runtime dependency is now intentional and exact:
+
+```text
+projectkoios==0.0.0
+https://github.com/eragasa/projectkoios.git
+commit 233f36900b9b44c943ecc5e27f2968ad4bee97ad
+tree b7c3ffd23086e7ef184c990267d48a56dd87282b
+```
+
+`pyproject.toml` and `uv.lock` use that immutable revision, not a branch or
+machine path. This is a pre-release source identity until a versioned base
+package exists. The milestone does not consume the later policy-only commit
+`d0cfb06`.
+
+## Initializer, public imports, and operator script
+
+`src/python/projectkoios/references/__init__.py` remains an import-only facade:
+19 explicit feature import blocks, one future import, and an explicit 216-name
+`__all__`. Imported names and `__all__` agree exactly, with no missing or
+duplicate exports. These feature modules remain module-only surfaces:
 
 - `citation_draft`
-- `cli`
 - `enrichment`
 - `validation`
 
-Submodule imports are also used directly by the tests, so root-facade inventory
-alone is not a safe consumer inventory. Narrowing the 216-name facade would be
-a public breaking removal and is **NO_ACTION** in this pass. Adding new taxonomy
-exports is also deferred until their owning action family is defined.
+The former `projectkoios.references.cli` package surface no longer exists. The
+thin operator adapter is maintained in `scripts/koios_ref.py`; it contains no
+private module-level declarations and calls canonical package objects,
+including the citation-draft parser and renderer. Packaging includes the
+`scripts` package and wires the installed `koios-ref` entry point directly to
+`scripts.koios_ref:main`. Tests import that adapter directly. There is no
+duplicate package CLI implementation.
 
-No documented deprecated public type aliases were found. Existing semantic
-performer names (`AssetDiscoveryPlanner`, `CrossrefClient`) and semantic methods
-(`scan`, `fetch`, `reconcile`, `replay`, and related verbs) must remain
-non-deprecated when their families migrate.
+Narrowing the 216-name root facade remains a public breaking removal and is not
+part of this milestone. Existing semantic performer names and methods remain
+non-deprecated. Only the two genuinely superseded citation-draft function entry
+points are deprecated.
 
-## Implement-now increment
-
-`coverage` has no external effect or material action boundary. Its four shared
-wire-shape validators were ownerless private module functions. This increment
-moves them without changing behavior into the focused private
-`_CoverageDocumentSchema` collaborator. The public records, root exports,
-serialized schema, content-derived `coverage_id`, exceptions, and call
-signatures remain unchanged. The family now has no module-level private helper
-functions.
-
-`naming` already has the desired ownership shape: immutable
-`ReferenceFilenames` owns `from_citekey`, has no free private helpers, and is an
-intentional root export. `io_limits` contains reusable public boundary guards
-rather than hidden private implementation helpers. The CLI remains a transport
-adapter and should migrate only with the action family it adapts.
-
-## Required domain and dependency decision
-
-ABC inheritance is stopped. Importing the exact taxonomy ABCs would add a new
-runtime dependency on the separately released `projectkoios` distribution.
-That changes this repository from an independent package into a downstream core
-consumer and requires an owner decision about:
-
-1. whether the dependency is intended at all;
-2. the supported version range and release compatibility policy;
-3. which operation family owns the first Request/Result identities; and
-4. whether persisted request/result identities require new contract versions.
-
-Recommended first action-family review after that decision: the module-only
-`citation_draft` parser/renderer, because it has a small consumer set (CLI plus
-one focused test module). Even there, parse and render are two distinct verbs;
-their request/result stems and whether parsed entries or rendered bytes are the
-closed result must be decided before code changes. Effectful and persisted
-families must follow separately, one coherent family per commit.
-
-## Reproduction and limits
+## Reproduction, safety, and reuse limits
 
 Inventory inputs are repository-tracked Python files under
-`src/python/projectkoios/references`, `tests/test*.py`, `pyproject.toml`, and the
-root initializer at baseline `b7581cb`. A repeatable syntax-tree inventory can
-count top-level `ClassDef`, public/private `FunctionDef`, `ImportFrom`, and the
-literal `__all__`; import smoke can compare `set(__all__)` with `dir()`.
+`src/python/projectkoios/references`, `scripts`, `tests/test*.py`,
+`pyproject.toml`, and `uv.lock`. A repeatable syntax-tree inventory can count
+top-level classes and public/private functions; import smoke can compare
+`set(__all__)` with `dir()`.
 
-The inventory is structural. It does not infer external consumers, approve a
-new dependency, define domain identities, modify persisted contracts, or prove
-scientific/reference correctness. Re-run it after public modules, exports, or
-tests change; do not reuse the counts as architecture targets.
+Dependency verification must inspect installed `direct_url.json` for the exact
+owner commit. Package verification must build offline from the lock, install the
+wheel into an isolated Python 3.14 environment with the exact owner source,
+confirm `projectkoios.references.cli` is absent, inspect the `koios-ref` entry
+point, and run `koios-ref --help` outside the checkout.
+
+This inventory is structural. It does not infer external consumers, modify
+unchanged persisted contracts, authorize later action-family migrations, or
+prove scientific/reference correctness. Re-run it after public modules,
+exports, dependency identity, or maintained tests change; do not reuse the
+counts as architecture targets.

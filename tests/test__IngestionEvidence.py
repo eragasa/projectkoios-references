@@ -7,7 +7,6 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from projectkoios.references.cli import main
 from projectkoios.references.collection_reconciliation import (
     ManagedPdf,
     ProcessingEvidence,
@@ -26,6 +25,8 @@ from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput as _ReferenceEvidenceInput,
 )
 from projectkoios.references.path_safety import RootStorageClass
+
+from scripts.koios_ref import main
 
 
 def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:

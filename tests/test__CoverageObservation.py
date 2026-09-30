@@ -13,7 +13,6 @@ from projectkoios.references import (
     CoverageState,
     ReferenceCoverage,
 )
-from projectkoios.references.cli import main
 from projectkoios.references.collection_reconciliation import (
     CollectionReconciliationError,
     CollectionRowEvidence,
@@ -24,6 +23,8 @@ from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
 )
+
+from scripts.koios_ref import main
 
 _CITEKEY = "example2026"
 _REVISION = "asserted-revision"

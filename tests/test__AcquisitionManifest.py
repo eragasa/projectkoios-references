@@ -26,7 +26,8 @@ from projectkoios.references import (
     publish_acquisition_manifest,
     verify_acquisition_manifest,
 )
-from projectkoios.references.cli import main
+
+from scripts.koios_ref import main
 
 
 def _rows() -> tuple[dict[str, str], ...]:

@@ -38,7 +38,10 @@ The initial [`ksdft2effmass` review seed](collections/ksdft2effmass/README.md)
 preserves the external application's citation keys and records a conservative,
 read-only local PDF discovery pass.
 
-The `koios-ref` CLI provides the first reusable operational slice:
+The installed `koios-ref` executable is backed directly by the thin
+repository operator adapter in `scripts/koios_ref.py`; it is not part of the
+`projectkoios.references` library API. It provides the first reusable
+operational slice:
 
 ```bash
 koios-ref catalog-init .koios/references.sqlite3 \

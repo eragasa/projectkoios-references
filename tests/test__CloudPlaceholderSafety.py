@@ -25,7 +25,6 @@ from projectkoios.references.assets import (
     materialize_asset,
 )
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.cli import main
 from projectkoios.references.collection_reconciliation import (
     CollectionReconciliationError,
     ManagedPdfScan,
@@ -36,6 +35,8 @@ from projectkoios.references.collection_reconciliation import (
 from projectkoios.references.path_safety import read_path_bytes
 from projectkoios.references.validation import validate_reference_objects
 from test_asset_authorization_helpers import authorize_asset
+
+from scripts.koios_ref import main
 
 
 class SyntheticProbe(CloudPlaceholderProbe):
@@ -609,7 +610,7 @@ def test__enrichment_cache_classification__fails_before_client_access(
         raise AssertionError("incomplete cache declaration reached client")
 
     monkeypatch.setattr(
-        "projectkoios.references.cli.CrossrefClient",
+        "scripts.koios_ref.CrossrefClient",
         forbidden_client,
     )
     with pytest.raises(SystemExit, match="cache-storage-class"):

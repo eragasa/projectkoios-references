@@ -22,7 +22,6 @@ from projectkoios.references.catalog import (
     CatalogSchemaError,
     ReferenceCatalog,
 )
-from projectkoios.references.cli import main
 from projectkoios.references.identity import (
     ActorAuthorityScope,
     ActorKind,
@@ -35,6 +34,8 @@ from projectkoios.references.identity import (
 )
 from projectkoios.references.models import SourceAssetRecord
 from test_asset_authorization_helpers import authorize_asset
+
+from scripts.koios_ref import main
 
 
 def _record() -> ReferenceCandidate:

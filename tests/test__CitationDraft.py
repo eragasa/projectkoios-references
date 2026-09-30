@@ -23,7 +23,8 @@ from projectkoios.references.citation_draft import (
     parse_citation_drafts,
     render_bibtex,
 )
-from projectkoios.references.cli import main
+
+from scripts.koios_ref import main
 
 
 def _entry() -> dict[str, object]:
