@@ -14,11 +14,11 @@ the collection manifest carry `proposed_citekey`, `identity_status`, and
 Candidate-key rows inside package payloads remain evidence projections; neither
 package creation nor verification is a promotion decision.
 
-The accepted Project Koios reference-authority ADR governs the direction of
-this projection: bounded evidence is observed, content identified, and reduced
-to deterministic outputs. Hashes establish package integrity and identity only;
-they do not establish truth, actor authenticity, rights, relevance, or
-acceptance.
+The current References architecture and policy boundary governs the direction
+of this projection: bounded evidence is observed, content identified, and
+reduced to deterministic outputs. Hashes establish package integrity and
+identity only; they do not establish truth, actor authenticity, rights,
+relevance, or acceptance.
 
 ## Complete package identity
 

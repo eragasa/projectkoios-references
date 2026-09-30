@@ -7,11 +7,11 @@ replaces the public mutable `ReviewStatus` / `ReviewMembership` scalar API. It
 does not accept a reference, a scientific claim, a manuscript citation, a
 rights decision, or a publication action.
 
-The accepted Project Koios reference-authority ADR governs this model. Review
-records are immutable, content-addressed history. The SQLite catalog is only a
-rebuildable projection. Actor declarations are not self-authenticating: the
-repository process admitting a decision must verify that the named actor is the
-designated authority for the recorded domain and scope.
+The current References architecture and policy boundary governs this model.
+Review records are immutable, content-addressed history. The SQLite catalog is
+only a rebuildable projection. Actor declarations are not self-authenticating:
+the repository process admitting a decision must verify that the named actor
+is the designated authority for the recorded domain and scope.
 
 ## Orthogonal records
 

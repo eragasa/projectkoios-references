@@ -3,10 +3,10 @@
 ## Status and authority boundary
 
 This document defines the owner-internal state projection implemented for
-`REF-STATE-PROJECTION-01`. It applies the accepted cross-repository reference
-authority ADR; it does not expand that ADR, accept a Proposed contract, promote
-a reference, clear rights, accept scientific support, authorize manuscript use,
-accept a contract, or authorize publication.
+`REF-STATE-PROJECTION-01`. It applies the current References architecture and
+policy boundary; it does not expand that boundary, accept a Proposed contract,
+promote a reference, clear rights, accept scientific support, authorize
+manuscript use, accept a contract, or authorize publication.
 
 Immutable, content-addressed source observations and actor-provenanced human
 decisions are historical authority. `ReferenceStateProjection`, SQLite rows,
