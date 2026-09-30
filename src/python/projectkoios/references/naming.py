@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from projectkoios.base import DataObjectModel
 from projectkoios.references.path_safety import validate_citekey
 
 
-@dataclass(frozen=True)
-class ReferenceFilenames:
+@dataclass(frozen=True, slots=True)
+class ReferenceFilenames(DataObjectModel):
     """Portable filenames derived from one canonical citation key."""
 
     citekey: str

@@ -4,12 +4,12 @@ This inventory began at clean baseline `b7581cb` and describes the current
 bounded taxonomy milestone in `projectkoios-references`. It does not redefine
 cross-repository policy or authorize later persisted-contract changes.
 
-## Dispositions
+## Milestone status
 
-- **IMPLEMENT_NOW** — safe repository-local work in this milestone.
-- **NO_ACTION** — complete for this milestone or intentionally unchanged.
-- **DOMAIN_DECISION** — a later request/result identity or action-owner decision
-  is required before implementation.
+- **IMPLEMENTED** — architecture changed and verified in this milestone.
+- **CURRENT** — inspected and intentionally unchanged.
+- **OUT_OF_SCOPE** — recorded only to bound this inventory; this milestone makes
+  no design recommendation or future-work commitment for the family.
 
 ## Package and test inventory
 
@@ -20,28 +20,28 @@ root-facade count includes constants, records, exceptions, and functions.
 
 | Family | Objects | Actions | Helpers | Root facade | Primary tests | Disposition |
 |---|---:|---:|---:|---:|---|---|
-| `acquisition` | 8 | 3 | 18 | 18 | `test__AcquisitionManifest.py` | DOMAIN_DECISION |
-| `assets` | 11 | 3 | 12 | 13 | `test__AssetDiscovery.py` | DOMAIN_DECISION |
-| `biblatex` | 3 | 2 | 4 | 2 | `test__BibLaTeXImport.py` | DOMAIN_DECISION |
-| `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | DOMAIN_DECISION |
-| `citation_closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | DOMAIN_DECISION |
-| `citation_draft` | 8 | 2 deprecated forwards | 0 | 0 | `test__CitationDraft.py` | NO_ACTION |
-| `collection_reconciliation` | 15 | 7 | 24 | 19 | `test__CollectionReconciliation.py` | DOMAIN_DECISION |
-| `coverage` | 7 public + 1 focused private collaborator | 0 | 0 | 7 | `test__CoverageObservation.py` | NO_ACTION |
-| `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | DOMAIN_DECISION |
-| `graph` | 7 | 1 | 21 | 8 | `test__CitationGraph.py`, `test__CitationGraphSeed.py` | DOMAIN_DECISION |
-| `identity` | 17 | 1 | 28 | 13 | `test__ReferenceIdentity.py` | DOMAIN_DECISION |
-| `ingestion_evidence` | 12 | 3 | 19 | 15 | `test__IngestionEvidence.py` | DOMAIN_DECISION |
-| `io_limits` | 2 | 3 | 0 | 12 | `test__IOBounds.py` | NO_ACTION |
-| `models` | 2 | 1 | 0 | 3 | exercised across catalog/state tests | DOMAIN_DECISION |
-| `naming` | 1 | 0 | 0 | 1 | `test__ReferenceFilenames.py` | NO_ACTION |
-| `path_safety` | 18 | 9 | 7 | 16 | `test__PathSafety.py`, `test__CloudPlaceholderSafety.py` | DOMAIN_DECISION |
-| `pdf_corpus` | 6 | 2 | 21 | 15 | `test__PdfCorpusDiscovery.py` | DOMAIN_DECISION |
-| `provided_intake` | 5 | 0 | 11 | 5 | `test__ProvidedReferenceIntake.py` | DOMAIN_DECISION |
-| `reconciliation_package` | 8 | 6 | 7 | 3 | `test__ReconciliationPackage.py` | DOMAIN_DECISION |
-| `review` | 14 | 1 | 22 | 15 | `test__ReviewState.py` | DOMAIN_DECISION |
-| `state_projection` | 10 | 14 | 23 | 29 | `test__StateProjection.py` | DOMAIN_DECISION |
-| `validation` | 1 | 1 | 3 | 0 | validation cases in safety tests | DOMAIN_DECISION |
+| `acquisition` | 8 | 3 | 18 | 18 | `test__AcquisitionManifest.py` | OUT_OF_SCOPE |
+| `assets` | 11 | 3 | 12 | 13 | `test__AssetDiscovery.py` | OUT_OF_SCOPE |
+| `biblatex` | 3 | 2 | 4 | 2 | `test__BibLaTeXImport.py` | OUT_OF_SCOPE |
+| `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | OUT_OF_SCOPE |
+| `citation_closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | OUT_OF_SCOPE |
+| `citation_draft` | 8 | 2 deprecated forwards | 0 | 0 | `test__CitationDraft.py` | IMPLEMENTED |
+| `collection_reconciliation` | 15 | 7 | 24 | 19 | `test__CollectionReconciliation.py` | OUT_OF_SCOPE |
+| `coverage` | 7 public + 1 focused private collaborator | 0 | 0 | 7 | `test__CoverageObservation.py` | IMPLEMENTED |
+| `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | OUT_OF_SCOPE |
+| `graph` | 7 | 1 | 21 | 8 | `test__CitationGraph.py`, `test__CitationGraphSeed.py` | OUT_OF_SCOPE |
+| `identity` | 17 | 1 | 28 | 13 | `test__ReferenceIdentity.py` | OUT_OF_SCOPE |
+| `ingestion_evidence` | 12 | 3 | 19 | 15 | `test__IngestionEvidence.py` | OUT_OF_SCOPE |
+| `io_limits` | 2 | 3 | 0 | 12 | `test__IOBounds.py` | CURRENT |
+| `models` | 2 | 1 | 0 | 3 | exercised across catalog/state tests | OUT_OF_SCOPE |
+| `naming` | 1 | 0 | 0 | 1 | `test__ReferenceFilenames.py` | IMPLEMENTED |
+| `path_safety` | 18 | 9 | 7 | 16 | `test__PathSafety.py`, `test__CloudPlaceholderSafety.py` | OUT_OF_SCOPE |
+| `pdf_corpus` | 6 | 2 | 21 | 15 | `test__PdfCorpusDiscovery.py` | OUT_OF_SCOPE |
+| `provided_intake` | 5 | 0 | 11 | 5 | `test__ProvidedReferenceIntake.py` | OUT_OF_SCOPE |
+| `reconciliation_package` | 8 | 6 | 7 | 3 | `test__ReconciliationPackage.py` | OUT_OF_SCOPE |
+| `review` | 14 | 1 | 22 | 15 | `test__ReviewState.py` | OUT_OF_SCOPE |
+| `state_projection` | 10 | 14 | 23 | 29 | `test__StateProjection.py` | OUT_OF_SCOPE |
+| `validation` | 1 | 1 | 3 | 0 | validation cases in safety tests | OUT_OF_SCOPE |
 
 The suite contains 25 maintained `tests/test*.py` files. Cross-family I/O,
 placeholder, reconciliation, catalog, and state tests exercise the same public
@@ -91,15 +91,14 @@ include `AssetDiscoveryPlanner.scan`, `ReferenceCatalog` methods,
 `CrossrefClient.fetch`, `ProvidedReferenceIntakeStore` methods, and
 `AuthorizedRoot` methods. Other module action entry points still cover
 create/load/build/discover/rebind/replay/reconcile/publish/verify/materialize and
-validate operations. Those families require their own bounded Request/Result
-and persisted-identity decisions; this milestone does not mechanically wrap or
-rename them.
+validate operations. They are explicitly out of scope: this milestone neither
+changes their boundaries nor establishes a deferred migration backlog.
 
-`naming` already has the desired ownership shape: immutable
-`ReferenceFilenames` owns `from_citekey` and has no free private helpers.
-`io_limits` contains intentional reusable public boundary guards. `coverage`
-uses the focused `_CoverageDocumentSchema` collaborator and has no module-level
-private helpers.
+`ReferenceFilenames` is now an immutable, slotted `DataObjectModel`. Its
+`from_citekey` classmethod remains the single owner of pure filename derivation;
+the family has no action boundary and no private helpers. `io_limits` contains
+intentional reusable public boundary guards. `coverage` uses the focused
+`_CoverageDocumentSchema` collaborator and has no module-level private helpers.
 
 ## Dependency identity
 
