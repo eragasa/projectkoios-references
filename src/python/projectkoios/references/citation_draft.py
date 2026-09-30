@@ -24,6 +24,11 @@ CITATION_DRAFT_PARSE_CONTRACT_ID = (
 )
 CITATION_DRAFT_PARSER_NAME = "projectkoios-references-citation-draft-parser"
 CITATION_DRAFT_PARSER_VERSION = "0.1.0"
+CITATION_DRAFT_RENDER_CONTRACT_ID = (
+    "projectkoios.references.citation-draft-render@0.1.0"
+)
+CITATION_DRAFT_RENDERER_NAME = "projectkoios-references-citation-draft-renderer"
+CITATION_DRAFT_RENDERER_VERSION = "0.1.0"
 
 _ENTRY_TYPES = frozenset({"book", "manual", "misc", "techreport"})
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -388,53 +393,180 @@ def parse_citation_drafts(content: bytes) -> tuple[CitationDraftEntry, ...]:
     return CitationDraftParser().parse(request=request).entries
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CitationDraftRenderRequest(DataObjectActionRequest):
+    """Request deterministic BibTeX rendering of proposed entries."""
+
+    entries: tuple[CitationDraftEntry, ...]
+    request_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.entries, tuple) or any(
+            not isinstance(entry, CitationDraftEntry) for entry in self.entries
+        ):
+            raise TypeError("entries must be a CitationDraftEntry tuple")
+        if not self.entries:
+            raise CitationDraftError("cannot render an empty bibliography")
+        object.__setattr__(
+            self,
+            "request_id",
+            self.identity_for(entries=self.entries),
+        )
+
+    @staticmethod
+    def identity_for(*, entries: tuple[CitationDraftEntry, ...]) -> str:
+        payload = {
+            "contract_id": CITATION_DRAFT_RENDER_CONTRACT_ID,
+            "entry_ids": [entry.entry_id for entry in entries],
+        }
+        canonical = json.dumps(
+            payload,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return (
+            "citation-draft-render-request:sha256:"
+            + hashlib.sha256(canonical).hexdigest()
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CitationDraftRenderResult(DataObjectActionResult):
+    """Bind one render request to deterministic UTF-8 BibTeX bytes."""
+
+    request: CitationDraftRenderRequest
+    bibliography: bytes
+    result_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if type(self.request) is not CitationDraftRenderRequest:
+            raise TypeError("request must be a CitationDraftRenderRequest")
+        if not isinstance(self.bibliography, bytes):
+            raise TypeError("bibliography must be bytes")
+        if not self.bibliography:
+            raise CitationDraftError("rendered bibliography must be non-empty")
+        if len(self.bibliography) > CITATION_DRAFT_MAX_BYTES:
+            raise CitationDraftError(
+                "rendered bibliography exceeds the byte limit"
+            )
+        object.__setattr__(
+            self,
+            "result_id",
+            self.identity_for(
+                request=self.request,
+                bibliography=self.bibliography,
+            ),
+        )
+
+    @staticmethod
+    def identity_for(
+        *,
+        request: CitationDraftRenderRequest,
+        bibliography: bytes,
+    ) -> str:
+        payload = {
+            "bibliography_byte_size": len(bibliography),
+            "bibliography_sha256": hashlib.sha256(bibliography).hexdigest(),
+            "contract_id": CITATION_DRAFT_RENDER_CONTRACT_ID,
+            "renderer_name": CITATION_DRAFT_RENDERER_NAME,
+            "renderer_version": CITATION_DRAFT_RENDERER_VERSION,
+            "request_id": request.request_id,
+        }
+        canonical = json.dumps(
+            payload,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return (
+            "citation-draft-render-result:sha256:"
+            + hashlib.sha256(canonical).hexdigest()
+        )
+
+
+class CitationDraftRenderer(
+    DataObjectActionizer[CitationDraftRenderRequest, CitationDraftRenderResult]
+):
+    """Render proposed citation entries without promoting their authority."""
+
+    __slots__ = ()
+
+    def action(
+        self,
+        *,
+        request: CitationDraftRenderRequest,
+    ) -> CitationDraftRenderResult:
+        """Return the result of the requested citation-draft render."""
+        return self.render(request=request)
+
+    def render(
+        self,
+        *,
+        request: CitationDraftRenderRequest,
+    ) -> CitationDraftRenderResult:
+        """Render deterministic UTF-8 BibTeX candidate entries."""
+        if type(request) is not CitationDraftRenderRequest:
+            raise TypeError("request must be a CitationDraftRenderRequest")
+        rendered = (
+            "\n\n".join(self._render_entry(entry) for entry in request.entries)
+            + "\n"
+        )
+        return CitationDraftRenderResult(
+            request=request,
+            bibliography=rendered.encode("utf-8"),
+        )
+
+    @classmethod
+    def _render_entry(cls, entry: CitationDraftEntry) -> str:
+        authors = [*cls._escaped_authors(entry.personal_authors)]
+        authors.extend(
+            f"{{{cls._escape(item)}}}" for item in entry.corporate_authors
+        )
+        fields: list[tuple[str, str]] = [
+            ("author", " and ".join(authors)),
+            ("title", f"{{{cls._escape(entry.title)}}}"),
+        ]
+        optional = (
+            ("institution", entry.institution),
+            ("publisher", entry.publisher),
+            ("type", entry.report_type),
+            ("number", entry.number),
+            ("edition", entry.edition),
+            ("year", entry.year),
+            ("doi", entry.doi),
+            ("url", entry.url),
+            ("urldate", entry.urldate),
+            ("note", entry.version_note),
+        )
+        fields.extend(
+            (name, cls._escape(value)) for name, value in optional if value
+        )
+        lines = [f"@{entry.entry_type}{{{entry.proposed_citekey},"]
+        lines.extend(f"  {name} = {{{value}}}," for name, value in fields)
+        lines[-1] = lines[-1][:-1]
+        lines.append("}")
+        return "\n".join(lines)
+
+    @classmethod
+    def _escaped_authors(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(cls._escape(value) for value in values)
+
+    @staticmethod
+    def _escape(value: str) -> str:
+        CitationDraftEntry._validate_text(value, "BibTeX value")
+        return (
+            value.replace("&", r"\&")
+            .replace("%", r"\%")
+            .replace("#", r"\#")
+            .replace("_", r"\_")
+        )
+
+
 def render_bibtex(entries: tuple[CitationDraftEntry, ...]) -> bytes:
-    """Render deterministic UTF-8 BibTeX without promoting candidate keys."""
-    if not entries:
-        raise CitationDraftError("cannot render an empty bibliography")
-    rendered = "\n\n".join(_render_entry(entry) for entry in entries) + "\n"
-    content = rendered.encode("utf-8")
-    if len(content) > CITATION_DRAFT_MAX_BYTES:
-        raise CitationDraftError("rendered bibliography exceeds the byte limit")
-    return content
-
-
-def _render_entry(entry: CitationDraftEntry) -> str:
-    authors = [*_escaped_authors(entry.personal_authors)]
-    authors.extend(f"{{{_escape(item)}}}" for item in entry.corporate_authors)
-    fields: list[tuple[str, str]] = [
-        ("author", " and ".join(authors)),
-        ("title", f"{{{_escape(entry.title)}}}"),
-    ]
-    optional = (
-        ("institution", entry.institution),
-        ("publisher", entry.publisher),
-        ("type", entry.report_type),
-        ("number", entry.number),
-        ("edition", entry.edition),
-        ("year", entry.year),
-        ("doi", entry.doi),
-        ("url", entry.url),
-        ("urldate", entry.urldate),
-        ("note", entry.version_note),
+    """Deprecated compatibility entry point for citation-draft rendering."""
+    warnings.warn(
+        "render_bibtex is deprecated; use CitationDraftRenderer",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    fields.extend((name, _escape(value)) for name, value in optional if value)
-    lines = [f"@{entry.entry_type}{{{entry.proposed_citekey},"]
-    lines.extend(f"  {name} = {{{value}}}," for name, value in fields)
-    lines[-1] = lines[-1][:-1]
-    lines.append("}")
-    return "\n".join(lines)
-
-
-def _escaped_authors(values: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(_escape(value) for value in values)
-
-
-def _escape(value: str) -> str:
-    CitationDraftEntry._validate_text(value, "BibTeX value")
-    return (
-        value.replace("&", r"\&")
-        .replace("%", r"\%")
-        .replace("#", r"\#")
-        .replace("_", r"\_")
-    )
+    request = CitationDraftRenderRequest(entries=entries)
+    return CitationDraftRenderer().render(request=request).bibliography

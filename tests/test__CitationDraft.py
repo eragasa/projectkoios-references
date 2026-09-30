@@ -17,6 +17,9 @@ from projectkoios.references.citation_draft import (
     CitationDraftParser,
     CitationDraftParseRequest,
     CitationDraftParseResult,
+    CitationDraftRenderer,
+    CitationDraftRenderRequest,
+    CitationDraftRenderResult,
     parse_citation_drafts,
     render_bibtex,
 )
@@ -80,10 +83,36 @@ def test__citation_draft_parser__uses_canonical_base_roles_and_identities() -> (
         request.content = b"{}"  # type: ignore[misc]
 
 
+def _render(
+    entries: tuple[CitationDraftEntry, ...],
+) -> CitationDraftRenderResult:
+    return CitationDraftRenderer().render(
+        request=CitationDraftRenderRequest(entries=entries)
+    )
+
+
+def test__renderer__uses_canonical_base_roles_and_identities() -> None:
+    entries = _parse(_payload()).entries
+    request = CitationDraftRenderRequest(entries=entries)
+    renderer = CitationDraftRenderer()
+
+    rendered = renderer.render(request=request)
+
+    assert issubclass(CitationDraftRenderRequest, DataObjectActionRequest)
+    assert issubclass(CitationDraftRenderResult, DataObjectActionResult)
+    assert issubclass(CitationDraftRenderer, DataObjectActionizer)
+    assert renderer.action(request=request) == rendered
+    assert rendered.request is request
+    assert rendered == _render(entries)
+    assert rendered.result_id != request.request_id
+    with pytest.raises(FrozenInstanceError):
+        rendered.bibliography = b""  # type: ignore[misc]
+
+
 def test__citation_draft__renders_deterministic_bibtex() -> None:
     entries = _parse(_payload()).entries
 
-    assert render_bibtex(entries).decode() == (
+    assert _render(entries).bibliography.decode() == (
         "@techreport{nistButcherEtAl2023AppendixC,\n"
         "  author = {Tina G. Butcher and Elizabeth J. Benham},\n"
         "  title = {{Appendix C. General Tables of Units of Measurement}},\n"
@@ -109,11 +138,14 @@ def test__citation_draft_parser__rejects_duplicate_members_and_authority() -> (
         _parse(_payload(entry))
 
 
-def test__legacy_parse_entry_point__warns_and_forwards() -> None:
+def test__legacy_entry_points__warn_and_forward() -> None:
     with pytest.warns(DeprecationWarning, match="CitationDraftParser"):
         entries = parse_citation_drafts(_payload())
+    with pytest.warns(DeprecationWarning, match="CitationDraftRenderer"):
+        bibliography = render_bibtex(entries)
 
     assert entries == _parse(_payload()).entries
+    assert bibliography == _render(entries).bibliography
 
 
 def test__bib_render_cli__publishes_without_overwrite(
@@ -136,8 +168,9 @@ def test__bib_render_cli__publishes_without_overwrite(
     assert main(arguments) == 0
     summary = json.loads(capsys.readouterr().out)
     assert summary["authority"] == "proposed-noncanonical"
-    assert output.read_bytes() == render_bibtex(
-        _parse(metadata.read_bytes()).entries
+    assert (
+        output.read_bytes()
+        == _render(_parse(metadata.read_bytes()).entries).bibliography
     )
     with pytest.raises(FileExistsError):
         main(arguments)
