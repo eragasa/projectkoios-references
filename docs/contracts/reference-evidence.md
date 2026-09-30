@@ -65,7 +65,7 @@ and human-review processes.
 | Specification revision | Git commit containing this document |
 | Owner | `projectkoios-references` |
 | Acceptance authority | Project Koios operator after reference-owner and materially affected consumer review |
-| Architecture record | Pending focused living architecture; no accepted architecture record exists |
+| Architecture record | [Evidence-grounded long-form authoring](https://github.com/eragasa/projectkoios/blob/main/docs/architecture/v0/index.md#evidence-grounded-long-form-authoring) |
 | Task | [`REF-RAG-01`](https://github.com/eragasa/projectkoios-references/issues/1) |
 | Predecessor | None registered |
 | Supersedes | None while proposed |
@@ -173,7 +173,7 @@ identifier.
 | Specification revision | Git commit containing this document |
 | Owner | `projectkoios-references` |
 | Acceptance authority | Project Koios operator after reference-owner, research-owner, and materially affected consumer review |
-| Architecture record | Pending focused living architecture; no accepted architecture record exists |
+| Architecture record | [Evidence-grounded long-form authoring](https://github.com/eragasa/projectkoios/blob/main/docs/architecture/v0/index.md#evidence-grounded-long-form-authoring) |
 | Task | `REF-RAG-02` deferred; no owner issue exists yet |
 | Predecessor | None registered |
 | Supersedes | None while draft |
