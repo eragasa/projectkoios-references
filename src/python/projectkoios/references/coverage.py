@@ -47,6 +47,54 @@ class CoverageAccessState(StrEnum):
     FULL_TEXT_NOT_PUBLIC = "full-text-not-public"
 
 
+class _CoverageDocumentSchema:
+    """Validate shapes shared by coverage document objects."""
+
+    @staticmethod
+    def bounded_text(value: object, *, field: str) -> str:
+        if not isinstance(value, str) or not value or len(value) > _MAX_TEXT:
+            raise ValueError(f"{field} must be a bounded non-empty string")
+        return value
+
+    @staticmethod
+    def validate_sorted_strings(values: object, *, field: str) -> None:
+        if not isinstance(values, tuple) or any(
+            not isinstance(item, str) for item in values
+        ):
+            raise ValueError(f"{field} must be a string tuple")
+        if any(not item or len(item) > _MAX_TEXT for item in values):
+            raise ValueError(f"{field} contains an invalid string")
+        if values != tuple(sorted(values)) or len(values) != len(set(values)):
+            raise ValueError(f"{field} must be sorted and unique")
+
+    @staticmethod
+    def string_array(value: object, *, field: str) -> tuple[str, ...]:
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) for item in value
+        ):
+            raise ValueError(f"{field} must be a string array")
+        return tuple(value)
+
+    @staticmethod
+    def exact_object(
+        value: object,
+        *,
+        fields: set[str],
+        label: str,
+    ) -> dict[str, object]:
+        if not isinstance(value, dict):
+            raise ValueError(f"{label} must be an object")
+        keys = set(value)
+        missing = fields - keys
+        unknown = keys - fields
+        if missing or unknown:
+            raise ValueError(
+                f"{label} fields differ: missing={sorted(missing)}, "
+                f"unknown={sorted(unknown)}"
+            )
+        return value
+
+
 @dataclass(frozen=True)
 class CoverageCandidate:
     root_alias: str
@@ -70,7 +118,7 @@ class CoverageCandidate:
 
     @classmethod
     def from_dict(cls, value: object) -> Self:
-        data = _exact_object(
+        data = _CoverageDocumentSchema.exact_object(
             value,
             fields={
                 "root_alias",
@@ -127,7 +175,10 @@ class ReferenceCoverage:
             raise ValueError("coverage candidates exceed the hard limit")
         if not isinstance(self.evidence, tuple) or not self.evidence:
             raise ValueError("coverage evidence must be a non-empty tuple")
-        _validate_sorted_strings(self.evidence, field="coverage evidence")
+        _CoverageDocumentSchema.validate_sorted_strings(
+            self.evidence,
+            field="coverage evidence",
+        )
         candidate_keys = tuple(
             (
                 item.root_alias,
@@ -205,7 +256,7 @@ class ReferenceCoverage:
 
     @classmethod
     def from_dict(cls, value: object) -> Self:
-        data = _exact_object(
+        data = _CoverageDocumentSchema.exact_object(
             value,
             fields={
                 "citekey",
@@ -224,7 +275,10 @@ class ReferenceCoverage:
             raise ValueError("coverage access_state must be a string")
         if not isinstance(data["candidates"], list):
             raise ValueError("coverage candidates must be an array")
-        evidence = _string_array(data["evidence"], field="coverage evidence")
+        evidence = _CoverageDocumentSchema.string_array(
+            data["evidence"],
+            field="coverage evidence",
+        )
         return cls(
             citekey=data["citekey"],
             no_match=data["no_match"],
@@ -251,7 +305,7 @@ class CoverageObservation:
     def __post_init__(self) -> None:
         if type(self.schema_version) is not int or self.schema_version != 1:
             raise ValueError("unsupported coverage-observation schema version")
-        _bounded_text(
+        _CoverageDocumentSchema.bounded_text(
             self.asserted_source_revision,
             field="asserted_source_revision",
         )
@@ -259,14 +313,20 @@ class CoverageObservation:
             raise ValueError("unsupported coverage state")
         if not isinstance(self.ambiguity_evaluation, AmbiguityEvaluation):
             raise ValueError("unsupported ambiguity-evaluation state")
-        _validate_sorted_strings(
+        _CoverageDocumentSchema.validate_sorted_strings(
             self.authorized_root_aliases,
             field="authorized root aliases",
         )
         for alias in self.authorized_root_aliases:
             validate_root_alias(alias)
-        _validate_sorted_strings(self.exclusions, field="coverage exclusions")
-        _validate_sorted_strings(self.failures, field="coverage failures")
+        _CoverageDocumentSchema.validate_sorted_strings(
+            self.exclusions,
+            field="coverage exclusions",
+        )
+        _CoverageDocumentSchema.validate_sorted_strings(
+            self.failures,
+            field="coverage failures",
+        )
         if not isinstance(self.references, tuple) or any(
             not isinstance(item, ReferenceCoverage) for item in self.references
         ):
@@ -372,7 +432,7 @@ class CoverageObservation:
             resource="coverage observation JSON",
         )
         value = json.loads(text)
-        data = _exact_object(
+        data = _CoverageDocumentSchema.exact_object(
             value,
             fields={
                 "schema_version",
@@ -405,15 +465,15 @@ class CoverageObservation:
                 str, data["asserted_source_revision"]
             ),
             state=CoverageState(cast(str, data["state"])),
-            authorized_root_aliases=_string_array(
+            authorized_root_aliases=_CoverageDocumentSchema.string_array(
                 data["authorized_root_aliases"],
                 field="authorized root aliases",
             ),
-            exclusions=_string_array(
+            exclusions=_CoverageDocumentSchema.string_array(
                 data["exclusions"],
                 field="coverage exclusions",
             ),
-            failures=_string_array(
+            failures=_CoverageDocumentSchema.string_array(
                 data["failures"],
                 field="coverage failures",
             ),
@@ -452,47 +512,3 @@ class CoverageObservation:
 
     def by_citekey(self) -> dict[str, ReferenceCoverage]:
         return {item.citekey: item for item in self.references}
-
-
-def _bounded_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or len(value) > _MAX_TEXT:
-        raise ValueError(f"{field} must be a bounded non-empty string")
-    return value
-
-
-def _validate_sorted_strings(values: object, *, field: str) -> None:
-    if not isinstance(values, tuple) or any(
-        not isinstance(item, str) for item in values
-    ):
-        raise ValueError(f"{field} must be a string tuple")
-    if any(not item or len(item) > _MAX_TEXT for item in values):
-        raise ValueError(f"{field} contains an invalid string")
-    if values != tuple(sorted(values)) or len(values) != len(set(values)):
-        raise ValueError(f"{field} must be sorted and unique")
-
-
-def _string_array(value: object, *, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) for item in value
-    ):
-        raise ValueError(f"{field} must be a string array")
-    return tuple(value)
-
-
-def _exact_object(
-    value: object,
-    *,
-    fields: set[str],
-    label: str,
-) -> dict[str, object]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be an object")
-    keys = set(value)
-    missing = fields - keys
-    unknown = keys - fields
-    if missing or unknown:
-        raise ValueError(
-            f"{label} fields differ: missing={sorted(missing)}, "
-            f"unknown={sorted(unknown)}"
-        )
-    return value
