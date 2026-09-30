@@ -8,7 +8,7 @@ license = "Apache-2.0"
 authors = [
     { name = "Eugene Ragasa", email = "eugene@projectkoios.com" },
 ]
-dependencies = ["pybtex>=0.25"]
+dependencies = ["projectkoios==0.0.0", "pybtex>=0.25"]
 
 [project.scripts]
 koios-ref = "projectkoios.references.cli:main"
@@ -23,6 +23,9 @@ namespaces = true
 
 [tool.setuptools.package-data]
 "projectkoios.references" = ["py.typed"]
+
+[tool.uv.sources]
+projectkoios = { git = "https://github.com/eragasa/projectkoios.git", rev = "233f36900b9b44c943ecc5e27f2968ad4bee97ad" }
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.8", "mypy>=1.13"]
