@@ -137,6 +137,10 @@ class ReconciliationPublisher(
         outputs = request.outputs
         if type(outputs) is not ReconciliationOutputs:
             raise TypeError("outputs must be exact ReconciliationOutputs")
+        try:
+            outputs.validate()
+        except ValueError as error:
+            raise CollectionReconciliationError(str(error)) from error
         output_directory = request.output_directory
         output_storage_class = request.output_storage_class
         expected = dict(outputs.files)

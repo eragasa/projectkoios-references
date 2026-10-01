@@ -701,3 +701,42 @@ def test__CollectionReconciler__uses_injected_source_bound_evidence(
         "processing-independent-revalidation:not-performed"
         in outputs.manifest.coverage
     )
+
+
+def test__CollectionReconciler__snapshots_mutable_request_containers() -> None:
+    record = _candidate(
+        proposed_citekey="alpha2020",
+        entry_type="article",
+        title="Alpha",
+        authors=("A. Author",),
+        year="2020",
+        doi="10.1000/alpha",
+    )
+    row = CollectionRowEvidence(
+        source_bibliographies=("references.bib",),
+        bibliographic_status="imported-unverified",
+        reading_status="unread-or-unknown",
+    )
+    records = [record]
+    rows = {"alpha2020": row}
+    managed_pdfs: list[object] = []
+    request = CollectionReconciliationRequest(
+        records=records,  # type: ignore[arg-type]
+        bibliography_bytes=b"fixture bibliography",
+        collection_id="fixture",
+        source_revision="abc123",
+        collection_rows=rows,
+        managed_pdfs=managed_pdfs,  # type: ignore[arg-type]
+        citation_closure=None,
+    )
+    result = CollectionReconciler().action(request=request)
+    expected_outputs = result.outputs
+
+    records.clear()
+    rows.clear()
+    managed_pdfs.append(object())
+
+    assert result.request.records == (record,)
+    assert tuple(result.request.collection_rows) == ("alpha2020",)
+    assert tuple(result.request.managed_pdfs) == ()
+    assert result.outputs == expected_outputs

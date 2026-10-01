@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -183,6 +184,40 @@ def _publication_outputs(tmp_path: Path) -> ReconciliationOutputs:
         )
         .outputs
     )
+
+
+def test__ReconciliationPublisher__rejects_inconsistent_output_objects(
+    tmp_path: Path,
+) -> None:
+    outputs = _publication_outputs(tmp_path)
+    with pytest.raises(ValueError, match="collection manifest differs"):
+        replace(
+            outputs,
+            manifest=replace(outputs.manifest, collection_id="other"),
+        )
+    with pytest.raises(ValueError, match="sorted, and unique"):
+        replace(outputs, files=outputs.files + (outputs.files[0],))
+    with pytest.raises(ValueError, match="sorted, and unique"):
+        replace(outputs, files=tuple(reversed(outputs.files)))
+
+    forged = object.__new__(ReconciliationOutputs)
+    for name in (
+        "manifest",
+        "citation_closure",
+        "package_manifest",
+    ):
+        object.__setattr__(forged, name, getattr(outputs, name))
+    object.__setattr__(forged, "files", outputs.files + (outputs.files[0],))
+    with pytest.raises(
+        CollectionReconciliationError, match="sorted, and unique"
+    ):
+        ReconciliationPublisher().action(
+            request=ReconciliationPublicationRequest(
+                outputs=forged,
+                output_directory=tmp_path / "forged",
+                output_storage_class=RootStorageClass.LOCAL,
+            )
+        )
 
 
 def test__ReconciliationPublisher__is_immutable_and_replayable(

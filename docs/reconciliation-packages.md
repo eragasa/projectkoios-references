@@ -85,13 +85,25 @@ counts mapping. Identical inputs and versions produce byte-identical payloads
 and the same package identity. Any bound input or payload byte change produces a
 different package or fails verification.
 
-The Python API provides:
+The canonical Python API is owned by
+`projectkoios.references.collections.reconciliation` and provides explicit
+action families:
 
-- `parse_reconciliation_package` for strict manifest parsing;
-- `verify_reconciliation_package` for directory and optional expected-identity
-  verification;
-- `replay_reconciliation` for deterministic immutable publication; and
-- `publish_reconciliation` for create-once publication.
+- `ReconciliationPackageParser.action` with
+  `ReconciliationPackageParseRequest`/`ReconciliationPackageParseResult` for
+  strict manifest-text parsing;
+- `ReconciliationPackageVerifier.action` with
+  `ReconciliationPackageVerificationRequest`/
+  `ReconciliationPackageVerificationResult` for directory and optional
+  expected-identity verification;
+- `ReconciliationReplayer.action` with
+  `ReconciliationReplayRequest`/`ReconciliationReplayResult` for deterministic
+  immutable publication; and
+- `ReconciliationPublisher.action` with
+  `ReconciliationPublicationRequest`/`ReconciliationPublicationResult` for
+  create-once publication.
+
+The package exposes no free-function or root-package compatibility facade.
 
 Publication atomically claims the final directory name with an exclusive
 `mkdir`; it does not use check-then-rename. The former

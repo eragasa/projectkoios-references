@@ -80,7 +80,12 @@ from .evidence import (
     _preflight_evidence,
     _projected_status,
 )
-from .loading import CollectionRowEvidence, ManagedPdf
+from .loading import (
+    CollectionRowEvidence,
+    EvidenceMapping,
+    ManagedPdf,
+    ManagedPdfScan,
+)
 from .manifest import CollectionManifest, ReconciliationOutputs
 from .rendering import _render_outputs
 
@@ -104,6 +109,60 @@ class CollectionReconciliationRequest(DataObjectActionRequest):
     asset_plan: AssetDiscoveryPlan | None = None
     bibliography_parser: str = "caller-supplied-records"
     limits: ReferenceIOLimits = RECONCILIATION_IO_LIMITS
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "records", tuple(self.records))
+        rows = self.collection_rows
+        object.__setattr__(
+            self,
+            "collection_rows",
+            EvidenceMapping(
+                entries=tuple(sorted(rows.items())),
+                input_evidence=tuple(getattr(rows, "input_evidence", ())),
+                root_preflights=tuple(getattr(rows, "root_preflights", ())),
+            ),
+        )
+        managed = self.managed_pdfs
+        if type(managed) is not ManagedPdfScan:
+            object.__setattr__(self, "managed_pdfs", tuple(managed))
+        processing = self.processing_evidence
+        if processing is not None:
+            object.__setattr__(
+                self,
+                "processing_evidence",
+                EvidenceMapping(
+                    entries=tuple(sorted(processing.items())),
+                    input_evidence=tuple(
+                        getattr(processing, "input_evidence", ())
+                    ),
+                    root_preflights=tuple(
+                        getattr(processing, "root_preflights", ())
+                    ),
+                ),
+            )
+        acquisition = self.acquisition_evidence
+        if acquisition is not None:
+            object.__setattr__(
+                self,
+                "acquisition_evidence",
+                EvidenceMapping(
+                    entries=tuple(sorted(acquisition.items())),
+                    input_evidence=(),
+                ),
+            )
+        assets = self.catalog_assets
+        if assets is not None:
+            object.__setattr__(
+                self,
+                "catalog_assets",
+                EvidenceMapping(
+                    entries=tuple(
+                        (key, tuple(values))
+                        for key, values in sorted(assets.items())
+                    ),
+                    input_evidence=(),
+                ),
+            )
 
 
 @final

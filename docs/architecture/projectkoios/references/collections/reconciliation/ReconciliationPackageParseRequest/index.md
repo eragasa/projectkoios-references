@@ -1,6 +1,6 @@
 # `ReconciliationPackageParseRequest`
 
-Immutable bounded request for parsing a reconciliation package from an authorized directory.
+Immutable request containing canonical reconciliation package-manifest text for strict parsing.
 
 It is owned by `publication.py` under the canonical
 `projectkoios.references.collections.reconciliation` package. Requests and
