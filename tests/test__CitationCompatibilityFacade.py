@@ -36,6 +36,9 @@ _BIBLIOGRAPHY_EXPORTS = (
     "CitationBibliographyObservationBinding",
 )
 _DOCUMENT_EXPORTS = (
+    "CitationDocumentAvailabilityEvaluationRequest",
+    "CitationDocumentAvailabilityEvaluationResult",
+    "CitationDocumentAvailabilityEvaluator",
     "CitationDocumentAvailabilityStatus",
     "CitationDocumentProjection",
     "CitationDocumentProjectionItem",

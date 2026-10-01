@@ -7,6 +7,9 @@ classDiagram
     class DataObjectActionizer
     class CitationTargetSnapshot
     class IdentityProjection
+    class CitationDocumentAvailabilityEvaluationRequest
+    class CitationDocumentAvailabilityEvaluationResult
+    class CitationDocumentAvailabilityEvaluator
     class CitationDocumentProjectionRequest
     class CitationDocumentProjection
     class CitationDocumentProjectionItem
@@ -16,6 +19,12 @@ classDiagram
     class CitationSourceDocumentLink
     class CitationSourceDocumentLinkResult
     class CitationSourceDocumentLinker
+
+    DataObjectActionRequest <|-- CitationDocumentAvailabilityEvaluationRequest
+    CitationDocumentAvailabilityEvaluator --> CitationDocumentAvailabilityEvaluationResult
+    DataObjectActionizer <|-- CitationDocumentAvailabilityEvaluator
+    DataObjectActionResult <|-- CitationDocumentAvailabilityEvaluationResult
+    CitationDocumentAvailabilityEvaluationResult --> CitationDocumentProjectionRequest
 
     DataObjectActionRequest <|-- CitationDocumentProjectionRequest
     CitationDocumentProjectionRequest --> CitationTargetSnapshot

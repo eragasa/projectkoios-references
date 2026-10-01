@@ -1,8 +1,9 @@
 # Citation document control implementation
 
-The canonical package implements two one-path actions.
-`CitationDocumentProjector.action` delegates to `project`;
-`CitationSourceDocumentLinker.action` delegates to `link`. Focused modules
+The canonical package implements three one-path actions. The availability
+evaluator cross-validates supplied evidence; `CitationDocumentProjector.action`
+delegates to `project`; and `CitationSourceDocumentLinker.action` delegates to
+`link`. Focused modules
 separate document evidence, projection, linkage, document status, and
 contract bounds. Canonical target DTOs come from `citations`; canonical
 bibliography bindings come from `bibliography`. The dependency direction is
@@ -23,7 +24,9 @@ flowchart TD
     A --> X[Existing CitationIdentityProjector]
     P --> X
     M --> X
-    D[Bounded document observations] --> O[Reduce availability]
+    T[Exact target + strict PDF plan + strict coverage] --> E[Cross-validate availability]
+    E --> D[Result-bound document observations]
+    D --> O[Reduce availability]
     L[Neutral exact links] --> O
     X --> Q[Lexically ordered projection items]
     O --> Q
@@ -45,12 +48,22 @@ two one-way helpers without duplicating either behavior.
 
 ## Document reduction
 
-Document observations contain only opaque document identity, PDF digest, byte
-size, media type, evidence identity, coverage, and optional inaccessible
-evidence IDs. Complete empty evidence may yield `not-observed` only for a
-resolved key. Incomplete or absent evidence yields `not-evaluated`. Positive
-single-content evidence yields available-unverified linkage; distinct content
-or contradictory accessibility evidence yields ambiguity.
+The availability evaluator consumes one exact target snapshot, strict
+`PdfCorpusDiscoveryPlan`, and strict `CoverageObservation`. It requires exact
+root aliases and target keys. Every positive candidate must match one valid-PDF
+plan observation by alias, path, digest, and size, and its evidence must contain
+the plan and source-observation IDs. A negative is authorized only when the plan
+is complete with no skips, coverage is COMPLETE with no failures or exclusions,
+and that key's evidence contains the exact plan ID. Bare `no_match`, prose-only
+evidence, and incomplete coverage remain `not-evaluated`.
+
+The Result derives existing document observations and binds the exact target
+projection, plan, coverage, and observations. Only negative observation IDs
+replayed from that Result may yield `not-observed`, and only for a resolved key.
+Arbitrary observations claiming `coverage_status=complete` are not negative
+authority. Positive single-content evidence still yields available-unverified
+linkage; distinct content or contradictory accessibility evidence yields
+ambiguity.
 
 A link request selects one resolved projection item and one exact available
 descriptor. Its opaque pre-effect intent is upstream lineage only. The resulting
@@ -67,7 +80,7 @@ extension of identity-bearing records.
 
 ## Identity and bounds
 
-All prototype identities are canonical and unversioned. Request, result,
+All prototype identities are canonical and unversioned. Availability,
 projection, item, observation, descriptor, imported binding, and link identities are
 SHA-256 digests over canonical in-memory payloads. No schema/version field or
 version segment is present.
@@ -99,14 +112,16 @@ normalized relative POSIX source paths without filesystem mutation policy; its
 SHA-256 is
 `d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
-The facade retains deprecated attributes for moved citation and bibliography
-names. Each resolves to the exact canonical object and emits at most one
-`DeprecationWarning` per name in one process; no wrapper, subclass, alternate
-payload, or duplicate identity is introduced.
+The canonical facade retains deprecated attributes for moved citation and
+bibliography names. The old `citation_document` namespace forwards exact
+objects from `documents`. Each facade emits bounded `DeprecationWarning`
+messages; no wrapper, subclass, alternate payload, or duplicate identity is
+introduced.
 
 Evidence:
 
 - source facade: [`documents/__init__.py`](../../../../../src/python/projectkoios/references/documents/__init__.py)
+- availability: [`availability.py`](../../../../../src/python/projectkoios/references/documents/availability.py)
 - projection: [`projection.py`](../../../../../src/python/projectkoios/references/documents/projection.py)
 - citation resolution: [`citations/resolution.py`](../../../../../src/python/projectkoios/references/citations/resolution.py)
 - bibliography resolution: [`bibliography/resolution.py`](../../../../../src/python/projectkoios/references/bibliography/resolution.py)

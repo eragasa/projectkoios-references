@@ -100,7 +100,10 @@ reserved `not-evaluated`; it cannot substitute for reference-identity status.
 
 ## Document evidence statuses
 
-`CitationDocumentAvailabilityStatus` is closed:
+`CitationDocumentAvailabilityStatus` is closed. Negative authority comes only
+from a replay-valid `CitationDocumentAvailabilityEvaluationResult` that binds
+an exact target snapshot, strict `PdfCorpusDiscoveryPlan`, and strict
+`CoverageObservation`:
 
 | Status | Meaning |
 |---|---|
@@ -110,6 +113,15 @@ reserved `not-evaluated`; it cannot substitute for reference-identity status.
 | `available-linked` | One exact PDF content identity has at least one valid neutral link to the exact resolved identity. This is attachment only. |
 | `ambiguous` | Competing PDF content identities or contradictory positive/inaccessible evidence remain. |
 | `inaccessible` | Explicit bounded evidence reports inaccessible content and no document descriptor is available. |
+
+The availability cross-validator requires exact plan/coverage root aliases and
+exact target/coverage keys. Positive candidates must bind an exact valid-PDF
+plan observation by alias, relative path, digest, and size, with both exact plan
+and source-observation identities in evidence. A scoped negative additionally
+requires a complete no-skip plan and COMPLETE coverage with no failures or
+exclusions. Bare `no_match`, absence from input, prose-only evidence, incomplete
+coverage, or an arbitrary document observation claiming `complete` cannot
+produce `not-observed`.
 
 Multiple locations or document IDs for identical SHA-256 and byte size do not
 manufacture independent content. Distinct content identities remain ambiguous.
@@ -150,8 +162,10 @@ admission. Every link fixes these limitations:
 
 ## Runtime and persistence boundary
 
-`CitationDocumentProjectionRequest` and `CitationSourceDocumentLinkRequest` are
-runtime operation inputs. Projection requests consume exact link results, not
+`CitationDocumentAvailabilityEvaluationRequest`,
+`CitationDocumentProjectionRequest`, and `CitationSourceDocumentLinkRequest`
+are runtime operation inputs. Projection requests consume exact availability
+and link results, not
 bare links. Both result families replay the one canonical focused builder and
 require exact output equality before validating the result identity. The
 immutable projection, item, descriptor, observation, and link records are the

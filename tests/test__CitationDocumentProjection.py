@@ -46,6 +46,15 @@ from projectkoios.references.citations.resolution import (
     project_identity_ids,
     resolve_identity_ids_by_key,
 )
+from projectkoios.references.coverage import (
+    AmbiguityEvaluation,
+    CandidateVersionRelation,
+    CoverageAccessState,
+    CoverageCandidate,
+    CoverageObservation,
+    CoverageState,
+    ReferenceCoverage,
+)
 from projectkoios.references.documents import (
     CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
     CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
@@ -55,6 +64,9 @@ from projectkoios.references.documents import (
     CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
     CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
     CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
+    CitationDocumentAvailabilityEvaluationRequest,
+    CitationDocumentAvailabilityEvaluationResult,
+    CitationDocumentAvailabilityEvaluator,
     CitationDocumentAvailabilityStatus,
     CitationDocumentProjection,
     CitationDocumentProjectionItem,
@@ -78,6 +90,22 @@ from projectkoios.references.identity import (
     ReferenceCandidate,
     SourceBibliographyObservation,
     replay_identity_decisions,
+)
+from projectkoios.references.io_limits import PDF_CORPUS_DISCOVERY_IO_LIMITS
+from projectkoios.references.path_safety import (
+    RootPreflightEvidence,
+    RootStorageClass,
+)
+from projectkoios.references.pdf_corpus import (
+    PDF_CORPUS_DISCOVERY_ARTIFACT_KIND,
+    PDF_CORPUS_DISCOVERY_CONTRACT_ID,
+    PDF_CORPUS_DISCOVERY_CONTRACT_STATUS,
+    PDF_CORPUS_DISCOVERY_CONTRACT_VERSION,
+    PDF_CORPUS_DISCOVERY_GENERATOR_NAME,
+    PDF_CORPUS_DISCOVERY_GENERATOR_VERSION,
+    PDF_CORPUS_DISCOVERY_SCHEMA_VERSION,
+    PdfCorpusDiscoveryPlan,
+    PdfSourceObservation,
 )
 
 
@@ -367,6 +395,7 @@ def _fixture() -> tuple[
 def _projection_request(
     *,
     observations: tuple[CitationSourceDocumentObservation, ...] = (),
+    availability: CitationDocumentAvailabilityEvaluationResult | None = None,
     links: tuple[CitationSourceDocumentLinkResult, ...] = (),
 ) -> CitationDocumentProjectionRequest:
     snapshot, bindings, identity_projection = _fixture()
@@ -375,6 +404,7 @@ def _projection_request(
         bibliography_bindings=bindings,
         identity_projection=identity_projection,
         document_observations=observations,
+        availability_evaluation_result=availability,
         source_document_link_results=links,
     )
 
@@ -385,6 +415,108 @@ def _descriptor(label: str) -> CitationSourceDocumentDescriptor:
         source_document_id=f"application-source:{label}",
         sha256=hashlib.sha256(content).hexdigest(),
         byte_size=len(content),
+    )
+
+
+def _availability_source(label: str) -> PdfSourceObservation:
+    content = f"%PDF-{label}".encode()
+    return PdfSourceObservation.create(
+        root_alias="papers",
+        relative_path=f"{label}.pdf",
+        storage_class=RootStorageClass.LOCAL,
+        probe_id="local-root-no-cloud-probe-v1",
+        sha256=hashlib.sha256(content).hexdigest(),
+        byte_size=len(content),
+        pdf_header_valid=True,
+    )
+
+
+def _availability_plan(
+    sources: tuple[PdfSourceObservation, ...] = (),
+) -> PdfCorpusDiscoveryPlan:
+    return PdfCorpusDiscoveryPlan(
+        schema_version=PDF_CORPUS_DISCOVERY_SCHEMA_VERSION,
+        artifact_kind=PDF_CORPUS_DISCOVERY_ARTIFACT_KIND,
+        contract_id=PDF_CORPUS_DISCOVERY_CONTRACT_ID,
+        contract_version=PDF_CORPUS_DISCOVERY_CONTRACT_VERSION,
+        contract_status=PDF_CORPUS_DISCOVERY_CONTRACT_STATUS,
+        generator_name=PDF_CORPUS_DISCOVERY_GENERATOR_NAME,
+        generator_version=PDF_CORPUS_DISCOVERY_GENERATOR_VERSION,
+        coverage_status="complete",
+        effective_limits=PDF_CORPUS_DISCOVERY_IO_LIMITS,
+        effective_limits_id=PDF_CORPUS_DISCOVERY_IO_LIMITS.evidence_id,
+        root_preflights=(
+            RootPreflightEvidence(
+                root_alias="papers",
+                storage_class=RootStorageClass.LOCAL,
+                probe_id="local-root-no-cloud-probe-v1",
+                probe_support=None,
+            ),
+        ),
+        skipped_observations=(),
+        source_observations=sources,
+    )
+
+
+def _availability_coverage(
+    *,
+    plan: PdfCorpusDiscoveryPlan,
+    candidates_by_key: dict[str, tuple[PdfSourceObservation, ...]]
+    | None = None,
+    state: CoverageState = CoverageState.COMPLETE,
+    exclusions: tuple[str, ...] = (),
+    bind_plan: bool = True,
+) -> CoverageObservation:
+    snapshot, _, _ = _fixture()
+    selected = candidates_by_key or {}
+    references: list[ReferenceCoverage] = []
+    for group in snapshot.groups:
+        sources = selected.get(group.key, ())
+        evidence = {item.observation_id for item in sources}
+        evidence.add(plan.plan_id if bind_plan else "coverage-evidence:unbound")
+        references.append(
+            ReferenceCoverage(
+                citekey=group.key,
+                no_match=not sources,
+                access_state=CoverageAccessState.NONE,
+                candidates=tuple(
+                    CoverageCandidate(
+                        root_alias=item.root_alias,
+                        relative_path=item.relative_path,
+                        sha256=item.sha256,
+                        byte_size=item.byte_size,
+                        version_relation=(
+                            CandidateVersionRelation.PRIMARY_OR_UNKNOWN
+                        ),
+                    )
+                    for item in sources
+                ),
+                evidence=tuple(sorted(evidence)),
+            )
+        )
+    return CoverageObservation.create(
+        asserted_source_revision="synthetic-coverage-revision",
+        state=state,
+        authorized_root_aliases=("papers",),
+        exclusions=exclusions,
+        failures=(),
+        ambiguity_evaluation=AmbiguityEvaluation.EVALUATED,
+        references=tuple(references),
+    )
+
+
+def _availability_result(
+    *,
+    plan: PdfCorpusDiscoveryPlan,
+    coverage: CoverageObservation,
+) -> CitationDocumentAvailabilityEvaluationResult:
+    snapshot, _, _ = _fixture()
+    return CitationDocumentAvailabilityEvaluator().action(
+        request=CitationDocumentAvailabilityEvaluationRequest(
+            target_snapshot=snapshot,
+            discovery_plan=plan,
+            coverage_observation=coverage,
+        )
     )
 
 
@@ -685,13 +817,242 @@ def test__document_status__distinguishes_not_evaluated_and_not_observed() -> (
         CitationDocumentAvailabilityStatus.NOT_EVALUATED
     )
     assert by_key["candidateOnly"].document_status is (
-        CitationDocumentAvailabilityStatus.NOT_OBSERVED
+        CitationDocumentAvailabilityStatus.NOT_EVALUATED
     )
     assert by_key["unresolved"].document_status is (
         CitationDocumentAvailabilityStatus.NOT_EVALUATED
     )
     assert by_key["aliasOld"].document_status is (
         CitationDocumentAvailabilityStatus.NOT_EVALUATED
+    )
+
+
+def test__availability_evaluator__is_sole_negative_authority() -> None:
+    plan = _availability_plan()
+    availability = _availability_result(
+        plan=plan,
+        coverage=_availability_coverage(plan=plan),
+    )
+
+    projected = CitationDocumentProjector().project(
+        request=_projection_request(
+            observations=availability.observations,
+            availability=availability,
+        )
+    )
+    by_key = {item.literal_citekey: item for item in projected.projection.items}
+
+    assert issubclass(
+        CitationDocumentAvailabilityEvaluationRequest,
+        DataObjectActionRequest,
+    )
+    assert issubclass(
+        CitationDocumentAvailabilityEvaluationResult,
+        DataObjectActionResult,
+    )
+    assert issubclass(
+        CitationDocumentAvailabilityEvaluator,
+        DataObjectActionizer,
+    )
+    assert availability.result_id.startswith(
+        "citation-document-availability-evaluation-result:sha256:"
+    )
+    assert len(availability.negative_observation_ids()) == len(
+        availability.observations
+    )
+    with pytest.raises(ValueError, match="evaluator replay"):
+        CitationDocumentAvailabilityEvaluationResult(
+            request=availability.request,
+            observations=tuple(reversed(availability.observations)),
+        )
+    for key in ("acceptedKey", "aliasOld", "candidateOnly"):
+        assert by_key[key].document_status is (
+            CitationDocumentAvailabilityStatus.NOT_OBSERVED
+        )
+    for key in ("ambiguousKey", "unresolved"):
+        assert by_key[key].document_status is (
+            CitationDocumentAvailabilityStatus.NOT_EVALUATED
+        )
+
+
+def test__availability_evaluator__bare_no_match_remains_not_evaluated() -> None:
+    plan = _availability_plan()
+    availability = _availability_result(
+        plan=plan,
+        coverage=_availability_coverage(plan=plan, bind_plan=False),
+    )
+
+    assert all(
+        item.coverage_status == "incomplete"
+        for item in availability.observations
+    )
+    assert availability.negative_observation_ids() == ()
+    projected = CitationDocumentProjector().project(
+        request=_projection_request(
+            observations=availability.observations,
+            availability=availability,
+        )
+    )
+    assert all(
+        item.document_status is CitationDocumentAvailabilityStatus.NOT_EVALUATED
+        for item in projected.projection.items
+    )
+
+
+def test__availability_evaluator__binds_exact_positive_plan_source() -> None:
+    source = _availability_source("acceptedKey")
+    plan = _availability_plan((source,))
+    availability = _availability_result(
+        plan=plan,
+        coverage=_availability_coverage(
+            plan=plan,
+            candidates_by_key={"candidateOnly": (source,)},
+        ),
+    )
+    observation = next(
+        item
+        for item in availability.observations
+        if item.literal_citekey == "candidateOnly"
+    )
+
+    assert observation.source_documents[0].source_document_id == (
+        source.observation_id
+    )
+    assert observation.source_documents[0].sha256 == source.sha256
+    assert (
+        next(
+            item
+            for item in availability.observations
+            if item.literal_citekey == "acceptedKey"
+        ).source_documents
+        == ()
+    )
+    projected = CitationDocumentProjector().project(
+        request=_projection_request(
+            observations=availability.observations,
+            availability=availability,
+        )
+    )
+    item = next(
+        value
+        for value in projected.projection.items
+        if value.literal_citekey == "candidateOnly"
+    )
+    assert item.document_status is (
+        CitationDocumentAvailabilityStatus.AVAILABLE_UNVERIFIED_LINKAGE
+    )
+
+
+def test__availability_evaluator__rejects_unbound_candidate_and_roots() -> None:
+    source = _availability_source("candidate-only")
+    plan = _availability_plan((source,))
+    coverage = _availability_coverage(
+        plan=plan,
+        candidates_by_key={"candidateOnly": (source,)},
+    )
+    candidate_reference = coverage.by_citekey()["candidateOnly"]
+    unbound_reference = replace(
+        candidate_reference,
+        evidence=(plan.plan_id,),
+    )
+    references = tuple(
+        unbound_reference if item.citekey == "candidateOnly" else item
+        for item in coverage.references
+    )
+    unbound = CoverageObservation.create(
+        asserted_source_revision=coverage.asserted_source_revision,
+        state=coverage.state,
+        authorized_root_aliases=coverage.authorized_root_aliases,
+        exclusions=coverage.exclusions,
+        failures=coverage.failures,
+        ambiguity_evaluation=coverage.ambiguity_evaluation,
+        references=references,
+    )
+    snapshot, _, _ = _fixture()
+
+    with pytest.raises(ValueError, match="plan-source evidence"):
+        CitationDocumentAvailabilityEvaluationRequest(
+            target_snapshot=snapshot,
+            discovery_plan=plan,
+            coverage_observation=unbound,
+        )
+    wrong_roots = CoverageObservation.create(
+        asserted_source_revision=coverage.asserted_source_revision,
+        state=coverage.state,
+        authorized_root_aliases=("elsewhere",),
+        exclusions=coverage.exclusions,
+        failures=coverage.failures,
+        ambiguity_evaluation=coverage.ambiguity_evaluation,
+        references=tuple(
+            replace(
+                item,
+                candidates=(),
+                no_match=True,
+                evidence=(plan.plan_id,),
+            )
+            for item in coverage.references
+        ),
+    )
+    with pytest.raises(ValueError, match="roots differ"):
+        CitationDocumentAvailabilityEvaluationRequest(
+            target_snapshot=snapshot,
+            discovery_plan=plan,
+            coverage_observation=wrong_roots,
+        )
+
+
+def test__availability_evaluator__rejects_subclass_boundaries() -> None:
+    plan = _availability_plan()
+    coverage = _availability_coverage(plan=plan)
+    snapshot, bindings, identity_projection = _fixture()
+    request = CitationDocumentAvailabilityEvaluationRequest(
+        target_snapshot=snapshot,
+        discovery_plan=plan,
+        coverage_observation=coverage,
+    )
+    result = CitationDocumentAvailabilityEvaluator().action(request=request)
+
+    class DerivedRequest(CitationDocumentAvailabilityEvaluationRequest):
+        pass
+
+    with pytest.raises(TypeError, match="availability request"):
+        CitationDocumentAvailabilityEvaluator().action(
+            request=_subclass_copy(request, DerivedRequest)
+        )
+
+    class DerivedResult(CitationDocumentAvailabilityEvaluationResult):
+        pass
+
+    with pytest.raises(TypeError, match="availability_evaluation_result"):
+        CitationDocumentProjectionRequest(
+            target_snapshot=snapshot,
+            bibliography_bindings=bindings,
+            identity_projection=identity_projection,
+            document_observations=result.observations,
+            availability_evaluation_result=_subclass_copy(
+                result,
+                DerivedResult,
+            ),
+        )
+
+
+def test__availability_evaluator__incomplete_coverage_cannot_be_negative() -> (
+    None
+):
+    plan = _availability_plan()
+    availability = _availability_result(
+        plan=plan,
+        coverage=_availability_coverage(
+            plan=plan,
+            state=CoverageState.INCOMPLETE,
+            exclusions=("operator-declared-exclusion",),
+        ),
+    )
+
+    assert availability.negative_observation_ids() == ()
+    assert all(
+        item.coverage_status == "incomplete"
+        for item in availability.observations
     )
 
 
@@ -1803,6 +2164,9 @@ def test__canonical_facade_classes_are_statically_final() -> None:
     canonical_classes = (
         CitationBibliographyObservationBinding,
         CitationContentIdentity,
+        CitationDocumentAvailabilityEvaluationRequest,
+        CitationDocumentAvailabilityEvaluationResult,
+        CitationDocumentAvailabilityEvaluator,
         CitationDocumentProjection,
         CitationDocumentProjectionItem,
         CitationDocumentProjectionRequest,

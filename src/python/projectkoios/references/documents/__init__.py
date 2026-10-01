@@ -19,6 +19,12 @@ from ._contract import (
     CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
     CITATION_SOURCE_DOCUMENT_LINKER_NAME,
 )
+from .availability import (
+    CITATION_DOCUMENT_AVAILABILITY_EVALUATOR_NAME,
+    CitationDocumentAvailabilityEvaluationRequest,
+    CitationDocumentAvailabilityEvaluationResult,
+    CitationDocumentAvailabilityEvaluator,
+)
 from .document import (
     CitationSourceDocumentDescriptor,
     CitationSourceDocumentObservation,
@@ -133,6 +139,7 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "CITATION_DOCUMENT_AVAILABILITY_EVALUATOR_NAME",
     "CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS",
     "CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES",
     "CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES",
@@ -161,6 +168,9 @@ __all__ = [
     "CitationBibliographyMembershipStatus",
     "CitationBibliographyObservationBinding",
     "CitationContentIdentity",
+    "CitationDocumentAvailabilityEvaluationRequest",
+    "CitationDocumentAvailabilityEvaluationResult",
+    "CitationDocumentAvailabilityEvaluator",
     "CitationDocumentAvailabilityStatus",
     "CitationDocumentProjection",
     "CitationDocumentProjectionItem",

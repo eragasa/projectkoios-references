@@ -7,6 +7,9 @@ files or owning PDF bytes, rights, review, use, or ingestion state.
 
 ## Public classes
 
+- [`CitationDocumentAvailabilityEvaluationRequest`](CitationDocumentAvailabilityEvaluationRequest/index.md)
+- [`CitationDocumentAvailabilityEvaluationResult`](CitationDocumentAvailabilityEvaluationResult/index.md)
+- [`CitationDocumentAvailabilityEvaluator`](CitationDocumentAvailabilityEvaluator/index.md)
 - [`CitationDocumentAvailabilityStatus`](CitationDocumentAvailabilityStatus/index.md)
 - [`CitationSourceDocumentDescriptor`](CitationSourceDocumentDescriptor/index.md)
 - [`CitationSourceDocumentObservation`](CitationSourceDocumentObservation/index.md)
@@ -27,8 +30,10 @@ projector consumes canonical [citation inventory](../citations/index.md) and
 [bibliography binding](../bibliography/index.md) records through one-way
 package dependencies. It preserves every occurrence and source gap, admits no
 first-match identity selection, and treats `not-observed` as the only safe
-missing-document state. A neutral link means only that an exact descriptor is
-attached to an exact resolved identity.
+missing-document state. Only the replay-valid availability evaluation Result
+can authorize that negative state; arbitrary complete observations cannot. A
+neutral link means only that an exact descriptor is attached to an exact
+resolved identity.
 
 Moved citation and bibliography attributes remain temporarily available from
 this facade as deprecated identity-preserving aliases. New code imports them

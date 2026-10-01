@@ -61,6 +61,7 @@ from .document import (
 from .statuses import CitationDocumentAvailabilityStatus
 
 if TYPE_CHECKING:
+    from .availability import CitationDocumentAvailabilityEvaluationResult
     from .linkage import (
         CitationSourceDocumentLink,
         CitationSourceDocumentLinkResult,
@@ -436,12 +437,18 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
     bibliography_bindings: tuple[CitationBibliographyObservationBinding, ...]
     identity_projection: IdentityProjection
     document_observations: tuple[CitationSourceDocumentObservation, ...] = ()
+    availability_evaluation_result: (
+        CitationDocumentAvailabilityEvaluationResult | None
+    ) = None
     source_document_link_results: tuple[
         CitationSourceDocumentLinkResult, ...
     ] = ()
     request_id: str = field(init=False)
 
     def __post_init__(self) -> None:
+        from .availability import (
+            CitationDocumentAvailabilityEvaluationResult,
+        )
         from .linkage import CitationSourceDocumentLinkResult
 
         if type(self.target_snapshot) is not CitationTargetSnapshot:
@@ -505,6 +512,24 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
             for item in self.document_observations
         ):
             raise ValueError("document observation target conflicts")
+        if self.availability_evaluation_result is not None:
+            if (
+                type(self.availability_evaluation_result)
+                is not CitationDocumentAvailabilityEvaluationResult
+            ):
+                raise TypeError(
+                    "availability_evaluation_result has an invalid type"
+                )
+            self.availability_evaluation_result.validate_identity()
+            if (
+                self.availability_evaluation_result.request.target_snapshot
+                != self.target_snapshot
+                or self.document_observations
+                != self.availability_evaluation_result.observations
+            ):
+                raise ValueError(
+                    "availability evaluation result conflicts with request"
+                )
         counts_by_key: dict[str, int] = {}
         for observation in self.document_observations:
             counts_by_key[observation.literal_citekey] = (
@@ -565,7 +590,7 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
         resolved_links = link_ids or tuple(
             item.link.link_id for item in self.source_document_link_results
         )
-        return {
+        payload: dict[str, object] = {
             "contract_id": CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
             "target_projection_id": self.target_snapshot.target_projection_id,
             "bibliography_binding_ids": list(sorted(resolved_bindings)),
@@ -575,6 +600,11 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
             ],
             "source_document_link_ids": list(resolved_links),
         }
+        if self.availability_evaluation_result is not None:
+            payload["availability_evaluation_result_id"] = (
+                self.availability_evaluation_result.result_id
+            )
+        return payload
 
     def validate_identity(self) -> None:
         rebuilt = replace(self)
@@ -689,6 +719,12 @@ class _CitationDocumentProjectionBuilder:
         observations_by_key = self._observations_by_key(
             request.document_observations
         )
+        availability = request.availability_evaluation_result
+        negative_observation_ids = (
+            ()
+            if availability is None
+            else availability.negative_observation_ids()
+        )
         all_links = tuple(
             item.link for item in request.source_document_link_results
         )
@@ -712,6 +748,7 @@ class _CitationDocumentProjectionBuilder:
                 key_status=key_status,
                 observations=observations,
                 links=group_links,
+                negative_observation_ids=negative_observation_ids,
             )
             items.append(
                 CitationDocumentProjectionItem(
@@ -888,6 +925,7 @@ class _CitationDocumentProjectionBuilder:
         key_status: CitationKeyResolutionStatus,
         observations: tuple[CitationSourceDocumentObservation, ...],
         links: tuple[CitationSourceDocumentLink, ...],
+        negative_observation_ids: tuple[str, ...],
     ) -> CitationDocumentAvailabilityStatus:
         descriptors = {
             item.source_document_id: item
@@ -913,8 +951,11 @@ class _CitationDocumentProjectionBuilder:
             )
         if inaccessible:
             return CitationDocumentAvailabilityStatus.INACCESSIBLE
+        authorized_negatives = set(negative_observation_ids)
         if key_status is CitationKeyResolutionStatus.RESOLVED and any(
-            item.coverage_status == "complete" for item in observations
+            item.observation_id in authorized_negatives
+            and item.coverage_status == "complete"
+            for item in observations
         ):
             return CitationDocumentAvailabilityStatus.NOT_OBSERVED
         return CitationDocumentAvailabilityStatus.NOT_EVALUATED
