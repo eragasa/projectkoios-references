@@ -1,44 +1,34 @@
 # `projectkoios.references` package implementation
 
-The documented path is deliberately one-way: identity replay establishes
-bounded reference identity state, the identity projector exposes safe outcomes,
-canonical citation and bibliography packages preserve exact target evidence,
-and citation-document control composes those records with identity and document
-evidence without changing owner authority.
+The documented citation path preserves two independent owner boundaries:
+complete neutral target citation inventory and exact bibliography observation
+binding. Identity replay remains a separate References capability and does not
+gate document processing.
 
 ```mermaid
 sequenceDiagram
     participant T as Target snapshot owner
-    participant R as Identity replay
-    participant Q as Citations + bibliography
-    participant I as CitationIdentityProjector
-    participant D as CitationDocumentProjector
-    participant L as CitationSourceDocumentLinker
-    participant C as Consumer
-    T-->>Q: complete neutral target snapshot
-    Q-->>D: canonical inventory + bindings
-    R-->>I: immutable IdentityProjection
-    D->>I: canonical batches of exact identity IDs
-    I-->>D: identity projection items
-    D-->>C: citation document projection
-    C->>L: resolved item + available descriptor + pre-effect intent
-    L-->>C: neutral source-document link
-    C->>D: exact link + same owner inputs
-    D-->>C: rebuilt available-linked projection
-    Note over D,C: no rights, use, review, ingestion, or publication claim
+    participant C as Citations
+    participant O as Bibliography observation
+    participant B as Bibliography binding
+    participant X as Consumer
+    T-->>C: complete neutral target snapshot
+    C-->>X: exact target records and identities
+    C-->>B: exact target bibliography entry
+    O-->>B: replay-valid source observation
+    B-->>X: exact entry-observation binding
+    Note over C,X: no document availability, processing, or receipt state
 ```
 
 The References root initializer is unchanged by these slices. Consumers import
-citation inventory and bibliography binding from their canonical focused
-package facades, identity from its owner, and document control from
-`documents`. There is no legacy document facade, root-facade expansion, or
-duplicate implementation.
+citation inventory and bibliography bindings from their canonical focused
+package facades. References defines no document projection, availability,
+neutral-link, processing, receipt, or target-association DTO in this slice.
 
 Evidence:
 
 - package source: [`src/python/projectkoios/references`](../../../../src/python/projectkoios/references)
-- identity tests: [`test__CitationIdentityProjection.py`](../../../../tests/test__CitationIdentityProjection.py)
-- citation document tests: [`test__CitationDocumentProjection.py`](../../../../tests/test__CitationDocumentProjection.py)
+- target adapter tests: [`test__CitationDocumentTargetAdapter.py`](../../../../tests/test__CitationDocumentTargetAdapter.py)
 
 - [Package index](index.md)
 - [Schematic](schematic.md)

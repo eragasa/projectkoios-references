@@ -2,26 +2,21 @@
 
 ```mermaid
 flowchart LR
-    O[Replay-valid target owner Result] --> A[Adapter]
+    O[Replay-valid target owner Result] --> A[Tested adapter boundary]
     A --> C[Canonical citations base records]
-    C --> D[Citation-document projection]
+    C --> X[Consumer target association]
 ```
 
-The canonical implementations live in `citations/base.py`; key resolution state
-lives in `citations/statuses.py`, and target grammar and resource ceilings live
-in the private contract module. `citations/resolution.py` applies accepted
-canonical-name and alias precedence, bounded identity projection, and fail-closed
-resolved/ambiguous/unresolved reduction over neutral candidate mappings. Every
-record is frozen, slotted, statically
-`final`, and accepted at composition boundaries only by exact runtime type.
+The canonical implementations live in `citations/base.py`; target grammar,
+resource ceilings, and stable identity construction live in the private
+contract module. Every record is frozen, slotted, statically `final`, and
+accepted at composition boundaries only by exact runtime type.
 
-The package has no dependency on `documents`; the latter consumes these
-records through their canonical owner without re-exporting them.
-
-The live adapter evidence and target-owner provenance remain documented by the
-[citation-document implementation](../documents/implementation.md).
+The package owns no bibliography observation, accepted reference identity,
+document availability, receipt, or processing state. The live adapter evidence
+and target-owner provenance are documented by the
+[citation target contract](../../../../contracts/citation-document.md).
 
 - [Module index](index.md)
 - [Schematic](schematic.md)
 - source base: [`citations/base.py`](../../../../../src/python/projectkoios/references/citations/base.py)
-- resolution: [`citations/resolution.py`](../../../../../src/python/projectkoios/references/citations/resolution.py)

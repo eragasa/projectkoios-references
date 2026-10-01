@@ -1,4 +1,4 @@
-"""Canonical citation-inventory records and literal-key state."""
+"""Canonical neutral target citation-inventory records."""
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES,
@@ -25,7 +25,6 @@ from .base import (
     CitationTargetSnapshot,
     CitationTargetSourceGap,
 )
-from .statuses import CitationKeyResolutionStatus
 
 __all__ = [
     "CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES",
@@ -43,7 +42,6 @@ __all__ = [
     "CITATION_DOCUMENT_MAX_TARGET_SOURCE_FILES",
     "CITATION_DOCUMENT_MAX_TEXT_BYTES",
     "CitationContentIdentity",
-    "CitationKeyResolutionStatus",
     "CitationSourceLocator",
     "CitationTargetBibliographyEntry",
     "CitationTargetGroup",

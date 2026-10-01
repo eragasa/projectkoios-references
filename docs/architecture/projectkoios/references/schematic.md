@@ -8,22 +8,18 @@ flowchart LR
     I[identity replay module] --> P[citation_identity]
     P --> O[Citation-facing identity outcomes]
     T[Neutral target citation snapshot] --> C[citations]
-    O2[Bibliography observation] --> G[bibliography]
-    C --> G
-    C --> D[documents]
-    G --> D
-    P --> D
-    E[Document observations and neutral links] --> D
-    D --> R[Citation document projection]
-    B[Project Koios base taxonomy] --> P
-    B --> D
+    O2[Bibliography observation] --> B[bibliography]
+    C --> B
+    C --> X[Consumer target association]
+    B --> X
+    K[Project Koios base taxonomy] --> P
     U[Other References modules] -. unmigrated architecture .-> I
 ```
 
-`citation_identity` reads immutable replay output. `citations` and
-`bibliography` preserve target and evidence ownership; `documents`
-composes those records with document evidence. None of these modules
-introduces identity promotion, rights, review, use, or ingestion authority.
+`citation_identity` reads immutable replay output. `citations` preserves exact
+target-owned records, while `bibliography` binds an exact target bibliography
+entry to exact References evidence. Neither package owns document processing,
+receipts, availability, rights, review, use, or ingestion authority.
 
 - [Package index](index.md)
 - [Implementation](implementation.md)

@@ -12,8 +12,6 @@ manuscript use, rights clearance, or publication acceptance.
   and membership state.
 - [`citation_identity`](citation_identity/index.md) — a
   bounded citation-facing projection over replay-derived identity state.
-- [`documents`](documents/index.md) — deterministic whole-target citation
-  correlation and neutral source-document linkage.
 
 All other package modules remain listed as unmigrated in the
 [repository navigator](../../index.md).
@@ -25,7 +23,7 @@ than redefining it:
 
 - [Reference identity and authority](../../../reference-identity.md)
 - [Reference evidence contracts](../../../contracts/reference-evidence.md)
-- [Citation document control contracts](../../../contracts/citation-document.md)
+- [Citation target and bibliography contracts](../../../contracts/citation-document.md)
 
 ## Detail
 

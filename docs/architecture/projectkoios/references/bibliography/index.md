@@ -1,18 +1,18 @@
 # `projectkoios.references.bibliography`
 
-This package owns canonical bibliography evidence binding and bibliography
-membership state used by citation projection.
+This package owns the canonical exact binding between one target bibliography
+entry and one References bibliography observation.
 
 ## Public classes
 
 - [`CitationBibliographyObservationBinding`](CitationBibliographyObservationBinding/index.md)
-- [`CitationBibliographyMembershipStatus`](CitationBibliographyMembershipStatus/index.md)
 
 ## Boundary
 
 A binding proves exact agreement between one citation-owned target bibliography
 entry and one replay-valid References bibliography observation. It does not own
-citation inventory or document availability.
+accepted reference identity, document processing, availability, receipts, or
+target-association policy.
 
 ## Detail
 
