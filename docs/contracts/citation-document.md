@@ -36,9 +36,10 @@ Canonical citation inventory records live in
 membership state live in `projectkoios.references.bibliography`.
 `projectkoios.references.documents` owns document evidence, linkage, and
 projection. The old `projectkoios.references.citation_document` namespace is a
-deprecated exact-object compatibility facade. Citation inventory and
-bibliography binding names exposed by either facade remain deprecated aliases;
-new code imports them from their canonical packages.
+deprecated exact-object compatibility facade. The canonical `documents` facade
+exports document-owned names only. Citation inventory and bibliography binding
+compatibility names remain available only from the deprecated facade; new code
+imports them from their canonical packages.
 
 The target projection is complete-or-absent. It has no `incomplete` success
 form. A malformed, partial, over-limit, or internally inconsistent input is

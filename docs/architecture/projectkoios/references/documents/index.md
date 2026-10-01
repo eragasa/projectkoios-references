@@ -35,9 +35,10 @@ can authorize that negative state; arbitrary complete observations cannot. A
 neutral link means only that an exact descriptor is attached to an exact
 resolved identity.
 
-Moved citation and bibliography attributes remain temporarily available from
-this facade as deprecated identity-preserving aliases. New code imports them
-from their canonical packages.
+This canonical facade exports document-owned names only. Citation inventory and
+bibliography binding records are imported directly from their canonical owner
+packages. Legacy cross-owner aliases exist only on the deprecated
+[`citation_document`](../citation_document/index.md) compatibility facade.
 
 See the [citation document control contracts](../../../../contracts/citation-document.md).
 

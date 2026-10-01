@@ -112,11 +112,11 @@ normalized relative POSIX source paths without filesystem mutation policy; its
 SHA-256 is
 `d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
-The canonical facade retains deprecated attributes for moved citation and
-bibliography names. The old `citation_document` namespace forwards exact
-objects from `documents`. Each facade emits bounded `DeprecationWarning`
-messages; no wrapper, subclass, alternate payload, or duplicate identity is
-introduced.
+The canonical `documents` facade exports only document-owned names and emits no
+deprecation warning. The old `citation_document` namespace alone forwards exact
+objects from `documents`, `citations`, and `bibliography` with bounded
+`DeprecationWarning` messages; no wrapper, subclass, alternate payload, or
+duplicate identity is introduced.
 
 Evidence:
 

@@ -6,6 +6,7 @@ import projectkoios.references.bibliography as bibliography
 import projectkoios.references.citation_document as deprecated_facade
 import projectkoios.references.citations as citations
 import projectkoios.references.documents as documents
+import pytest
 
 _CITATION_EXPORTS = (
     "CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES",
@@ -71,6 +72,16 @@ def test__canonical_citation_and_bibliography_imports_are_warning_free() -> (
         )
 
     assert captured == []
+
+
+def test__canonical_documents_facade_has_no_cross_owner_exports() -> None:
+    unowned = (*_CITATION_EXPORTS, *_BIBLIOGRAPHY_EXPORTS)
+
+    assert not set(unowned) & set(documents.__all__)
+    for name in unowned:
+        assert name not in dir(documents)
+        with pytest.raises(AttributeError):
+            getattr(documents, name)
 
 
 def test__deprecated_exports_preserve_identity_and_warn_once() -> None:
