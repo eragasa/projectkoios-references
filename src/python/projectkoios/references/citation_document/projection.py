@@ -9,12 +9,29 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
+from projectkoios.references.bibliography import (
+    CitationBibliographyMembershipStatus,
+    CitationBibliographyObservationBinding,
+)
 from projectkoios.references.citation_identity import (
     CITATION_IDENTITY_PROJECTION_MAX_IDENTITIES,
     CitationIdentityProjectionItem,
     CitationIdentityProjectionRequest,
     CitationIdentityProjectionStatus,
     CitationIdentityProjector,
+)
+from projectkoios.references.citations import (
+    CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES,
+    CITATION_DOCUMENT_MAX_KEYS,
+    CITATION_DOCUMENT_MAX_OCCURRENCES,
+    CITATION_DOCUMENT_MAX_SOURCE_GAPS,
+    CitationKeyResolutionStatus,
+    CitationTargetGroup,
+    CitationTargetSnapshot,
+    CitationTargetSourceGap,
+)
+from projectkoios.references.citations._contract import (
+    validate_literal_citekey,
 )
 from projectkoios.references.identity import (
     IdentityProjection,
@@ -23,35 +40,20 @@ from projectkoios.references.identity import (
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
-    CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES,
     CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
-    CITATION_DOCUMENT_MAX_KEYS,
     CITATION_DOCUMENT_MAX_LINKS,
     CITATION_DOCUMENT_MAX_OBSERVATIONS_PER_KEY,
-    CITATION_DOCUMENT_MAX_OCCURRENCES,
     CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
-    CITATION_DOCUMENT_MAX_SOURCE_GAPS,
     CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
     CITATION_DOCUMENT_PROJECTOR_NAME,
     _CitationDocumentContract,
     stable_id,
-    validate_literal_citekey,
 )
 from .document import (
     CitationSourceDocumentDescriptor,
     CitationSourceDocumentObservation,
 )
-from .statuses import (
-    CitationBibliographyMembershipStatus,
-    CitationDocumentAvailabilityStatus,
-    CitationKeyResolutionStatus,
-)
-from .target import (
-    CitationBibliographyObservationBinding,
-    CitationTargetGroup,
-    CitationTargetSnapshot,
-    CitationTargetSourceGap,
-)
+from .statuses import CitationDocumentAvailabilityStatus
 
 if TYPE_CHECKING:
     from .linkage import (

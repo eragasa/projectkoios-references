@@ -4,6 +4,9 @@ from dataclasses import dataclass, field, replace
 from typing import final
 
 from projectkoios.base import DataObjectModel
+from projectkoios.references.citations._contract import (
+    validate_literal_citekey,
+)
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
@@ -11,7 +14,6 @@ from ._contract import (
     CITATION_DOCUMENT_MAX_PDF_BYTES,
     _CitationDocumentContract,
     stable_id,
-    validate_literal_citekey,
 )
 
 

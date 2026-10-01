@@ -13,38 +13,45 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
+from projectkoios.references.bibliography import (
+    CitationBibliographyMembershipStatus,
+    CitationBibliographyObservationBinding,
+)
 from projectkoios.references.citation_document import (
     CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
-    CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES,
     CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
     CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY,
     CITATION_DOCUMENT_MAX_OBSERVATIONS_PER_KEY,
-    CITATION_DOCUMENT_MAX_OCCURRENCES,
     CITATION_DOCUMENT_MAX_PDF_BYTES,
     CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
-    CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES,
-    CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES,
-    CITATION_DOCUMENT_MAX_TARGET_RECORDS,
-    CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD,
-    CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES,
     CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
     CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
-    CitationBibliographyMembershipStatus,
-    CitationBibliographyObservationBinding,
-    CitationContentIdentity,
     CitationDocumentAvailabilityStatus,
     CitationDocumentProjection,
     CitationDocumentProjectionItem,
     CitationDocumentProjectionRequest,
     CitationDocumentProjectionResult,
     CitationDocumentProjector,
-    CitationKeyResolutionStatus,
     CitationSourceDocumentDescriptor,
     CitationSourceDocumentLink,
     CitationSourceDocumentLinker,
     CitationSourceDocumentLinkRequest,
     CitationSourceDocumentLinkResult,
     CitationSourceDocumentObservation,
+)
+from projectkoios.references.citation_identity import (
+    CitationIdentityProjectionStatus,
+)
+from projectkoios.references.citations import (
+    CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES,
+    CITATION_DOCUMENT_MAX_OCCURRENCES,
+    CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES,
+    CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES,
+    CITATION_DOCUMENT_MAX_TARGET_RECORDS,
+    CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD,
+    CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES,
+    CitationContentIdentity,
+    CitationKeyResolutionStatus,
     CitationSourceLocator,
     CitationTargetBibliographyEntry,
     CitationTargetGroup,
@@ -52,10 +59,7 @@ from projectkoios.references.citation_document import (
     CitationTargetSnapshot,
     CitationTargetSourceGap,
 )
-from projectkoios.references.citation_document._contract import stable_id
-from projectkoios.references.citation_identity import (
-    CitationIdentityProjectionStatus,
-)
+from projectkoios.references.citations._contract import stable_id
 from projectkoios.references.identity import (
     ActorAuthorityScope,
     ActorKind,
@@ -1684,6 +1688,63 @@ def test__canonical_projection_and_link_boundaries_reject_subclasses() -> None:
             document_observations=request.document_observations,
             source_document_link_results=(forged_link_result,),
         )
+
+
+def test__canonical_package_move_preserves_all_identity_families() -> None:
+    descriptor = _descriptor("identity-stability")
+    observation = _document_observation(
+        key="acceptedKey",
+        coverage="complete",
+        documents=(descriptor,),
+    )
+    request = _projection_request(observations=(observation,))
+    projection_result = CitationDocumentProjector().project(request=request)
+    item = next(
+        value
+        for value in projection_result.projection.items
+        if value.literal_citekey == "acceptedKey"
+    )
+    link_request = CitationSourceDocumentLinkRequest(
+        projection_result=projection_result,
+        item_id=item.item_id,
+        identity_item_id=item.identity_items[0].item_id,
+        source_document_id=descriptor.source_document_id,
+        pre_effect_intent_id="application-intent:identity-stability",
+    )
+    link_result = CitationSourceDocumentLinker().link(request=link_request)
+
+    assert (
+        request.target_snapshot.target_projection_id
+        == "citation-target-projection:sha256:"
+        "e36083b40733d11d5789f3857812dad5e237d8470ebc66a4cc1b0a7b1337f484"
+    )
+    assert (
+        request.request_id == "citation-document-projection-request:sha256:"
+        "3c13bc41aa496883d0d8953f35060db74f0c40309ba177f24216522ed6749ac7"
+    )
+    assert (
+        projection_result.projection.projection_id
+        == "citation-document-projection:sha256:"
+        "fd347490ca819b51db8eb11f24314ce61cecc0c97511383eb2de11fe253827db"
+    )
+    assert (
+        projection_result.result_id
+        == "citation-document-projection-result:sha256:"
+        "33a420ead8ffc7c20fd0e1991d9ab2438af9d13518a7b0e0a4b5dfdcb5ff8b33"
+    )
+    assert (
+        link_request.request_id
+        == "citation-source-document-link-request:sha256:"
+        "065bfb5ffaa537629eb32c894bad35010ba359859671d57f5137a8ef437e1399"
+    )
+    assert (
+        link_result.link.link_id == "citation-source-document-link:sha256:"
+        "35f4876198b89c95fbd3aac6a6373fd528785608b296b7e53e4c66da9daac426"
+    )
+    assert (
+        link_result.result_id == "citation-source-document-link-result:sha256:"
+        "3f6a4e7791f4c5712d052976f2b8bc343810e685908c749a80a30b872dc842bc"
+    )
 
 
 def test__canonical_facade_classes_are_statically_final() -> None:

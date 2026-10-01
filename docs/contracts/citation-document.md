@@ -31,6 +31,13 @@ state, transcript state, scientific-support decision, or publication decision.
 
 ## Neutral target snapshot projection
 
+Canonical citation inventory records live in
+`projectkoios.references.citations`; canonical bibliography binding records and
+membership state live in `projectkoios.references.bibliography`.
+`projectkoios.references.citation_document` temporarily exposes moved names as
+deprecated attributes that preserve exact object identity. New code must use
+the canonical packages.
+
 The target projection is complete-or-absent. It has no `incomplete` success
 form. A malformed, partial, over-limit, or internally inconsistent input is
 rejected rather than projected.

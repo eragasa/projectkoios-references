@@ -7,16 +7,6 @@ files or owning PDF bytes, rights, review, use, or ingestion state.
 
 ## Public classes
 
-- [`CitationContentIdentity`](CitationContentIdentity/index.md)
-- [`CitationSourceLocator`](CitationSourceLocator/index.md)
-- [`CitationTargetOccurrence`](CitationTargetOccurrence/index.md)
-- [`CitationTargetGroup`](CitationTargetGroup/index.md)
-- [`CitationTargetBibliographyEntry`](CitationTargetBibliographyEntry/index.md)
-- [`CitationTargetSourceGap`](CitationTargetSourceGap/index.md)
-- [`CitationTargetSnapshot`](CitationTargetSnapshot/index.md)
-- [`CitationBibliographyObservationBinding`](CitationBibliographyObservationBinding/index.md)
-- [`CitationBibliographyMembershipStatus`](CitationBibliographyMembershipStatus/index.md)
-- [`CitationKeyResolutionStatus`](CitationKeyResolutionStatus/index.md)
 - [`CitationDocumentAvailabilityStatus`](CitationDocumentAvailabilityStatus/index.md)
 - [`CitationSourceDocumentDescriptor`](CitationSourceDocumentDescriptor/index.md)
 - [`CitationSourceDocumentObservation`](CitationSourceDocumentObservation/index.md)
@@ -33,10 +23,16 @@ files or owning PDF bytes, rights, review, use, or ingestion state.
 ## Boundaries
 
 The two prototype contract identities are canonical and unversioned. The
-projector preserves every occurrence and source gap, admits no first-match
-identity selection, and treats `not-observed` as the only safe missing-document
-state. A neutral link means only that an exact descriptor is attached to an
-exact resolved identity.
+projector consumes canonical [citation inventory](../citations/index.md) and
+[bibliography binding](../bibliography/index.md) records through one-way
+package dependencies. It preserves every occurrence and source gap, admits no
+first-match identity selection, and treats `not-observed` as the only safe
+missing-document state. A neutral link means only that an exact descriptor is
+attached to an exact resolved identity.
+
+Moved citation and bibliography attributes remain temporarily available from
+this facade as deprecated identity-preserving aliases. New code imports them
+from their canonical packages.
 
 See the [citation document control contracts](../../../../contracts/citation-document.md).
 

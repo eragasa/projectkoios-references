@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from projectkoios.references.citation_document import (
+from projectkoios.references.citations import (
     CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES,
     CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS,
     CITATION_DOCUMENT_MAX_ID_BYTES,

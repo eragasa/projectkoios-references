@@ -2,18 +2,21 @@
 
 The documented path is deliberately one-way: identity replay establishes
 bounded reference identity state, the identity projector exposes safe outcomes,
-and citation-document control composes those outcomes with exact target and
-document evidence without changing owner authority.
+canonical citation and bibliography packages preserve exact target evidence,
+and citation-document control composes those records with identity and document
+evidence without changing owner authority.
 
 ```mermaid
 sequenceDiagram
     participant T as Target snapshot owner
     participant R as Identity replay
+    participant Q as Citations + bibliography
     participant I as CitationIdentityProjector
     participant D as CitationDocumentProjector
     participant L as CitationSourceDocumentLinker
     participant C as Consumer
-    T-->>D: complete neutral target snapshot
+    T-->>Q: complete neutral target snapshot
+    Q-->>D: canonical inventory + bindings
     R-->>I: immutable IdentityProjection
     D->>I: canonical batches of exact identity IDs
     I-->>D: identity projection items
@@ -26,9 +29,11 @@ sequenceDiagram
 ```
 
 The References root initializer is unchanged by these slices. Consumers import
-citation identity from its owning module and citation-document control from its
-canonical focused package facade. There is no root-facade expansion or legacy
-module alias.
+citation inventory and bibliography binding from their canonical focused
+package facades, identity from its owner, and document control from
+`citation_document`. Moved names on the latter are bounded deprecated
+identity-preserving attributes; there is no root-facade expansion or duplicate
+implementation.
 
 Evidence:
 

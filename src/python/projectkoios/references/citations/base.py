@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field, replace
 from typing import final
 
 from projectkoios.base import DataObjectModel
-from projectkoios.references.identity import SourceBibliographyObservation
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES,
@@ -18,7 +16,7 @@ from ._contract import (
     CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD,
     CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES,
     CITATION_DOCUMENT_MAX_TARGET_SOURCE_FILES,
-    _CitationDocumentContract,
+    _CitationContract,
     stable_id,
     validate_literal_citekey,
     validate_source_path,
@@ -39,9 +37,7 @@ class CitationContentIdentity(DataObjectModel):
             raise ValueError("citation content algorithm must be sha256")
         if type(
             self.digest
-        ) is not str or not _CitationDocumentContract._DIGEST.fullmatch(
-            self.digest
-        ):
+        ) is not str or not _CitationContract._DIGEST.fullmatch(self.digest):
             raise ValueError("citation content digest is invalid")
         if (
             type(self.byte_count) is not int
@@ -110,7 +106,7 @@ class CitationTargetOccurrence(DataObjectModel):
     todo_marker_index: int | None
 
     def __post_init__(self) -> None:
-        _CitationDocumentContract.target_id(
+        _CitationContract.target_id(
             self.occurrence_id,
             kind="occurrence",
             field_name="citation occurrence identity",
@@ -183,7 +179,7 @@ class CitationTargetGroup(DataObjectModel):
     bibliography_entry_index: int | None
 
     def __post_init__(self) -> None:
-        _CitationDocumentContract.target_id(
+        _CitationContract.target_id(
             self.group_id,
             kind="group",
             field_name="citation group identity",
@@ -249,7 +245,7 @@ class CitationTargetBibliographyEntry(DataObjectModel):
     source_bibliography_observation_id: str | None = None
 
     def __post_init__(self) -> None:
-        _CitationDocumentContract.target_id(
+        _CitationContract.target_id(
             self.entry_id,
             kind="entry",
             field_name="citation bibliography entry identity",
@@ -265,7 +261,7 @@ class CitationTargetBibliographyEntry(DataObjectModel):
             self.key,
             field_name="bibliography entry key",
         )
-        _CitationDocumentContract.bounded_text(
+        _CitationContract.bounded_text(
             self.entry_type,
             field_name="bibliography entry type",
             maximum=CITATION_DOCUMENT_MAX_ID_BYTES,
@@ -277,7 +273,7 @@ class CitationTargetBibliographyEntry(DataObjectModel):
                 "entry_content_identity must be a CitationContentIdentity"
             )
         if self.source_bibliography_observation_id is not None:
-            _CitationDocumentContract.content_id(
+            _CitationContract.content_id(
                 self.source_bibliography_observation_id,
                 field_name="source bibliography observation identity",
             )
@@ -295,7 +291,7 @@ class CitationTargetSourceGap(DataObjectModel):
     placeholder_identifier: str
 
     def __post_init__(self) -> None:
-        _CitationDocumentContract.target_id(
+        _CitationContract.target_id(
             self.source_gap_id,
             kind="gap",
             field_name="citation source-gap identity",
@@ -316,7 +312,7 @@ class CitationTargetSourceGap(DataObjectModel):
             or self.reason != "placeholder_identifier"
         ):
             raise ValueError("citation source-gap reason is invalid")
-        _CitationDocumentContract.bounded_text(
+        _CitationContract.bounded_text(
             self.placeholder_identifier,
             field_name="placeholder identifier",
         )
@@ -422,7 +418,7 @@ class CitationTargetSnapshot(DataObjectModel):
     target_projection_id: str = field(init=False)
 
     def __post_init__(self) -> None:
-        _CitationDocumentContract.target_id(
+        _CitationContract.target_id(
             self.snapshot_id,
             kind="snapshot",
             field_name="target citation snapshot identity",
@@ -476,17 +472,17 @@ class CitationTargetSnapshot(DataObjectModel):
             CITATION_DOCUMENT_MAX_TARGET_RECORDS
         ):
             raise ValueError("target aggregate record count exceeds the limit")
-        _CitationDocumentContract.sequential_indexes(
+        _CitationContract.sequential_indexes(
             self.occurrences,
             attribute="occurrence_index",
             field_name="target occurrences",
         )
-        _CitationDocumentContract.sequential_indexes(
+        _CitationContract.sequential_indexes(
             self.bibliography_entries,
             attribute="entry_index",
             field_name="target bibliography entries",
         )
-        _CitationDocumentContract.sequential_indexes(
+        _CitationContract.sequential_indexes(
             self.source_gaps,
             attribute="source_gap_index",
             field_name="target source gaps",
@@ -654,76 +650,9 @@ class CitationTargetSnapshot(DataObjectModel):
         rebuilt = replace(self)
         if rebuilt != self:
             raise ValueError("target citation projection does not match replay")
-        _CitationDocumentContract.validate_identity(
+        _CitationContract.validate_identity(
             actual=self.target_projection_id,
             prefix="citation-target-projection",
             payload=self._identity_payload(),
             field_name="target citation projection identity",
         )
-
-
-@final
-@dataclass(frozen=True, slots=True, kw_only=True)
-class CitationBibliographyObservationBinding(DataObjectModel):
-    """Exact target-entry binding to one References source observation."""
-
-    entry: CitationTargetBibliographyEntry
-    observation: SourceBibliographyObservation
-    binding_id: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        if type(self.entry) is not CitationTargetBibliographyEntry:
-            raise TypeError("entry must be a CitationTargetBibliographyEntry")
-        if type(self.observation) is not SourceBibliographyObservation:
-            raise TypeError(
-                "observation must be a SourceBibliographyObservation"
-            )
-        if (
-            self.observation.observed_citekey != self.entry.key
-            or self.observation.entry_index != self.entry.entry_index
-            or self.observation.source_path != self.entry.locator.source_path
-            or self.observation.bibliography_sha256
-            != self.entry.locator.source_content_identity.digest
-            or self.observation.bibliography_byte_size
-            != self.entry.locator.source_content_identity.byte_count
-        ):
-            raise ValueError(
-                "bibliography observation conflicts with target entry"
-            )
-        verbatim = self.observation.verbatim_entry.encode("utf-8")
-        if (
-            hashlib.sha256(verbatim).hexdigest()
-            != self.entry.entry_content_identity.digest
-            or len(verbatim) != self.entry.entry_content_identity.byte_count
-        ):
-            raise ValueError(
-                "bibliography observation verbatim entry conflicts"
-            )
-        if (
-            self.entry.source_bibliography_observation_id is not None
-            and self.entry.source_bibliography_observation_id
-            != self.observation.observation_id
-        ):
-            raise ValueError(
-                "target bibliography observation identity conflicts"
-            )
-        object.__setattr__(
-            self,
-            "binding_id",
-            stable_id(
-                "citation-bibliography-binding",
-                {
-                    "entry_id": self.entry.entry_id,
-                    "observation_id": self.observation.observation_id,
-                },
-            ),
-        )
-
-    def validate_identity(self) -> None:
-        if replace(self.observation) != self.observation:
-            raise ValueError(
-                "source bibliography observation does not match replay"
-            )
-        rebuilt = replace(self)
-        if rebuilt != self:
-            raise ValueError("bibliography binding does not match replay")

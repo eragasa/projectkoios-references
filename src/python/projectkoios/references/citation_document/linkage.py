@@ -9,6 +9,10 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
+from projectkoios.references.citations import CitationKeyResolutionStatus
+from projectkoios.references.citations._contract import (
+    validate_literal_citekey,
+)
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY,
@@ -16,13 +20,9 @@ from ._contract import (
     CITATION_SOURCE_DOCUMENT_LINKER_NAME,
     _CitationDocumentContract,
     stable_id,
-    validate_literal_citekey,
 )
 from .document import CitationSourceDocumentDescriptor
-from .statuses import (
-    CitationDocumentAvailabilityStatus,
-    CitationKeyResolutionStatus,
-)
+from .statuses import CitationDocumentAvailabilityStatus
 
 if TYPE_CHECKING:
     from .projection import (

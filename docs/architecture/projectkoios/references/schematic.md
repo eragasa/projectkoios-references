@@ -7,7 +7,11 @@ Untouched package modules remain opaque.
 flowchart LR
     I[identity replay module] --> P[citation_identity]
     P --> O[Citation-facing identity outcomes]
-    T[Neutral target citation snapshot] --> D[citation_document]
+    T[Neutral target citation snapshot] --> C[citations]
+    O2[Bibliography observation] --> G[bibliography]
+    C --> G
+    C --> D[citation_document]
+    G --> D
     P --> D
     E[Document observations and neutral links] --> D
     D --> R[Citation document projection]
@@ -16,8 +20,9 @@ flowchart LR
     U[Other References modules] -. unmigrated architecture .-> I
 ```
 
-`citation_identity` reads immutable replay output. `citation_document` composes
-that output with owner-supplied target and document evidence. Neither module
+`citation_identity` reads immutable replay output. `citations` and
+`bibliography` preserve target and evidence ownership; `citation_document`
+composes those records with document evidence. None of these modules
 introduces identity promotion, rights, review, use, or ingestion authority.
 
 - [Package index](index.md)

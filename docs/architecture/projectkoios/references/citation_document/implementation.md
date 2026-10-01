@@ -2,9 +2,11 @@
 
 The canonical package implements two one-path actions.
 `CitationDocumentProjector.action` delegates to `project`;
-`CitationSourceDocumentLinker.action` delegates to `link`. Focused private
-modules separate contract bounds, target DTOs, statuses, document evidence,
-projection, and linkage while `__init__.py` preserves the canonical public API.
+`CitationSourceDocumentLinker.action` delegates to `link`. Focused modules
+separate document evidence, projection, linkage, document status, and
+contract bounds. Canonical target DTOs come from `citations`; canonical
+bibliography bindings come from `bibliography`. The dependency direction is
+one-way into `citation_document`.
 
 ```mermaid
 flowchart TD
@@ -64,7 +66,7 @@ extension of identity-bearing records.
 ## Identity and bounds
 
 All prototype identities are canonical and unversioned. Request, result,
-projection, item, observation, descriptor, binding, and link identities are
+projection, item, observation, descriptor, imported binding, and link identities are
 SHA-256 digests over canonical in-memory payloads. No schema/version field or
 version segment is present.
 
@@ -95,6 +97,11 @@ normalized relative POSIX source paths without filesystem mutation policy; its
 SHA-256 is
 `d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
+The facade retains deprecated attributes for moved citation and bibliography
+names. Each resolves to the exact canonical object and emits at most one
+`DeprecationWarning` per name in one process; no wrapper, subclass, alternate
+payload, or duplicate identity is introduced.
+
 Evidence:
 
 - source facade: [`citation_document/__init__.py`](../../../../../src/python/projectkoios/references/citation_document/__init__.py)
@@ -102,6 +109,7 @@ Evidence:
 - linkage: [`linkage.py`](../../../../../src/python/projectkoios/references/citation_document/linkage.py)
 - focused tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
 - live adapter test: [`test__CitationDocumentTargetAdapter.py`](../../../../../tests/test__CitationDocumentTargetAdapter.py)
+- compatibility test: [`test__CitationCompatibilityFacade.py`](../../../../../tests/test__CitationCompatibilityFacade.py)
 - owner fixture: [`ksdft-3ec21b4-compact-result.json`](../../../../../tests/fixtures/citation_document/ksdft-3ec21b4-compact-result.json)
 - contract: [`citation-document.md`](../../../../contracts/citation-document.md)
 

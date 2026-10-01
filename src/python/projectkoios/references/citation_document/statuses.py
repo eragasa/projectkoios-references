@@ -1,22 +1,6 @@
 from enum import StrEnum
 
 
-class CitationKeyResolutionStatus(StrEnum):
-    """Literal-key correlation without first-match selection."""
-
-    RESOLVED = "resolved"
-    AMBIGUOUS = "ambiguous"
-    UNRESOLVED = "unresolved"
-
-
-class CitationBibliographyMembershipStatus(StrEnum):
-    """Target bibliography membership, separate from identity resolution."""
-
-    DEFINED = "defined"
-    UNDEFINED = "undefined"
-    NOT_EVALUATED = "not-evaluated"
-
-
 class CitationDocumentAvailabilityStatus(StrEnum):
     """Document evidence separate from rights, use, and ingestion."""
 
