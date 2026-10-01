@@ -145,7 +145,7 @@ class CoverageCandidate:
             root_alias=cast(str, data["root_alias"]),
             relative_path=cast(str, data["relative_path"]),
             sha256=cast(str, data["sha256"]),
-            byte_size=cast(int, data["byte_size"]),
+            byte_size=data["byte_size"],
             version_relation=CandidateVersionRelation(
                 cast(str, data["version_relation"])
             ),
@@ -460,7 +460,7 @@ class CoverageObservation:
         if not isinstance(data["references"], list):
             raise ValueError("coverage references must be an array")
         return cls(
-            schema_version=cast(int, data["schema_version"]),
+            schema_version=data["schema_version"],
             asserted_source_revision=cast(
                 str, data["asserted_source_revision"]
             ),

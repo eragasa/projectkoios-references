@@ -1162,27 +1162,14 @@ def rollback_materialized_asset(
     destination_storage_class: RootStorageClass,
     limits: ReferenceIOLimits = ASSET_DISCOVERY_IO_LIMITS,
 ) -> None:
-    """Remove only exact bytes newly created by this materialization."""
+    """Fail closed because portable conditional unlink is unavailable."""
+    del candidate, authorization, destination_directory
+    del destination_storage_class, limits
     if not isinstance(result, AssetMaterializationResult) or not result.created:
         raise ValueError("rollback requires a newly materialized asset")
-    max_file_bytes = _required_limit(
-        limits.max_file_bytes,
-        "max_file_bytes",
-    )
-    destination_root = AuthorizedRoot.create(
-        destination_directory,
-        label="asset destination root",
-        root_alias="asset-destination",
-        storage_class=destination_storage_class,
-    )
-    filename = f"{authorization.canonical_citekey}.pdf"
-    if result.path != destination_root.child_path(filename):
-        raise ValueError("rollback result names a different destination")
-    destination_root.remove_file_if_exact(
-        filename,
-        expected_sha256=candidate.sha256,
-        expected_size=candidate.byte_size,
-        max_bytes=max_file_bytes,
+    raise PathSafetyError(
+        "automatic asset rollback is disabled because portable conditional "
+        "unlink cannot bind deletion to the verified inode"
     )
 
 

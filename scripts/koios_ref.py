@@ -25,7 +25,6 @@ from projectkoios.references.assets import (
     CanonicalAssetAuthorization,
     SearchRoot,
     materialize_asset_with_result,
-    rollback_materialized_asset,
 )
 from projectkoios.references.biblatex import (
     biblatex_parser_identity,
@@ -965,7 +964,7 @@ class ReferencesOperatorAdapter:
                 label="asset discovery plan",
                 root_alias="asset-plan-output",
                 storage_class=args.output_storage_class,
-                replace=True,
+                replace=False,
             )
             print(f"wrote {len(plan.candidates)} candidates to {args.output}")
             return 0
@@ -1054,40 +1053,17 @@ class ReferencesOperatorAdapter:
                     catalog_record
                 )
             materialization_result: AssetMaterializationResult | None = None
-            try:
-                with recording:
-                    materialization_result = materialize_asset_with_result(
-                        candidate,
-                        authorization=authorization,
-                        plan=plan,
-                        identity_projection=identity_projection,
-                        expected_root_preflight=expected_root_preflight,
-                        roots=tuple(args.search_root),
-                        destination_directory=args.destination,
-                        destination_storage_class=args.destination_storage_class,
-                    )
-            except Exception as error:
-                if (
-                    materialization_result is not None
-                    and materialization_result.created
-                ):
-                    try:
-                        rollback_materialized_asset(
-                            materialization_result,
-                            candidate=candidate,
-                            authorization=authorization,
-                            destination_directory=args.destination,
-                            destination_storage_class=(
-                                args.destination_storage_class
-                            ),
-                        )
-                    except Exception as rollback_error:
-                        raise ExceptionGroup(
-                            "catalog recording failed and exact asset rollback "
-                            "also failed",
-                            (error, rollback_error),
-                        ) from error
-                raise
+            with recording:
+                materialization_result = materialize_asset_with_result(
+                    candidate,
+                    authorization=authorization,
+                    plan=plan,
+                    identity_projection=identity_projection,
+                    expected_root_preflight=expected_root_preflight,
+                    roots=tuple(args.search_root),
+                    destination_directory=args.destination,
+                    destination_storage_class=args.destination_storage_class,
+                )
             if materialization_result is None:  # pragma: no cover
                 raise RuntimeError("asset materialization produced no result")
             print(materialization_result.path)

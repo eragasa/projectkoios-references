@@ -65,16 +65,19 @@ unselected asset fails before a filesystem root is opened.
 
 `assets-apply` therefore requires canonical authorization and identity-projection
 JSON inputs. It rechecks placeholder preflight, PDF header, byte size, and hash
-before destination mutation, then atomically publishes `<canonical-citekey>.pdf`
-without replacing different bytes. Existing identical bytes are idempotent.
+before destination mutation, stages bytes in an anonymous inode, then publishes
+`<canonical-citekey>.pdf` with a descriptor-bound atomic no-replace primitive.
+Pathname-based file replacement is disabled. Existing identical bytes are
+idempotent.
 When catalog recording is requested, the command holds a schema-validated
 write transaction across materialization. Candidate existence and exact
 conflict/idempotence semantics are checked before the destination is touched;
 the write lock prevents another catalog writer from invalidating that preflight.
-If post-materialization validation or commit fails, only a newly created file
-whose size and SHA-256 still exactly match the authorized bytes is removed.
-A pre-existing identical file is never removed. If exact rollback itself cannot
-be proved, the command reports both failures rather than deleting changed bytes.
+If post-materialization validation or catalog commit fails, the published file
+is left in place for explicit reconciliation and the original failure is
+reported. Portable filesystems do not provide a conditional unlink that binds
+deletion to the inode whose bytes were verified, so automatic destructive
+rollback is disabled. Existing identical files likewise remain untouched.
 Rights and publication authority remain outside this decision.
 
 ## Safety, limits, and compatibility

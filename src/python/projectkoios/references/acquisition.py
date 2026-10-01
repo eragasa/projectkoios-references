@@ -248,7 +248,7 @@ class AcquisitionEntry:
             root_alias=cast(str, data["root_alias"]),
             relative_path=_relative_path(cast(str, data["relative_path"])),
             sha256=cast(str, data["sha256"]),
-            byte_size=cast(int, data["byte_size"]),
+            byte_size=data["byte_size"],
             acquisition=AcquisitionObservation.from_dict(
                 data["acquisition_observation"]
             ),
@@ -626,7 +626,7 @@ class AcquisitionManifest:
                 "acquisition-manifest effective limits are malformed"
             ) from error
         manifest = cls(
-            schema_version=cast(int, data["schema_version"]),
+            schema_version=data["schema_version"],
             artifact_kind=cast(str, data["artifact_kind"]),
             contract_id=cast(str, data["contract_id"]),
             contract_version=cast(str, data["contract_version"]),
@@ -1354,7 +1354,7 @@ def _parse_observation(value: object, label: str) -> tuple[str, str]:
         data["basis"], str
     ):
         raise ValueError(f"{label} fields must be strings")
-    return cast(str, data["status"]), cast(str, data["basis"])
+    return data["status"], data["basis"]
 
 
 def _parse_root_preflights(value: object) -> tuple[RootPreflightEvidence, ...]:

@@ -200,9 +200,8 @@ def test__pdf_corpus__overlapping_roots_fail_before_path_access(
     assert probe.calls == []
 
 
-def test__pdf_corpus__resolved_overlap_fails_before_inventory(
+def test__pdf_corpus__rejects_root_with_symlinked_ancestor(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     physical = tmp_path / "physical"
     child = physical / "child"
@@ -215,20 +214,19 @@ def test__pdf_corpus__resolved_overlap_fails_before_inventory(
     )
     alias_child = alias_parent / "physical-link" / "child"
 
-    def forbidden_inventory(*args: object, **kwargs: object) -> object:
-        del args, kwargs
-        raise AssertionError("resolved overlap reached inventory")
-
-    monkeypatch.setattr(AuthorizedRoot, "inventory_files", forbidden_inventory)
-    with pytest.raises(ValueError, match="duplicate or overlap"):
-        discover_pdf_corpus(
-            (
-                PdfCorpusRoot("physical", physical, RootStorageClass.LOCAL),
-                PdfCorpusRoot(
-                    "alias-child", alias_child, RootStorageClass.LOCAL
-                ),
-            )
+    plan = discover_pdf_corpus(
+        (
+            PdfCorpusRoot("physical", physical, RootStorageClass.LOCAL),
+            PdfCorpusRoot("alias-child", alias_child, RootStorageClass.LOCAL),
         )
+    )
+
+    assert plan.source_observations == ()
+    assert any(
+        item.root_alias == "alias-child"
+        and item.reason is PdfSkipReason.UNSAFE_ROOT
+        for item in plan.skipped_observations
+    )
 
 
 def test__pdf_corpus__filesystem_boundary_is_typed_and_not_descended(
@@ -259,7 +257,8 @@ def test__pdf_corpus__filesystem_boundary_is_typed_and_not_descended(
         return original_observe(self, relative, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.fstat",
+        os,
+        "fstat",
         synthetic_device,
     )
     monkeypatch.setattr(AuthorizedRoot, "observe_file", counted_observe)
@@ -312,7 +311,8 @@ def test__pdf_corpus__post_inventory_device_change_is_typed_before_bytes(
 
     monkeypatch.setattr(AuthorizedRoot, "inventory_files", changing_inventory)
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.fstat",
+        os,
+        "fstat",
         changed_device,
     )
     monkeypatch.setattr(AuthorizedRoot, "observe_file", forbidden_observe)
@@ -350,7 +350,8 @@ def test__pdf_corpus__mounted_leaf_is_typed_before_bytes(
         raise AssertionError("mounted leaf reached candidate bytes")
 
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.stat",
+        os,
+        "stat",
         mounted_leaf,
     )
     monkeypatch.setattr(AuthorizedRoot, "observe_file", forbidden_observe)
@@ -398,15 +399,14 @@ def test__pdf_corpus__cloud_preflights_every_candidate_before_byte_access(
         )
     )
 
-    assert tuple(item.relative_path for item in plan.source_observations) == (
-        "ordinary.pdf",
-    )
+    assert plan.source_observations == ()
     assert observed == ["ordinary.pdf"]
-    assert any(
-        item.relative_path == "placeholder.pdf"
-        and item.reason is PdfSkipReason.CLOUD_PLACEHOLDER
-        for item in plan.skipped_observations
-    )
+    assert {
+        (item.relative_path, item.reason) for item in plan.skipped_observations
+    } == {
+        ("ordinary.pdf", PdfSkipReason.ACCESS_CONTROLLED),
+        ("placeholder.pdf", PdfSkipReason.CLOUD_PLACEHOLDER),
+    }
     candidate_calls = {
         relative for _alias, relative in probe.calls if relative is not None
     }
@@ -558,13 +558,12 @@ def test__pdf_corpus__strict_replay_enforces_recorded_skipped_text(
         PdfCorpusDiscoveryPlan.from_json(canonical)
 
 
-def test__rebind_pdf_source__rechecks_exact_identity_and_cloud_preflight(
+def test__cloud_pdf_source__requires_separate_hydration_authority(
     tmp_path: Path,
 ) -> None:
     root_path = tmp_path / "rebind"
     root_path.mkdir()
-    candidate = root_path / "source.pdf"
-    candidate.write_bytes(b"%PDF- original")
+    (root_path / "source.pdf").write_bytes(b"%PDF- original")
     probe = SyntheticProbe()
     roots = (
         PdfCorpusRoot(
@@ -574,20 +573,13 @@ def test__rebind_pdf_source__rechecks_exact_identity_and_cloud_preflight(
             probe,
         ),
     )
-    source = discover_pdf_corpus(roots).processable_sources[0]
 
-    rebound = rebind_pdf_source(source, roots)
-    assert rebound.relative_path == PurePosixPath("source.pdf")
-    assert rebound.root.preflight_evidence.probe_id == probe.probe_id
+    plan = discover_pdf_corpus(roots)
 
-    candidate.write_bytes(b"%PDF- changed")
-    with pytest.raises(ValueError, match="identity changed"):
-        rebind_pdf_source(source, roots)
-
-    candidate.write_bytes(b"%PDF- original")
-    probe.statuses["source.pdf"] = PlaceholderStatus.CLOUD_PLACEHOLDER
-    with pytest.raises(PlaceholderPreflightError):
-        rebind_pdf_source(source, roots)
+    assert plan.processable_sources == ()
+    assert plan.skipped_observations[0].reason is (
+        PdfSkipReason.ACCESS_CONTROLLED
+    )
 
 
 @pytest.mark.parametrize(
@@ -657,7 +649,8 @@ def test__rebind_pdf_source__bounds_observation_by_total_bytes(
         raise AssertionError("over-total rebind read candidate bytes")
 
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.fdopen",
+        os,
+        "fdopen",
         forbidden_fdopen,
     )
     with pytest.raises(ReferenceIOLimitError) as caught:
@@ -687,7 +680,8 @@ def test__rebind_pdf_source__fails_on_cross_device_parent(
         return metadata
 
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.fstat",
+        os,
+        "fstat",
         mounted_parent,
     )
     with pytest.raises(PlaceholderPreflightError) as caught:
@@ -778,11 +772,13 @@ def test__macos_file_provider_probe__rejects_cross_device_parent(
         return real_stat(path, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.fstat",
+        os,
+        "fstat",
         mounted_parent,
     )
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.stat",
+        os,
+        "stat",
         forbidden_leaf_stat,
     )
 
@@ -845,12 +841,8 @@ def test__macos_file_provider_probe__uses_nofollow_metadata_not_leaf_bytes(
             raise AssertionError("probe opened candidate bytes")
         return real_open(path, flags, *args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.stat", metadata_stat
-    )
-    monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.open", directory_open
-    )
+    monkeypatch.setattr(os, "stat", metadata_stat)
+    monkeypatch.setattr(os, "open", directory_open)
 
     assert (
         probe.support(root_alias="icloud") is PlaceholderProbeSupport.SUPPORTED

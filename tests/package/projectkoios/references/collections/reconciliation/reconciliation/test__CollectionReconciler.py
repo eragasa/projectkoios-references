@@ -605,6 +605,7 @@ def test__CollectionReconciler__distinguishes_websites_and_preprints() -> None:
 
 def test__CollectionReconciler__uses_injected_source_bound_evidence(
     tmp_path: Path,
+    ingestion_reference_evidence_fixture: Path,
 ) -> None:
     corpus, pdfs, discovery, pdf_bytes = _inputs(tmp_path)
     del discovery
@@ -617,13 +618,7 @@ def test__CollectionReconciler__uses_injected_source_bound_evidence(
         )
         .scan
     )
-    fixture = (
-        Path(__file__).parents[6]
-        / "fixtures"
-        / "ingestion-reference-evidence"
-        / "complete.json"
-    )
-    value = json.loads(fixture.read_bytes())
+    value = json.loads(ingestion_reference_evidence_fixture.read_bytes())
     digest = hashlib.sha256(pdf_bytes).hexdigest()
     value["source"] = {
         "blob_id": f"blob:sha256:{digest}",

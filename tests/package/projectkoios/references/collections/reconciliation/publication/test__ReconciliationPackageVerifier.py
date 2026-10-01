@@ -73,12 +73,6 @@ def build_citation_closure(*args: object, **kwargs: object):
 
 
 _ASSERTED_REVISION = "caller-asserted-revision"
-_FIXTURE = (
-    Path(__file__).parents[6]
-    / "fixtures"
-    / "ingestion-reference-evidence"
-    / "complete.json"
-)
 
 
 def _canonical(value: object) -> bytes:
@@ -95,8 +89,12 @@ def _reidentify(value: dict[str, object]) -> bytes:
     return _canonical(value)
 
 
-def _reference_evidence_for_source(content: bytes) -> bytes:
-    value = json.loads(_FIXTURE.read_bytes())
+def _reference_evidence_for_source(
+    content: bytes,
+    *,
+    fixture: Path,
+) -> bytes:
+    value = json.loads(fixture.read_bytes())
     digest = hashlib.sha256(content).hexdigest()
     value["source"] = {
         "blob_id": f"blob:sha256:{digest}",
@@ -120,7 +118,11 @@ def _record() -> ReferenceCandidate:
     )
 
 
-def _prepare_inputs(root: Path) -> dict[str, Path]:
+def _prepare_inputs(
+    root: Path,
+    *,
+    evidence_fixture: Path,
+) -> dict[str, Path]:
     root.mkdir()
     bibliography = root / "references.bib"
     bibliography.write_text(
@@ -176,7 +178,12 @@ def _prepare_inputs(root: Path) -> dict[str, Path]:
         "\\cite{example2026}\n", encoding="utf-8"
     )
     evidence = root / "reference-evidence.json"
-    evidence.write_bytes(_reference_evidence_for_source(pdf_content))
+    evidence.write_bytes(
+        _reference_evidence_for_source(
+            pdf_content,
+            fixture=evidence_fixture,
+        )
+    )
     coverage = CoverageObservation.create(
         asserted_source_revision=_ASSERTED_REVISION,
         state=CoverageState.COMPLETE,
@@ -260,8 +267,12 @@ def _reconcile(paths: dict[str, Path]):
 
 def test__ReconciliationPackageVerifier__manifest__covers_payloads_and_inputs(
     tmp_path: Path,
+    ingestion_reference_evidence_fixture: Path,
 ) -> None:
-    paths = _prepare_inputs(tmp_path / "inputs")
+    paths = _prepare_inputs(
+        tmp_path / "inputs",
+        evidence_fixture=ingestion_reference_evidence_fixture,
+    )
     outputs = _reconcile(paths)
     package = outputs.package_manifest
     files = dict(outputs.files)
@@ -345,8 +356,12 @@ def test__ReconciliationPackageVerifier__manifest__covers_payloads_and_inputs(
 
 def test__ReconciliationPackageVerifier__identity__binds_every_input_byte_class(
     tmp_path: Path,
+    ingestion_reference_evidence_fixture: Path,
 ) -> None:
-    paths = _prepare_inputs(tmp_path / "inputs")
+    paths = _prepare_inputs(
+        tmp_path / "inputs",
+        evidence_fixture=ingestion_reference_evidence_fixture,
+    )
     baseline = _reconcile(paths).package_manifest.package_id
     mutations = (
         (paths["bibliography"], b"% byte-only bibliography change\n"),
@@ -379,8 +394,12 @@ def test__ReconciliationPackageVerifier__identity__binds_every_input_byte_class(
 
 def test__ReconciliationPackageVerifier__identity__binds_citation_closure(
     tmp_path: Path,
+    ingestion_reference_evidence_fixture: Path,
 ) -> None:
-    paths = _prepare_inputs(tmp_path / "inputs")
+    paths = _prepare_inputs(
+        tmp_path / "inputs",
+        evidence_fixture=ingestion_reference_evidence_fixture,
+    )
     first = _reconcile(paths)
     source = paths["manuscript"] / "main.tex"
     source.rename(paths["manuscript"] / "renamed.tex")
@@ -393,8 +412,14 @@ def test__ReconciliationPackageVerifier__identity__binds_citation_closure(
 
 def test__ReconciliationPackageVerifier__parse_replay_and_tamper_fail_closed(
     tmp_path: Path,
+    ingestion_reference_evidence_fixture: Path,
 ) -> None:
-    outputs = _reconcile(_prepare_inputs(tmp_path / "inputs"))
+    outputs = _reconcile(
+        _prepare_inputs(
+            tmp_path / "inputs",
+            evidence_fixture=ingestion_reference_evidence_fixture,
+        )
+    )
     destination = tmp_path / "published" / "fixture"
     replay = tmp_path / "replay" / "fixture"
     created = (
@@ -489,8 +514,14 @@ def test__ReconciliationPackageVerifier__parse_replay_and_tamper_fail_closed(
 
 def test__ReconciliationPackageVerifier__rejects_incomplete_destination(
     tmp_path: Path,
+    ingestion_reference_evidence_fixture: Path,
 ) -> None:
-    outputs = _reconcile(_prepare_inputs(tmp_path / "inputs"))
+    outputs = _reconcile(
+        _prepare_inputs(
+            tmp_path / "inputs",
+            evidence_fixture=ingestion_reference_evidence_fixture,
+        )
+    )
     incomplete = tmp_path / "incomplete"
     incomplete.mkdir()
     (incomplete / PACKAGE_MANIFEST_FILENAME).write_bytes(
@@ -547,8 +578,14 @@ def test__ReconciliationPackageVerifier__rejects_incomplete_destination(
 
 def test__content_identified_records__have_immutable_nested_state(
     tmp_path: Path,
+    ingestion_reference_evidence_fixture: Path,
 ) -> None:
-    outputs = _reconcile(_prepare_inputs(tmp_path / "inputs"))
+    outputs = _reconcile(
+        _prepare_inputs(
+            tmp_path / "inputs",
+            evidence_fixture=ingestion_reference_evidence_fixture,
+        )
+    )
     counts = outputs.manifest.counts
     expected_counts = dict(counts)
     with pytest.raises(TypeError):

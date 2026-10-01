@@ -90,6 +90,33 @@ MIGRATED_MODULES = {
         "CitationIdentityProjectionStatus",
         "CitationIdentityProjector",
     },
+    "path_safety": {
+        "AuthorizedRoot",
+        "AuthorizedRootIdentity",
+        "AuthorizedRootObservation",
+        "AuthorizedRootPublication",
+        "AuthorizedRootScanning",
+        "CloudPlaceholderProbe",
+        "CloudRootMutationError",
+        "DescriptorFilesystem",
+        "FileObservation",
+        "FilesystemBoundaryError",
+        "FilesystemInventory",
+        "FilesystemInventoryIssue",
+        "FilesystemIssueKind",
+        "MacOSFileProviderPlaceholderProbe",
+        "PathLimitError",
+        "PathSafetyError",
+        "PlaceholderObservation",
+        "PlaceholderPreflightError",
+        "PlaceholderProbeIdentity",
+        "PlaceholderProbeSupport",
+        "PlaceholderStatus",
+        "PortablePathValidator",
+        "RootPreflightEvidence",
+        "RootStorageClass",
+        "UnsupportedCloudPlaceholderProbe",
+    },
 }
 MODULE_DIRECTORIES = {
     name: ARCHITECTURE / "projectkoios" / "references" / name
@@ -114,7 +141,6 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.io_limits",
     "projectkoios.references.models",
     "projectkoios.references.naming",
-    "projectkoios.references.path_safety",
     "projectkoios.references.pdf_corpus",
     "projectkoios.references.provided_intake",
     "projectkoios.references.reconciliation_package",
@@ -239,7 +265,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 96
+    assert len(actual) == 124
 
     mermaid_documents = {
         directory / name
@@ -249,7 +275,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 16
+    assert len(mermaid_documents) == 18
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
@@ -266,7 +292,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "96 pages; 240 remain unmigrated" in navigator
+    assert "124 pages; 219 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -277,7 +303,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(all_modules) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 336
+    assert expected_total == 343
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

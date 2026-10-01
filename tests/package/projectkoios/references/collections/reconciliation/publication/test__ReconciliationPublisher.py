@@ -25,6 +25,8 @@ from projectkoios.references.collections.reconciliation.manifest import (
     ReconciliationOutputs,
 )
 from projectkoios.references.collections.reconciliation.publication import (
+    ReconciliationPackageVerificationRequest,
+    ReconciliationPackageVerifier,
     ReconciliationPublicationRequest,
     ReconciliationPublisher,
 )
@@ -264,7 +266,7 @@ def test__ReconciliationPublisher__is_immutable_and_replayable(
         )
 
 
-def test__ReconciliationPublisher__writes_completion_manifest_last(
+def test__ReconciliationPublisher__writes_package_manifest_last(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     outputs = _publication_outputs(tmp_path)
@@ -370,7 +372,7 @@ def test__ReconciliationPublisher__extra_file_fails_exact_verification(
     destination = tmp_path / "output" / "fixture"
     original_write = AuthorizedRoot.write_bytes
 
-    def inject_extra_before_completion(
+    def inject_extra_before_final_payload(
         self: AuthorizedRoot, relative: str, content: bytes, *, replace: bool
     ) -> Path:
         if str(relative) == "package-manifest.json":
@@ -380,7 +382,7 @@ def test__ReconciliationPublisher__extra_file_fails_exact_verification(
         return original_write(self, relative, content, replace=replace)
 
     monkeypatch.setattr(
-        AuthorizedRoot, "write_bytes", inject_extra_before_completion
+        AuthorizedRoot, "write_bytes", inject_extra_before_final_payload
     )
     with pytest.raises(
         IncompleteReconciliationPublicationError,
@@ -397,3 +399,13 @@ def test__ReconciliationPublisher__extra_file_fails_exact_verification(
     assert (destination / "unexpected.txt").read_text(
         encoding="utf-8"
     ) == "raced"
+    with pytest.raises(
+        CollectionReconciliationError,
+        match="incomplete or unexpected",
+    ):
+        ReconciliationPackageVerifier().action(
+            request=ReconciliationPackageVerificationRequest(
+                directory=destination,
+                storage_class=RootStorageClass.LOCAL,
+            )
+        )

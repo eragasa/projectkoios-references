@@ -105,24 +105,32 @@ action families:
 
 The package exposes no free-function or root-package compatibility facade.
 
-Publication atomically claims the final directory name with an exclusive
-`mkdir`; it does not use check-then-rename. The former
-`AuthorizedRoot.rename_child` API is disabled because portable Python does not
-provide an atomic no-replace directory rename. Payloads are written through the
-claimed directory, and `package-manifest.json` is written last as the completion
-marker. Exact names, sizes, and hashes are reverified before success is
-returned. A concurrent losing publisher only verifies the winner and never
-mutates or removes it.
+Publication creates an empty temporary directory under the authorized parent
+and atomically claims the final name with a platform no-replace directory
+rename (`renameat2(RENAME_NOREPLACE)` on Linux or
+`renameatx_np(RENAME_EXCL)` on macOS). The operation fails closed where neither
+primitive is available. The returned capability stores the claimed directory
+identity; each later operation reopens the path and verifies device, inode, and
+mount identity before access, so a concurrent post-claim replacement fails
+closed rather than redirecting payload writes. Payloads are written through the
+claimed
+directory, and `package-manifest.json` is written as the final payload. Its
+presence is necessary but not sufficient for completion: every consumer must
+run exact package verification over names, sizes, hashes, and package identity.
+Exact verification is performed before publisher success is returned. A
+concurrent losing publisher only verifies the winner and never mutates or
+removes it.
 
 Replaying an identical, completely verified package at an existing destination
 returns `unchanged`. A claimed directory without the completion manifest raises
 typed `IncompleteReconciliationPublicationError`; interrupted publication
 leaves that recognizable incomplete directory for operator recovery rather than
-racing to remove it. An incomplete, unexpected, extra-file, or byte-different
-destination fails closed and is not repaired or overwritten. Completion-marker
-publication is portable and bounded, but does not make the whole directory
-invisible while payload files are being written; readers must require and
-verify the completion manifest.
+racing to remove it. A manifest-bearing directory that fails exact verification
+is likewise incomplete. An incomplete, unexpected, extra-file, or
+byte-different destination fails closed and is not repaired or overwritten.
+Manifest-last publication is portable and bounded, but does not make the whole
+directory invisible while payload files are being written; readers must verify
+the complete package rather than treating manifest presence as completion.
 
 ## Field-level state projections
 
