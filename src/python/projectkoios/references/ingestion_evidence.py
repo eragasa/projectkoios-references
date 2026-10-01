@@ -6,10 +6,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from projectkoios.references.collection_reconciliation import (
+from projectkoios.references.collections.reconciliation.evidence import (
+    ProcessingEvidence,
+)
+from projectkoios.references.collections.reconciliation.loading import (
     EvidenceMapping,
     ManagedPdf,
-    ProcessingEvidence,
 )
 from projectkoios.references.path_safety import (
     CloudPlaceholderProbe,
@@ -327,7 +329,7 @@ def load_ingestion_reference_evidence(
             source_media_type=_SOURCE_MEDIA_TYPE,
         )
         record_ids.add(record.record_id)
-        result[binding.citekey] = ProcessingEvidence._from_reference_evidence(
+        result[binding.citekey] = ProcessingEvidence.from_reference_evidence(
             evidence_record_id=record.record_id,
             contract_status=record.contract_status,
             derivation_audit_status="recorded-passing",

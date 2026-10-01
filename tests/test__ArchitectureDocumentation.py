@@ -21,22 +21,43 @@ MIGRATED_MODULES = {
         "CatalogSchemaInfo",
         "ReferenceCatalog",
     },
-    "collection_reconciliation": {
+    "collections/reconciliation": {
         "CitationStatus",
         "CollectionManifest",
         "CollectionReconciliationError",
+        "CollectionReconciliationRequest",
+        "CollectionReconciliationResult",
+        "CollectionReconciler",
         "CollectionReference",
         "CollectionRowEvidence",
+        "CollectionRowsLoadRequest",
+        "CollectionRowsLoadResult",
+        "CollectionRowsLoader",
         "EvidenceMapping",
         "ExtraPdf",
         "IncompleteReconciliationPublicationError",
         "ManagedPdf",
         "ManagedPdfScan",
+        "ManagedPdfScanRequest",
+        "ManagedPdfScanResult",
+        "ManagedPdfScanner",
         "PdfExpectation",
         "PdfStatus",
         "ProcessingEvidence",
         "PublicationResult",
         "ReconciliationOutputs",
+        "ReconciliationPackageParseRequest",
+        "ReconciliationPackageParseResult",
+        "ReconciliationPackageParser",
+        "ReconciliationPackageVerificationRequest",
+        "ReconciliationPackageVerificationResult",
+        "ReconciliationPackageVerifier",
+        "ReconciliationPublicationRequest",
+        "ReconciliationPublicationResult",
+        "ReconciliationPublisher",
+        "ReconciliationReplayRequest",
+        "ReconciliationReplayResult",
+        "ReconciliationReplayer",
     },
     "citations": {
         "CitationContentIdentity",
@@ -111,7 +132,7 @@ _MERMAID = re.compile(
 
 
 def _public_classes(path: Path) -> set[str]:
-    sources = tuple(path.glob("*.py")) if path.is_dir() else (path,)
+    sources = tuple(path.rglob("*.py")) if path.is_dir() else (path,)
     result: set[str] = set()
     for source in sources:
         tree = ast.parse(source.read_text(encoding="utf-8"))
@@ -154,11 +175,13 @@ def _source_modules() -> set[str]:
         if path.name != "__init__.py"
     }
     modules.update(
-        f"projectkoios.references.{path.name}"
-        for path in references.iterdir()
+        "projectkoios.references."
+        + ".".join(path.relative_to(references).parts)
+        for path in references.rglob("*")
         if path.is_dir()
         and not path.name.startswith("_")
         and (path / "__init__.py").is_file()
+        and any(child.name != "__init__.py" for child in path.glob("*.py"))
     )
     modules.update(
         f"scripts.{path.stem}"
@@ -178,9 +201,8 @@ def _source_public_class_count() -> int:
         )
         + tuple(
             path
-            for package in references.iterdir()
-            if package.is_dir() and (package / "__init__.py").is_file()
-            for path in package.glob("*.py")
+            for path in references.rglob("*.py")
+            if path.parent != references
         )
         + tuple(
             path
@@ -196,7 +218,10 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     assert not (source_root / "catalog.py").exists()
     assert (source_root / "catalog" / "__init__.py").is_file()
     assert not (source_root / "collection_reconciliation.py").exists()
-    assert (source_root / "collection_reconciliation" / "__init__.py").is_file()
+    assert not (source_root / "collection_reconciliation").exists()
+    assert (
+        source_root / "collections" / "reconciliation" / "__init__.py"
+    ).is_file()
     assert not (source_root / "citation_document.py").exists()
     assert (source_root / "citation_document" / "__init__.py").is_file()
     assert not (source_root / "citation_document" / "target.py").exists()
@@ -205,14 +230,16 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     for module_name, public_classes in MIGRATED_MODULES.items():
         module_file = source_root / f"{module_name}.py"
         module_path = (
-            module_file if module_file.is_file() else source_root / module_name
+            module_file
+            if module_file.is_file()
+            else source_root.joinpath(*module_name.split("/"))
         )
         assert _public_classes(module_path) == public_classes
 
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 75
+    assert len(actual) == 96
 
     mermaid_documents = {
         directory / name
@@ -231,12 +258,15 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
     None
 ):
     all_modules = _source_modules()
-    migrated = {f"projectkoios.references.{name}" for name in MIGRATED_MODULES}
+    migrated = {
+        "projectkoios.references." + name.replace("/", ".")
+        for name in MIGRATED_MODULES
+    }
     assert all_modules - migrated == EXPECTED_REMAINING_MODULES
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "75 pages; 240 remain unmigrated" in navigator
+    assert "96 pages; 240 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -247,7 +277,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(all_modules) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 315
+    assert expected_total == 336
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

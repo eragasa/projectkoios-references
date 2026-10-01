@@ -19,15 +19,22 @@ from projectkoios.references.assets import (
     SearchRoot,
     materialize_asset,
 )
-from projectkoios.references.collection_reconciliation import (
+from projectkoios.references.collections.reconciliation.errors import (
     CollectionReconciliationError,
+)
+from projectkoios.references.collections.reconciliation.loading import (
     CollectionRowEvidence,
     ManagedPdf,
-    reconcile_collection,
-    scan_managed_pdfs,
+    ManagedPdfScanner,
+    ManagedPdfScanRequest,
 )
-from projectkoios.references.collection_reconciliation import (
-    publish_reconciliation as _publish_reconciliation,
+from projectkoios.references.collections.reconciliation.publication import (
+    ReconciliationPublicationRequest,
+    ReconciliationPublisher,
+)
+from projectkoios.references.collections.reconciliation.reconciliation import (
+    CollectionReconciler,
+    CollectionReconciliationRequest,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
@@ -46,11 +53,6 @@ from test_asset_authorization_helpers import authorize_asset
 
 def ReferenceEvidenceInput(citekey: str, path: Path) -> _ReferenceEvidenceInput:
     return _ReferenceEvidenceInput(citekey, path, RootStorageClass.LOCAL)
-
-
-def publish_reconciliation(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
-    kwargs["output_storage_class"] = RootStorageClass.LOCAL
-    return _publish_reconciliation(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def _record() -> ReferenceCandidate:
@@ -343,7 +345,11 @@ def test__managed_pdf_and_object_validation__reject_symlinks(
     (pdfs / "example2026.pdf").symlink_to(outside_pdf)
 
     with pytest.raises(CollectionReconciliationError, match="symlink"):
-        scan_managed_pdfs(pdfs, storage_class=RootStorageClass.LOCAL)
+        ManagedPdfScanner().action(
+            request=ManagedPdfScanRequest(
+                directory=pdfs, storage_class=RootStorageClass.LOCAL
+            )
+        )
 
     notes = tmp_path / "notes"
     notes.mkdir()
@@ -369,24 +375,36 @@ def test__publication__does_not_follow_output_directory_symlink(
     parent.mkdir()
     destination = parent / "fixture"
     destination.symlink_to(outside, target_is_directory=True)
-    outputs = reconcile_collection(
-        (_record(),),
-        bibliography_bytes=b"fixture",
-        collection_id="fixture",
-        source_revision="asserted-revision",
-        collection_rows={
-            "example2026": CollectionRowEvidence(
-                source_bibliographies=("references.bib",),
-                bibliographic_status="unverified",
-                reading_status="unread",
+    outputs = (
+        CollectionReconciler()
+        .action(
+            request=CollectionReconciliationRequest(
+                records=(_record(),),
+                bibliography_bytes=b"fixture",
+                collection_id="fixture",
+                source_revision="asserted-revision",
+                collection_rows={
+                    "example2026": CollectionRowEvidence(
+                        source_bibliographies=("references.bib",),
+                        bibliographic_status="unverified",
+                        reading_status="unread",
+                    )
+                },
+                managed_pdfs=(),
+                citation_closure=None,
             )
-        },
-        managed_pdfs=(),
-        citation_closure=None,
+        )
+        .outputs
     )
 
     with pytest.raises(CollectionReconciliationError, match="symlink"):
-        publish_reconciliation(outputs, output_directory=destination)
+        ReconciliationPublisher().action(
+            request=ReconciliationPublicationRequest(
+                outputs=outputs,
+                output_directory=destination,
+                output_storage_class=RootStorageClass.LOCAL,
+            )
+        )
     assert tuple(outside.iterdir()) == ()
 
 

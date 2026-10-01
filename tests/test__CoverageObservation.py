@@ -13,11 +13,18 @@ from projectkoios.references import (
     CoverageState,
     ReferenceCoverage,
 )
-from projectkoios.references.collection_reconciliation import (
-    CollectionReconciliationError,
-    CollectionRowEvidence,
+from projectkoios.references.collections.reconciliation.classification import (
     PdfStatus,
-    reconcile_collection,
+)
+from projectkoios.references.collections.reconciliation.errors import (
+    CollectionReconciliationError,
+)
+from projectkoios.references.collections.reconciliation.loading import (
+    CollectionRowEvidence,
+)
+from projectkoios.references.collections.reconciliation.reconciliation import (
+    CollectionReconciler,
+    CollectionReconciliationRequest,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
@@ -114,15 +121,21 @@ def _reconcile(
     entry_type: str = "article",
 ):
     record = _record(entry_type=entry_type)
-    return reconcile_collection(
-        (record,),
-        bibliography_bytes=b"fixture",
-        collection_id="fixture",
-        source_revision=_REVISION,
-        collection_rows={record.proposed_citekey: _row()},
-        managed_pdfs=(),
-        citation_closure=None,
-        coverage_observation=coverage,
+    return (
+        CollectionReconciler()
+        .action(
+            request=CollectionReconciliationRequest(
+                records=(record,),
+                bibliography_bytes=b"fixture",
+                collection_id="fixture",
+                source_revision=_REVISION,
+                collection_rows={record.proposed_citekey: _row()},
+                managed_pdfs=(),
+                citation_closure=None,
+                coverage_observation=coverage,
+            )
+        )
+        .outputs
     )
 
 

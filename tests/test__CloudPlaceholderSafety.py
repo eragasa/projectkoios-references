@@ -25,12 +25,18 @@ from projectkoios.references.assets import (
     materialize_asset,
 )
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.collection_reconciliation import (
+from projectkoios.references.citation_closure import build_citation_closure
+from projectkoios.references.collections.reconciliation.errors import (
     CollectionReconciliationError,
+)
+from projectkoios.references.collections.reconciliation.loading import (
     ManagedPdfScan,
-    build_citation_closure,
-    reconcile_collection,
-    scan_managed_pdfs,
+    ManagedPdfScanner,
+    ManagedPdfScanRequest,
+)
+from projectkoios.references.collections.reconciliation.reconciliation import (
+    CollectionReconciler,
+    CollectionReconciliationRequest,
 )
 from projectkoios.references.path_safety import read_path_bytes
 from projectkoios.references.validation import validate_reference_objects
@@ -344,10 +350,12 @@ def test__acquisition_and_managed_scan__fail_typed_without_reading(
     )
 
     with pytest.raises(PlaceholderPreflightError) as managed_failure:
-        scan_managed_pdfs(
-            source,
-            storage_class=RootStorageClass.CLOUD_BACKED,
-            placeholder_probe=probe,
+        ManagedPdfScanner().action(
+            request=ManagedPdfScanRequest(
+                directory=source,
+                storage_class=RootStorageClass.CLOUD_BACKED,
+                placeholder_probe=probe,
+            )
         )
     assert (
         managed_failure.value.observation.status
@@ -388,14 +396,16 @@ def test__managed_scan_and_reconcile__reject_skipped_observations() -> None:
         CollectionReconciliationError,
         match="cannot consume skipped",
     ):
-        reconcile_collection(
-            (),
-            bibliography_bytes=b"",
-            collection_id="synthetic",
-            source_revision="asserted",
-            collection_rows={},
-            managed_pdfs=invalid,
-            citation_closure=None,
+        CollectionReconciler().action(
+            request=CollectionReconciliationRequest(
+                records=(),
+                bibliography_bytes=b"",
+                collection_id="synthetic",
+                source_revision="asserted",
+                collection_rows={},
+                managed_pdfs=invalid,
+                citation_closure=None,
+            )
         )
 
 

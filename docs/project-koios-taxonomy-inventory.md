@@ -26,7 +26,7 @@ root-facade count includes constants, records, exceptions, and functions.
 | `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | OUT_OF_SCOPE |
 | `citation_closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | OUT_OF_SCOPE |
 | `citation_draft` | 8 | 2 deprecated forwards | 0 | 0 | `test__CitationDraft.py` | IMPLEMENTED |
-| `collection_reconciliation` | 15 | 7 | 24 | 19 | `test__CollectionReconciliation.py` | OUT_OF_SCOPE |
+| `collections.reconciliation` | 36 | 0 | 23 | 0 | mirrored `tests/package/projectkoios/references/collections/reconciliation/` | IMPLEMENTED |
 | `coverage` | 7 public + 1 focused private collaborator | 0 | 0 | 7 | `test__CoverageObservation.py` | IMPLEMENTED |
 | `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | OUT_OF_SCOPE |
 | `graph` | 7 | 1 | 21 | 8 | `test__CitationGraph.py`, `test__CitationGraphSeed.py` | OUT_OF_SCOPE |

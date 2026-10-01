@@ -22,8 +22,9 @@ from projectkoios.references.assets import (
     SearchRoot,
 )
 from projectkoios.references.catalog import CatalogSchemaError, ReferenceCatalog
-from projectkoios.references.collection_reconciliation import (
-    load_collection_rows,
+from projectkoios.references.collections.reconciliation.loading import (
+    CollectionRowsLoader,
+    CollectionRowsLoadRequest,
 )
 from projectkoios.references.coverage import (
     AmbiguityEvaluation,
@@ -661,14 +662,24 @@ def test__collection_rows__bind_exact_csv_bytes(tmp_path: Path) -> None:
         '"synthetic2026","source.bib","observed","unread"\n',
         encoding="utf-8",
     )
-    first = load_collection_rows(
-        first_path,
-        storage_class=RootStorageClass.LOCAL,
-    )["synthetic2026"]
-    second = load_collection_rows(
-        second_path,
-        storage_class=RootStorageClass.LOCAL,
-    )["synthetic2026"]
+    first = (
+        CollectionRowsLoader()
+        .action(
+            request=CollectionRowsLoadRequest(
+                path=first_path, storage_class=RootStorageClass.LOCAL
+            )
+        )
+        .rows["synthetic2026"]
+    )
+    second = (
+        CollectionRowsLoader()
+        .action(
+            request=CollectionRowsLoadRequest(
+                path=second_path, storage_class=RootStorageClass.LOCAL
+            )
+        )
+        .rows["synthetic2026"]
+    )
     assert (
         first.source_bibliographies,
         first.bibliographic_status,

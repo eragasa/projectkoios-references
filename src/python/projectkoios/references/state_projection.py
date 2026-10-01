@@ -32,10 +32,12 @@ from projectkoios.references.review import (
 )
 
 if TYPE_CHECKING:
-    from projectkoios.references.collection_reconciliation import (
+    from projectkoios.references.collections.reconciliation.evidence import (
+        ProcessingEvidence,
+    )
+    from projectkoios.references.collections.reconciliation.loading import (
         CollectionRowEvidence,
         ManagedPdf,
-        ProcessingEvidence,
     )
 
 STATE_PROJECTION_SCHEMA_VERSION = 1

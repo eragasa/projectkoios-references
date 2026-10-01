@@ -32,7 +32,10 @@ from projectkoios.references.biblatex import (
     load_bibliography,
 )
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.citation_closure import CitationScanMode
+from projectkoios.references.citation_closure import (
+    CitationScanMode,
+    build_citation_closure,
+)
 from projectkoios.references.citation_draft import (
     CITATION_DRAFT_MAX_BYTES,
     CitationDraftParser,
@@ -40,12 +43,19 @@ from projectkoios.references.citation_draft import (
     CitationDraftRenderer,
     CitationDraftRenderRequest,
 )
-from projectkoios.references.collection_reconciliation import (
-    build_citation_closure,
-    load_collection_rows,
-    publish_reconciliation,
-    reconcile_collection,
-    scan_managed_pdfs,
+from projectkoios.references.collections.reconciliation.loading import (
+    CollectionRowsLoader,
+    CollectionRowsLoadRequest,
+    ManagedPdfScanner,
+    ManagedPdfScanRequest,
+)
+from projectkoios.references.collections.reconciliation.publication import (
+    ReconciliationPublicationRequest,
+    ReconciliationPublisher,
+)
+from projectkoios.references.collections.reconciliation.reconciliation import (
+    CollectionReconciler,
+    CollectionReconciliationRequest,
 )
 from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
@@ -754,15 +764,21 @@ class ReferencesOperatorAdapter:
                 if args.manuscript_root is not None
                 else None
             )
-            managed_pdfs = scan_managed_pdfs(
-                args.pdfs,
-                storage_class=args.pdf_storage_class,
-                source_discovery=args.source_discovery,
-                source_discovery_storage_class=(
-                    source_discovery_storage
-                    if args.source_discovery is not None
-                    else None
-                ),
+            managed_pdfs = (
+                ManagedPdfScanner()
+                .action(
+                    request=ManagedPdfScanRequest(
+                        directory=args.pdfs,
+                        storage_class=args.pdf_storage_class,
+                        source_discovery=args.source_discovery,
+                        source_discovery_storage_class=(
+                            source_discovery_storage
+                            if args.source_discovery is not None
+                            else None
+                        ),
+                    )
+                )
+                .scan
             )
             processing_evidence = (
                 load_ingestion_reference_evidence(
@@ -876,29 +892,49 @@ class ReferencesOperatorAdapter:
                 and asset_plan_storage is not None
                 else None
             )
-            outputs = reconcile_collection(
-                imported.candidates,
-                bibliography_bytes=bibliography_bytes,
-                collection_id=args.collection_id,
-                source_revision=args.source_revision,
-                collection_rows=load_collection_rows(
-                    args.corpus, storage_class=args.corpus_storage_class
-                ),
-                managed_pdfs=managed_pdfs,
-                citation_closure=citation_closure,
-                coverage_observation=coverage_observation,
-                coverage_observation_bytes=coverage_observation_bytes,
-                processing_evidence=processing_evidence,
-                acquisition_evidence=acquisition_evidence,
-                review_projection=review_projection,
-                catalog_assets=catalog_assets,
-                asset_plan=asset_plan,
-                bibliography_parser=biblatex_parser_identity(),
+            collection_rows = (
+                CollectionRowsLoader()
+                .action(
+                    request=CollectionRowsLoadRequest(
+                        path=args.corpus,
+                        storage_class=args.corpus_storage_class,
+                    )
+                )
+                .rows
             )
-            publication = publish_reconciliation(
-                outputs,
-                output_directory=args.output,
-                output_storage_class=args.output_storage_class,
+            outputs = (
+                CollectionReconciler()
+                .action(
+                    request=CollectionReconciliationRequest(
+                        records=imported.candidates,
+                        bibliography_bytes=bibliography_bytes,
+                        collection_id=args.collection_id,
+                        source_revision=args.source_revision,
+                        collection_rows=collection_rows,
+                        managed_pdfs=managed_pdfs,
+                        citation_closure=citation_closure,
+                        coverage_observation=coverage_observation,
+                        coverage_observation_bytes=coverage_observation_bytes,
+                        processing_evidence=processing_evidence,
+                        acquisition_evidence=acquisition_evidence,
+                        review_projection=review_projection,
+                        catalog_assets=catalog_assets,
+                        asset_plan=asset_plan,
+                        bibliography_parser=biblatex_parser_identity(),
+                    )
+                )
+                .outputs
+            )
+            publication = (
+                ReconciliationPublisher()
+                .action(
+                    request=ReconciliationPublicationRequest(
+                        outputs=outputs,
+                        output_directory=args.output,
+                        output_storage_class=args.output_storage_class,
+                    )
+                )
+                .publication
             )
             print(
                 json.dumps(
