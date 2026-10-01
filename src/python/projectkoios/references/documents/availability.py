@@ -19,10 +19,7 @@ from projectkoios.references.pdf_corpus import (
     PdfSourceObservation,
 )
 
-from ._contract import (
-    CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
-    stable_id,
-)
+from ._contract import stable_id
 from .document import (
     CitationSourceDocumentDescriptor,
     CitationSourceDocumentObservation,
@@ -98,7 +95,7 @@ class CitationDocumentAvailabilityEvaluationRequest(DataObjectActionRequest):
     def _validate_candidates(self) -> None:
         source_by_location = {
             (item.root_alias, item.relative_path): item
-            for item in self.discovery_plan.source_observations
+            for item in self.discovery_plan.processable_sources
         }
         for reference in self.coverage_observation.references:
             if (
@@ -117,8 +114,7 @@ class CitationDocumentAvailabilityEvaluationRequest(DataObjectActionRequest):
                         "availability candidate is absent from discovery plan"
                     )
                 if (
-                    not source.pdf_header_valid
-                    or source.sha256 != candidate.sha256
+                    source.sha256 != candidate.sha256
                     or source.byte_size != candidate.byte_size
                 ):
                     raise ValueError(
@@ -196,10 +192,7 @@ class CitationDocumentAvailabilityEvaluationResult(DataObjectActionResult):
                 self.observations,
                 strict=True,
             )
-            if reference.no_match
-            and observation.coverage_status == "complete"
-            and not observation.source_documents
-            and not observation.inaccessible_evidence_ids
+            if reference.no_match and observation.coverage_status == "complete"
         )
 
 
@@ -237,13 +230,11 @@ def _observations_for(
 ) -> tuple[CitationSourceDocumentObservation, ...]:
     source_by_location = {
         (item.root_alias, item.relative_path): item
-        for item in request.discovery_plan.source_observations
+        for item in request.discovery_plan.processable_sources
     }
     global_complete = (
         request.discovery_plan.coverage_status == "complete"
-        and not request.discovery_plan.skipped_observations
         and request.coverage_observation.state is CoverageState.COMPLETE
-        and not request.coverage_observation.failures
         and not request.coverage_observation.exclusions
     )
     observations: list[CitationSourceDocumentObservation] = []
@@ -320,6 +311,4 @@ def _descriptors(
             key=lambda item: item.descriptor_id,
         )
     )
-    if len(descriptors) > CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY:
-        raise ValueError("availability documents exceed the per-key limit")
     return descriptors

@@ -54,6 +54,7 @@ from ._contract import (
     _CitationDocumentContract,
     stable_id,
 )
+from .availability import CitationDocumentAvailabilityEvaluationResult
 from .document import (
     CitationSourceDocumentDescriptor,
     CitationSourceDocumentObservation,
@@ -61,7 +62,6 @@ from .document import (
 from .statuses import CitationDocumentAvailabilityStatus
 
 if TYPE_CHECKING:
-    from .availability import CitationDocumentAvailabilityEvaluationResult
     from .linkage import (
         CitationSourceDocumentLink,
         CitationSourceDocumentLinkResult,
@@ -446,9 +446,6 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
     request_id: str = field(init=False)
 
     def __post_init__(self) -> None:
-        from .availability import (
-            CitationDocumentAvailabilityEvaluationResult,
-        )
         from .linkage import CitationSourceDocumentLinkResult
 
         if type(self.target_snapshot) is not CitationTargetSnapshot:
@@ -721,9 +718,9 @@ class _CitationDocumentProjectionBuilder:
         )
         availability = request.availability_evaluation_result
         negative_observation_ids = (
-            ()
+            frozenset()
             if availability is None
-            else availability.negative_observation_ids()
+            else frozenset(availability.negative_observation_ids())
         )
         all_links = tuple(
             item.link for item in request.source_document_link_results
@@ -925,7 +922,7 @@ class _CitationDocumentProjectionBuilder:
         key_status: CitationKeyResolutionStatus,
         observations: tuple[CitationSourceDocumentObservation, ...],
         links: tuple[CitationSourceDocumentLink, ...],
-        negative_observation_ids: tuple[str, ...],
+        negative_observation_ids: frozenset[str],
     ) -> CitationDocumentAvailabilityStatus:
         descriptors = {
             item.source_document_id: item
@@ -951,9 +948,8 @@ class _CitationDocumentProjectionBuilder:
             )
         if inaccessible:
             return CitationDocumentAvailabilityStatus.INACCESSIBLE
-        authorized_negatives = set(negative_observation_ids)
         if key_status is CitationKeyResolutionStatus.RESOLVED and any(
-            item.observation_id in authorized_negatives
+            item.observation_id in negative_observation_ids
             and item.coverage_status == "complete"
             for item in observations
         ):
