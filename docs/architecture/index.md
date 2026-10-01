@@ -18,9 +18,10 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.citation_identity`](projectkoios/references/citation_identity/index.md)
 - [`projectkoios.references.citation_document`](projectkoios/references/citation_document/index.md)
 - [`projectkoios.references.catalog`](projectkoios/references/catalog/index.md)
+- [`projectkoios.references.collection_reconciliation`](projectkoios/references/collection_reconciliation/index.md)
 
 The current source tree requires 315 component-architecture pages under the
-established convention. These slices supply 57 pages; 258 remain unmigrated.
+established convention. These slices supply 75 pages; 240 remain unmigrated.
 That count is coverage evidence, not a request for a bulk retrofit.
 
 ## Remaining unmigrated modules
@@ -30,7 +31,6 @@ That count is coverage evidence, not a request for a bulk retrofit.
 - `projectkoios.references.biblatex`
 - `projectkoios.references.citation_closure`
 - `projectkoios.references.citation_draft`
-- `projectkoios.references.collection_reconciliation`
 - `projectkoios.references.coverage`
 - `projectkoios.references.enrichment`
 - `projectkoios.references.graph`
