@@ -1,43 +1,17 @@
-# Citation document control schematic
+# Deprecated citation-document namespace schematic
 
 ```mermaid
 classDiagram
-    class DataObjectActionRequest
-    class DataObjectActionResult
-    class DataObjectActionizer
-    class CitationTargetSnapshot
-    class IdentityProjection
-    class CitationDocumentProjectionRequest
-    class CitationDocumentProjection
-    class CitationDocumentProjectionItem
-    class CitationDocumentProjectionResult
-    class CitationDocumentProjector
-    class CitationSourceDocumentLinkRequest
-    class CitationSourceDocumentLink
-    class CitationSourceDocumentLinkResult
-    class CitationSourceDocumentLinker
-
-    DataObjectActionRequest <|-- CitationDocumentProjectionRequest
-    CitationDocumentProjectionRequest --> CitationTargetSnapshot
-    CitationDocumentProjectionRequest --> IdentityProjection
-    CitationDocumentProjectionRequest --> CitationSourceDocumentLinkResult
-    CitationDocumentProjector --> CitationDocumentProjectionResult
-    DataObjectActionizer <|-- CitationDocumentProjector
-    DataObjectActionResult <|-- CitationDocumentProjectionResult
-    CitationDocumentProjectionResult --> CitationDocumentProjection
-    CitationDocumentProjection o-- CitationDocumentProjectionItem
-
-    DataObjectActionRequest <|-- CitationSourceDocumentLinkRequest
-    CitationSourceDocumentLinkRequest --> CitationDocumentProjectionResult
-    CitationSourceDocumentLinker --> CitationSourceDocumentLinkResult
-    DataObjectActionizer <|-- CitationSourceDocumentLinker
-    DataObjectActionResult <|-- CitationSourceDocumentLinkResult
-    CitationSourceDocumentLinkResult --> CitationSourceDocumentLink
+    class DeprecatedCitationDocumentFacade
+    class DocumentsCanonicalObjects
+    class CitationsCanonicalObjects
+    class BibliographyCanonicalObjects
+    DeprecatedCitationDocumentFacade --> DocumentsCanonicalObjects : exact alias
+    DeprecatedCitationDocumentFacade --> CitationsCanonicalObjects : exact alias
+    DeprecatedCitationDocumentFacade --> BibliographyCanonicalObjects : exact alias
 ```
 
-The target snapshot and identity replay enter from their owners. The projection
-is rebuilt after a neutral link is created; no mutable attachment row or
-last-write-wins state exists.
+The arrows denote Python object identity, not conversion or wrapping.
 
 - [Module index](index.md)
 - [Implementation](implementation.md)

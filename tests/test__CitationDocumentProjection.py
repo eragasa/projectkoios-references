@@ -20,28 +20,6 @@ from projectkoios.references.bibliography import (
 from projectkoios.references.bibliography.resolution import (
     candidate_identity_ids_by_key,
 )
-from projectkoios.references.citation_document import (
-    CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
-    CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
-    CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY,
-    CITATION_DOCUMENT_MAX_OBSERVATIONS_PER_KEY,
-    CITATION_DOCUMENT_MAX_PDF_BYTES,
-    CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
-    CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
-    CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
-    CitationDocumentAvailabilityStatus,
-    CitationDocumentProjection,
-    CitationDocumentProjectionItem,
-    CitationDocumentProjectionRequest,
-    CitationDocumentProjectionResult,
-    CitationDocumentProjector,
-    CitationSourceDocumentDescriptor,
-    CitationSourceDocumentLink,
-    CitationSourceDocumentLinker,
-    CitationSourceDocumentLinkRequest,
-    CitationSourceDocumentLinkResult,
-    CitationSourceDocumentObservation,
-)
 from projectkoios.references.citation_identity import (
     CitationIdentityProjectionStatus,
 )
@@ -67,6 +45,28 @@ from projectkoios.references.citations.resolution import (
     key_resolution_status,
     project_identity_ids,
     resolve_identity_ids_by_key,
+)
+from projectkoios.references.documents import (
+    CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
+    CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
+    CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY,
+    CITATION_DOCUMENT_MAX_OBSERVATIONS_PER_KEY,
+    CITATION_DOCUMENT_MAX_PDF_BYTES,
+    CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
+    CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
+    CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
+    CitationDocumentAvailabilityStatus,
+    CitationDocumentProjection,
+    CitationDocumentProjectionItem,
+    CitationDocumentProjectionRequest,
+    CitationDocumentProjectionResult,
+    CitationDocumentProjector,
+    CitationSourceDocumentDescriptor,
+    CitationSourceDocumentLink,
+    CitationSourceDocumentLinker,
+    CitationSourceDocumentLinkRequest,
+    CitationSourceDocumentLinkResult,
+    CitationSourceDocumentObservation,
 )
 from projectkoios.references.identity import (
     ActorAuthorityScope,

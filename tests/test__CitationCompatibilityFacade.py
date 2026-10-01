@@ -5,6 +5,7 @@ import warnings
 import projectkoios.references.bibliography as bibliography
 import projectkoios.references.citation_document as deprecated_facade
 import projectkoios.references.citations as citations
+import projectkoios.references.documents as documents
 
 _CITATION_EXPORTS = (
     "CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES",
@@ -34,6 +35,20 @@ _BIBLIOGRAPHY_EXPORTS = (
     "CitationBibliographyMembershipStatus",
     "CitationBibliographyObservationBinding",
 )
+_DOCUMENT_EXPORTS = (
+    "CitationDocumentAvailabilityStatus",
+    "CitationDocumentProjection",
+    "CitationDocumentProjectionItem",
+    "CitationDocumentProjectionRequest",
+    "CitationDocumentProjectionResult",
+    "CitationDocumentProjector",
+    "CitationSourceDocumentDescriptor",
+    "CitationSourceDocumentLink",
+    "CitationSourceDocumentLinkRequest",
+    "CitationSourceDocumentLinkResult",
+    "CitationSourceDocumentLinker",
+    "CitationSourceDocumentObservation",
+)
 
 
 def test__canonical_citation_and_bibliography_imports_are_warning_free() -> (
@@ -48,6 +63,9 @@ def test__canonical_citation_and_bibliography_imports_are_warning_free() -> (
             bibliography.CitationBibliographyObservationBinding.__module__
             == ("projectkoios.references.bibliography.base")
         )
+        assert documents.CitationDocumentProjection.__module__ == (
+            "projectkoios.references.documents.projection"
+        )
 
     assert captured == []
 
@@ -57,6 +75,7 @@ def test__deprecated_exports_preserve_identity_and_warn_once() -> None:
     expected = {
         **{name: getattr(citations, name) for name in _CITATION_EXPORTS},
         **{name: getattr(bibliography, name) for name in _BIBLIOGRAPHY_EXPORTS},
+        **{name: getattr(documents, name) for name in _DOCUMENT_EXPORTS},
     }
 
     imported: dict[str, object] = {}
@@ -70,13 +89,21 @@ def test__deprecated_exports_preserve_identity_and_warn_once() -> None:
         )
         first = {
             name: getattr(deprecated_facade, name)
-            for name in (*_CITATION_EXPORTS, *_BIBLIOGRAPHY_EXPORTS)
+            for name in (
+                *_CITATION_EXPORTS,
+                *_BIBLIOGRAPHY_EXPORTS,
+                *_DOCUMENT_EXPORTS,
+            )
         }
     with warnings.catch_warnings(record=True) as repeated_warnings:
         warnings.simplefilter("always")
         repeated = {
             name: getattr(deprecated_facade, name)
-            for name in (*_CITATION_EXPORTS, *_BIBLIOGRAPHY_EXPORTS)
+            for name in (
+                *_CITATION_EXPORTS,
+                *_BIBLIOGRAPHY_EXPORTS,
+                *_DOCUMENT_EXPORTS,
+            )
         }
 
     assert imported["moved"] is citations.CitationTargetSnapshot
@@ -87,3 +114,25 @@ def test__deprecated_exports_preserve_identity_and_warn_once() -> None:
     assert all(item.category is DeprecationWarning for item in first_warnings)
     assert all("is deprecated" in str(item.message) for item in first_warnings)
     assert repeated_warnings == []
+
+
+def test__deprecated_submodules_preserve_exact_object_identity() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        from projectkoios.references.citation_document.document import (
+            CitationSourceDocumentDescriptor as OldDescriptor,
+        )
+        from projectkoios.references.citation_document.linkage import (
+            CitationSourceDocumentLinker as OldLinker,
+        )
+        from projectkoios.references.citation_document.projection import (
+            CitationDocumentProjector as OldProjector,
+        )
+        from projectkoios.references.citation_document.statuses import (
+            CitationDocumentAvailabilityStatus as OldStatus,
+        )
+
+    assert OldDescriptor is documents.CitationSourceDocumentDescriptor
+    assert OldLinker is documents.CitationSourceDocumentLinker
+    assert OldProjector is documents.CitationDocumentProjector
+    assert OldStatus is documents.CitationDocumentAvailabilityStatus

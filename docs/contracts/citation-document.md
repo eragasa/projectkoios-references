@@ -34,9 +34,11 @@ state, transcript state, scientific-support decision, or publication decision.
 Canonical citation inventory records live in
 `projectkoios.references.citations`; canonical bibliography binding records and
 membership state live in `projectkoios.references.bibliography`.
-`projectkoios.references.citation_document` temporarily exposes moved names as
-deprecated attributes that preserve exact object identity. New code must use
-the canonical packages.
+`projectkoios.references.documents` owns document evidence, linkage, and
+projection. The old `projectkoios.references.citation_document` namespace is a
+deprecated exact-object compatibility facade. Citation inventory and
+bibliography binding names exposed by either facade remain deprecated aliases;
+new code imports them from their canonical packages.
 
 The target projection is complete-or-absent. It has no `incomplete` success
 form. A malformed, partial, over-limit, or internally inconsistent input is
