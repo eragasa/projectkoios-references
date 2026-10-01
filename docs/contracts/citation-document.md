@@ -24,7 +24,8 @@ exact `SourceBibliographyObservation` owned by References.
 
 The projection correlates literal keys with a replay-validated
 `IdentityProjection`, reduces bounded source-document observations, and applies
-explicit neutral links. It owns no PDF bytes, private filesystem path, source
+replay-validated `CitationSourceDocumentLinkResult` evidence. It owns no PDF
+bytes, private filesystem path, source
 custody, rights decision, review state, manuscript-use decision, ingestion
 state, transcript state, scientific-support decision, or publication decision.
 
@@ -38,12 +39,19 @@ The projection retains:
 
 - the opaque target `snapshot_id`;
 - exact bibliography path and content identity;
-- ordered occurrence records with literal key, source locator, origin, and
-  target indexes;
+- ordered occurrence records with literal key, source locator, exact origin
+  (`direct`, `eqincite_expansion`, or `citation_todo_expansion`), and target
+  indexes;
 - lexically ordered groups that partition every occurrence exactly once;
 - source-ordered bibliography entries;
 - explicit missing, duplicate, and uncited key sets; and
 - target-owned source gaps without invented citation keys.
+
+The live target adapter performs only two field renames:
+`bibliography_entry_id` to `entry_id` and `bibliography_path` to
+`bibliography_source_path`. Complete owner source-file, include, call, todo,
+request, and result records remain target-owned and are represented by the
+replay-validated opaque snapshot identity rather than copied.
 
 A target bibliography entry may carry a nullable
 `source_bibliography_observation_id`. The target owner never fabricates that
@@ -113,23 +121,28 @@ Exact replay is idempotent. Changed intent, evidence, descriptor, item, or
 projection creates a distinct link. A later competing attachment is retained
 as ambiguity and never silently replaces an earlier link.
 
-Every link fixes these limitations:
+Every link and projection explicitly deny private-processing and Search
+admission. Every link fixes these limitations:
 
 - not canonical-asset authorization;
 - not ingestion status;
 - not manuscript-use authorization;
+- not private-processing admission;
 - not publication authorization;
 - not a review decision;
 - not rights clearance; and
-- not scientific support.
+- not scientific support; and
+- not Search admission.
 
 ## Runtime and persistence boundary
 
 `CitationDocumentProjectionRequest` and `CitationSourceDocumentLinkRequest` are
-runtime operation inputs. Results bind the request, semantic performer, and
-output identity. The immutable projection, item, descriptor, observation, and
-link records are the current canonical prototype DataObjects. They have stable
-content identities but no separately promised wire compatibility.
+runtime operation inputs. Projection requests consume exact link results, not
+bare links. Both result families replay the one canonical focused builder and
+require exact output equality before validating the result identity. The
+immutable projection, item, descriptor, observation, and link records are the
+current canonical prototype DataObjects. They have stable content identities
+but no separately promised wire compatibility.
 
 Absolute paths, PDF bytes, stores, clients, credentials, ingestion records, and
 mutable workflow state are prohibited from every References-owned record in
@@ -138,8 +151,12 @@ this family.
 ## Bounds and failure behavior
 
 The implementation bounds occurrences, unique keys, bibliography entries,
-source gaps, source documents, links, per-key documents, identifiers, paths,
-and text before projection. Ordering, duplicate identities, inconsistent
+source gaps, source documents, links, per-key documents/evidence, identifiers,
+paths, and text before projection. A target source identity and a PDF
+descriptor are each at most 100,000,000 bytes; per-record target references are
+at most 256; and every canonical identity payload is at most 20,000,000 UTF-8
+bytes.
+Ordering, duplicate identities, inconsistent
 derived key sets, forged identities, replay drift, stale links, mismatched
 bibliography bindings, unsupported media, and conflicting descriptors fail
 closed.

@@ -20,6 +20,7 @@ classDiagram
     DataObjectActionRequest <|-- CitationDocumentProjectionRequest
     CitationDocumentProjectionRequest --> CitationTargetSnapshot
     CitationDocumentProjectionRequest --> IdentityProjection
+    CitationDocumentProjectionRequest --> CitationSourceDocumentLinkResult
     CitationDocumentProjector --> CitationDocumentProjectionResult
     DataObjectActionizer <|-- CitationDocumentProjector
     DataObjectActionResult <|-- CitationDocumentProjectionResult

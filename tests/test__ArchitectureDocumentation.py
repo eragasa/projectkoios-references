@@ -82,12 +82,16 @@ _MERMAID = re.compile(
 
 
 def _public_classes(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    return {
-        node.name
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
-    }
+    sources = tuple(path.glob("*.py")) if path.is_dir() else (path,)
+    result: set[str] = set()
+    for source in sources:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        result.update(
+            node.name
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
+        )
+    return result
 
 
 def _expected_documents() -> set[Path]:
@@ -121,6 +125,13 @@ def _source_modules() -> set[str]:
         if path.name != "__init__.py"
     }
     modules.update(
+        f"projectkoios.references.{path.name}"
+        for path in references.iterdir()
+        if path.is_dir()
+        and not path.name.startswith("_")
+        and (path / "__init__.py").is_file()
+    )
+    modules.update(
         f"scripts.{path.stem}"
         for path in (REPOSITORY / "scripts").glob("*.py")
         if path.name != "__init__.py"
@@ -129,26 +140,38 @@ def _source_modules() -> set[str]:
 
 
 def _source_public_class_count() -> int:
-    paths = tuple(
-        path
-        for path in (
-            REPOSITORY / "src" / "python" / "projectkoios" / "references"
-        ).glob("*.py")
-        if path.name != "__init__.py"
-    ) + tuple(
-        path
-        for path in (REPOSITORY / "scripts").glob("*.py")
-        if path.name != "__init__.py"
+    references = REPOSITORY / "src" / "python" / "projectkoios" / "references"
+    paths = (
+        tuple(
+            path
+            for path in references.glob("*.py")
+            if path.name != "__init__.py"
+        )
+        + tuple(
+            path
+            for package in references.iterdir()
+            if package.is_dir() and (package / "__init__.py").is_file()
+            for path in package.glob("*.py")
+        )
+        + tuple(
+            path
+            for path in (REPOSITORY / "scripts").glob("*.py")
+            if path.name != "__init__.py"
+        )
     )
     return sum(len(_public_classes(path)) for path in paths)
 
 
 def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
+    assert not (source_root / "citation_document.py").exists()
+    assert (source_root / "citation_document" / "__init__.py").is_file()
     for module_name, public_classes in MIGRATED_MODULES.items():
-        assert _public_classes(source_root / f"{module_name}.py") == (
-            public_classes
+        module_file = source_root / f"{module_name}.py"
+        module_path = (
+            module_file if module_file.is_file() else source_root / module_name
         )
+        assert _public_classes(module_path) == public_classes
 
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()

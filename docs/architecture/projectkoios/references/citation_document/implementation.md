@@ -1,8 +1,10 @@
 # Citation document control implementation
 
-The module implements two one-path actions. `CitationDocumentProjector.action`
-delegates to `project`; `CitationSourceDocumentLinker.action` delegates to
-`link`.
+The canonical package implements two one-path actions.
+`CitationDocumentProjector.action` delegates to `project`;
+`CitationSourceDocumentLinker.action` delegates to `link`. Focused private
+modules separate contract bounds, target DTOs, statuses, document evidence,
+projection, and linkage while `__init__.py` preserves the canonical public API.
 
 ```mermaid
 flowchart TD
@@ -49,8 +51,11 @@ or contradictory accessibility evidence yields ambiguity.
 A link request selects one resolved projection item and one exact available
 descriptor. Its opaque pre-effect intent is upstream lineage only. The resulting
 link binds the prior projection/item, identity projection/item, descriptor,
-availability observations, basis, and fixed limitations. Reprojection checks
-that every link is current and exact before reporting available-linked.
+availability observations, basis, and fixed limitations. Projection requests
+consume exact link results rather than bare links. Focused non-recursive
+builders provide the sole projection and link behavior paths; each Result
+replays its builder and requires exact output equality. Reprojection also
+checks that every link remains current before reporting available-linked.
 
 ## Identity and bounds
 
@@ -59,17 +64,39 @@ projection, item, observation, descriptor, binding, and link identities are
 SHA-256 digests over canonical in-memory payloads. No schema/version field or
 version segment is present.
 
-The implementation bounds 10,000 occurrences, keys, bibliography entries,
-source gaps, and aggregate source documents; 256 documents per key; 20,000
-links; 512 UTF-8 bytes per opaque identity; and 4,096 UTF-8 bytes per retained
-text or relative path. Frozen slotted dataclasses reject malformed ordering,
-duplicate identities, forged content IDs, replay drift, stale links, and
-mismatched target/bibliography evidence.
+The implementation bounds 10,000 aggregate target records, target source files
+(plus the bibliography identity), occurrences, keys, bibliography entries,
+source gaps, aggregate source documents, and aggregate inaccessible-evidence
+IDs; 256 target
+references per record and 256 documents, observations, and
+inaccessible-evidence IDs per key; 20,000 links; 100,000,000 bytes per target
+source identity or PDF descriptor; 512 UTF-8 bytes per opaque
+identity; 4,096 UTF-8 bytes per retained text or relative path; and 20,000,000
+UTF-8 bytes per canonical identity payload before hashing. Frozen slotted
+dataclasses reject malformed ordering, duplicate identities, correctly
+rehashed semantic forgeries, replay drift, stale links, and mismatched
+target/bibliography evidence.
+
+## Live target adapter evidence
+
+The privacy-safe compact fixture from replay-valid ksdft owner commit
+`3ec21b4318020d700be671a8f220b2149b3d28c7` (tree
+`9953c0e99a28443426b5093852292f7cfbada2cc`) adapts without a code dependency.
+The only field renames are owner `bibliography_entry_id` to `entry_id` and
+`bibliography_path` to `bibliography_source_path`. Owner-only source-file,
+include, call, todo, request, and result records are not copied. The fixture
+covers all three origin values, nullable fields, owner ordering, exact IDs, and
+shared bounds; its SHA-256 is
+`d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
 Evidence:
 
-- source: [`citation_document.py`](../../../../../src/python/projectkoios/references/citation_document.py)
+- source facade: [`citation_document/__init__.py`](../../../../../src/python/projectkoios/references/citation_document/__init__.py)
+- projection: [`projection.py`](../../../../../src/python/projectkoios/references/citation_document/projection.py)
+- linkage: [`linkage.py`](../../../../../src/python/projectkoios/references/citation_document/linkage.py)
 - focused tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
+- live adapter test: [`test__CitationDocumentTargetAdapter.py`](../../../../../tests/test__CitationDocumentTargetAdapter.py)
+- owner fixture: [`ksdft-3ec21b4-compact-result.json`](../../../../../tests/fixtures/citation_document/ksdft-3ec21b4-compact-result.json)
 - contract: [`citation-document.md`](../../../../contracts/citation-document.md)
 
 - [Module index](index.md)

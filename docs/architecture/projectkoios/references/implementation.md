@@ -25,9 +25,10 @@ sequenceDiagram
     Note over D,C: no rights, use, review, ingestion, or publication claim
 ```
 
-The package initializer is unchanged by these slices. Consumers import each
-performer family from its owning module, avoiding facade expansion and
-compatibility aliases.
+The References root initializer is unchanged by these slices. Consumers import
+citation identity from its owning module and citation-document control from its
+canonical focused package facade. There is no root-facade expansion or legacy
+module alias.
 
 Evidence:
 

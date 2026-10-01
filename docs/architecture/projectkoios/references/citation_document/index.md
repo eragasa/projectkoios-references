@@ -44,6 +44,6 @@ See the [citation document control contracts](../../../../contracts/citation-doc
 
 - [Schematic](schematic.md)
 - [Implementation](implementation.md)
-- source: [`citation_document.py`](../../../../../src/python/projectkoios/references/citation_document.py)
+- source facade: [`citation_document/__init__.py`](../../../../../src/python/projectkoios/references/citation_document/__init__.py)
 - tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
 - [Package index](../index.md)

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from dataclasses import FrozenInstanceError, fields
+import json
+from dataclasses import FrozenInstanceError, fields, replace
 
 import pytest
 from projectkoios.base import (
@@ -12,6 +13,19 @@ from projectkoios.base import (
     DataObjectModel,
 )
 from projectkoios.references.citation_document import (
+    CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
+    CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES,
+    CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
+    CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY,
+    CITATION_DOCUMENT_MAX_OBSERVATIONS_PER_KEY,
+    CITATION_DOCUMENT_MAX_OCCURRENCES,
+    CITATION_DOCUMENT_MAX_PDF_BYTES,
+    CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
+    CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES,
+    CITATION_DOCUMENT_MAX_TARGET_RECORDS,
+    CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD,
+    CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES,
+    CITATION_DOCUMENT_MAX_TEXT_BYTES,
     CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
     CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
     CitationBibliographyMembershipStatus,
@@ -37,6 +51,7 @@ from projectkoios.references.citation_document import (
     CitationTargetSnapshot,
     CitationTargetSourceGap,
 )
+from projectkoios.references.citation_document._contract import stable_id
 from projectkoios.references.citation_identity import (
     CitationIdentityProjectionStatus,
 )
@@ -55,6 +70,17 @@ from projectkoios.references.identity import (
 
 def _target_id(prefix: str, label: str) -> str:
     return f"{prefix}:{hashlib.sha256(label.encode()).hexdigest()}"
+
+
+def _canonical_id(prefix: str, payload: dict[str, object]) -> str:
+    canonical = json.dumps(
+        payload,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return f"{prefix}:sha256:{hashlib.sha256(canonical).hexdigest()}"
 
 
 def _content(content: bytes) -> CitationContentIdentity:
@@ -164,8 +190,8 @@ def _fixture() -> tuple[
     )
     occurrence_values = (
         ("acceptedKey", 0, "direct", None),
-        ("acceptedKey", 0, "citation_todo_generated", 0),
-        ("aliasOld", None, "direct", None),
+        ("acceptedKey", 0, "citation_todo_expansion", 0),
+        ("aliasOld", None, "eqincite_expansion", None),
         ("ambiguousKey", 1, "direct", None),
         ("candidateOnly", 2, "direct", None),
         ("unresolved", 3, "direct", None),
@@ -213,10 +239,11 @@ def _fixture() -> tuple[
             key=key,
             occurrence_indexes=tuple(grouped[key]),
             direct_occurrence_count=sum(
-                occurrences[item].origin == "direct" for item in grouped[key]
+                occurrences[item].origin != "citation_todo_expansion"
+                for item in grouped[key]
             ),
             generated_occurrence_count=sum(
-                occurrences[item].origin == "citation_todo_generated"
+                occurrences[item].origin == "citation_todo_expansion"
                 for item in grouped[key]
             ),
             bibliography_entry_index=entry_index_by_key.get(key),
@@ -327,7 +354,7 @@ def _fixture() -> tuple[
 def _projection_request(
     *,
     observations: tuple[CitationSourceDocumentObservation, ...] = (),
-    links: tuple[CitationSourceDocumentLink, ...] = (),
+    links: tuple[CitationSourceDocumentLinkResult, ...] = (),
 ) -> CitationDocumentProjectionRequest:
     snapshot, bindings, identity_projection = _fixture()
     return CitationDocumentProjectionRequest(
@@ -335,7 +362,7 @@ def _projection_request(
         bibliography_bindings=bindings,
         identity_projection=identity_projection,
         document_observations=observations,
-        source_document_links=links,
+        source_document_link_results=links,
     )
 
 
@@ -465,6 +492,11 @@ def test__projection_and_link_actions__use_base_roles_and_stable_ids() -> None:
     assert "@" not in result.projection.contract_id
     assert not hasattr(result.projection, "schema_version")
     assert not hasattr(result.projection, "contract_version")
+    request_fields = {
+        item.name for item in fields(CitationDocumentProjectionRequest)
+    }
+    assert "source_document_link_results" in request_fields
+    assert "source_document_links" not in request_fields
 
     item = next(
         value
@@ -510,6 +542,12 @@ def test__projection_and_link_actions__use_base_roles_and_stable_ids() -> None:
     assert linked.link.identity_payload()["contract_id"] == (
         CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID
     )
+    for limitation in (
+        "not-private-processing-admission",
+        "not-search-admission",
+    ):
+        assert limitation in linked.link.limitations
+        assert limitation in result.projection.limitations
     assert "@" not in CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID
     with pytest.raises(FrozenInstanceError):
         result.projection.items = ()  # type: ignore[misc]
@@ -664,7 +702,7 @@ def test__link__reprojects_attached_without_ingestion_or_rights_claim() -> None:
     final = CitationDocumentProjector().project(
         request=_projection_request(
             observations=(observation,),
-            links=(linked.link,),
+            links=(linked,),
         )
     )
     attached = next(
@@ -715,7 +753,7 @@ def test__competing_linked_content_remains_ambiguous() -> None:
         observation: CitationSourceDocumentObservation,
         document: CitationSourceDocumentDescriptor,
         intent: str,
-    ) -> CitationSourceDocumentLink:
+    ) -> CitationSourceDocumentLinkResult:
         projected = CitationDocumentProjector().project(
             request=_projection_request(observations=(observation,))
         )
@@ -724,18 +762,14 @@ def test__competing_linked_content_remains_ambiguous() -> None:
             for value in projected.projection.items
             if value.literal_citekey == "acceptedKey"
         )
-        return (
-            CitationSourceDocumentLinker()
-            .link(
-                request=CitationSourceDocumentLinkRequest(
-                    projection_result=projected,
-                    item_id=item.item_id,
-                    identity_item_id=item.identity_items[0].item_id,
-                    source_document_id=document.source_document_id,
-                    pre_effect_intent_id=intent,
-                )
+        return CitationSourceDocumentLinker().link(
+            request=CitationSourceDocumentLinkRequest(
+                projection_result=projected,
+                item_id=item.item_id,
+                identity_item_id=item.identity_items[0].item_id,
+                source_document_id=document.source_document_id,
+                pre_effect_intent_id=intent,
             )
-            .link
         )
 
     links = tuple(
@@ -752,7 +786,7 @@ def test__competing_linked_content_remains_ambiguous() -> None:
                     "pre-effect-intent:linked-second",
                 ),
             ),
-            key=lambda item: item.link_id,
+            key=lambda item: item.link.link_id,
         )
     )
     observations = tuple(
@@ -772,7 +806,7 @@ def test__competing_linked_content_remains_ambiguous() -> None:
 
     assert item.document_status is CitationDocumentAvailabilityStatus.AMBIGUOUS
     assert item.source_document_link_ids == tuple(
-        sorted(link.link_id for link in links)
+        sorted(result.link.link_id for result in links)
     )
     assert set(item.source_document_ids) == {
         first_document.source_document_id,
@@ -878,29 +912,27 @@ def test__projection__rejects_stale_or_mismatched_link() -> None:
         for value in initial.projection.items
         if value.literal_citekey == "acceptedKey"
     )
-    link = (
-        CitationSourceDocumentLinker()
-        .link(
-            request=CitationSourceDocumentLinkRequest(
-                projection_result=initial,
-                item_id=item.item_id,
-                identity_item_id=item.identity_items[0].item_id,
-                source_document_id=document.source_document_id,
-                pre_effect_intent_id="pre-effect-intent:stale",
-            )
+    link_result = CitationSourceDocumentLinker().link(
+        request=CitationSourceDocumentLinkRequest(
+            projection_result=initial,
+            item_id=item.item_id,
+            identity_item_id=item.identity_items[0].item_id,
+            source_document_id=document.source_document_id,
+            pre_effect_intent_id="pre-effect-intent:stale",
         )
-        .link
     )
 
-    changed = copy.copy(link)
-    object.__setattr__(changed, "identity_item_id", "different-item")
+    changed_link = copy.copy(link_result.link)
+    object.__setattr__(changed_link, "identity_item_id", "different-item")
+    changed_result = copy.copy(link_result)
+    object.__setattr__(changed_result, "link", changed_link)
     with pytest.raises(ValueError, match="identity"):
         CitationDocumentProjectionRequest(
             target_snapshot=_fixture()[0],
             bibliography_bindings=_fixture()[1],
             identity_projection=_fixture()[2],
             document_observations=(observation,),
-            source_document_links=(changed,),
+            source_document_link_results=(changed_result,),
         )
 
     other_observation = _document_observation(
@@ -911,7 +943,7 @@ def test__projection__rejects_stale_or_mismatched_link() -> None:
     )
     request = _projection_request(
         observations=(other_observation,),
-        links=(link,),
+        links=(link_result,),
     )
     with pytest.raises(ValueError, match="descriptor is stale"):
         CitationDocumentProjector().project(request=request)
@@ -957,6 +989,91 @@ def test__requests__reject_forged_projection_and_identity_replay() -> None:
             target_snapshot=snapshot,
             bibliography_bindings=bindings,
             identity_projection=forged_identity,
+        )
+
+
+def test__rehashed_cross_key_projection_forgery_fails_replay() -> None:
+    document = _descriptor("cross-key-forgery")
+    observation = _document_observation(
+        key="acceptedKey",
+        coverage="complete",
+        documents=(document,),
+        evidence="receipt:cross-key-forgery",
+    )
+    request = _projection_request(observations=(observation,))
+    valid = CitationDocumentProjector().project(request=request)
+    by_key = {item.literal_citekey: item for item in valid.projection.items}
+    forged_item = replace(
+        by_key["acceptedKey"],
+        identity_items=by_key["candidateOnly"].identity_items,
+    )
+    forged_items = tuple(
+        forged_item if item.literal_citekey == "acceptedKey" else item
+        for item in valid.projection.items
+    )
+    payload = valid.projection.identity_payload()
+    payload["item_ids"] = [item.item_id for item in forged_items]
+    forged_projection = replace(
+        valid.projection,
+        items=forged_items,
+        projection_id=_canonical_id(
+            "citation-document-projection",
+            payload,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="projector replay"):
+        CitationDocumentProjectionResult(
+            request=request,
+            projection=forged_projection,
+        )
+
+
+def test__rehashed_link_lineage_forgery_fails_replay() -> None:
+    document = _descriptor("link-lineage-forgery")
+    observation = _document_observation(
+        key="acceptedKey",
+        coverage="complete",
+        documents=(document,),
+        evidence="receipt:link-lineage-forgery",
+    )
+    projection = CitationDocumentProjector().project(
+        request=_projection_request(observations=(observation,))
+    )
+    item = next(
+        value
+        for value in projection.projection.items
+        if value.literal_citekey == "acceptedKey"
+    )
+    valid = CitationSourceDocumentLinker().link(
+        request=CitationSourceDocumentLinkRequest(
+            projection_result=projection,
+            item_id=item.item_id,
+            identity_item_id=item.identity_items[0].item_id,
+            source_document_id=document.source_document_id,
+            pre_effect_intent_id="pre-effect-intent:lineage-forgery",
+        )
+    )
+    payload = valid.link.identity_payload()
+    payload.update(
+        {
+            "creating_request_id": "forged-request",
+            "prior_projection_id": "forged-projection",
+            "prior_item_id": "forged-item",
+        }
+    )
+    forged_link = replace(
+        valid.link,
+        creating_request_id="forged-request",
+        prior_projection_id="forged-projection",
+        prior_item_id="forged-item",
+        link_id=_canonical_id("citation-source-document-link", payload),
+    )
+
+    with pytest.raises(ValueError, match="linker replay"):
+        CitationSourceDocumentLinkResult(
+            request=valid.request,
+            link=forged_link,
         )
 
 
@@ -1026,7 +1143,8 @@ def test__bounds_and_canonical_input_order_fail_closed() -> None:
             snapshot_id=snapshot.snapshot_id,
             bibliography_source_path=snapshot.bibliography_source_path,
             bibliography_content_identity=snapshot.bibliography_content_identity,
-            occurrences=(snapshot.occurrences[0],) * 10_001,
+            occurrences=(snapshot.occurrences[0],)
+            * (CITATION_DOCUMENT_MAX_OCCURRENCES + 1),
             groups=snapshot.groups,
             bibliography_entries=snapshot.bibliography_entries,
             source_gaps=snapshot.source_gaps,
@@ -1034,13 +1152,29 @@ def test__bounds_and_canonical_input_order_fail_closed() -> None:
             duplicate_keys=snapshot.duplicate_keys,
             uncited_keys=snapshot.uncited_keys,
         )
+    half_record_limit = CITATION_DOCUMENT_MAX_TARGET_RECORDS // 2
+    with pytest.raises(ValueError, match="aggregate record count"):
+        CitationTargetSnapshot(
+            snapshot_id=snapshot.snapshot_id,
+            bibliography_source_path=snapshot.bibliography_source_path,
+            bibliography_content_identity=snapshot.bibliography_content_identity,
+            occurrences=(),
+            groups=(),
+            bibliography_entries=(snapshot.bibliography_entries[0],)
+            * half_record_limit,
+            source_gaps=(snapshot.source_gaps[0],) * (half_record_limit + 1),
+            missing_keys=(),
+            duplicate_keys=(),
+            uncited_keys=(),
+        )
     descriptor = _descriptor("too-many")
     with pytest.raises(TypeError, match="descriptors"):
         CitationSourceDocumentObservation(
             target_snapshot_id=snapshot.snapshot_id,
             literal_citekey="acceptedKey",
             coverage_status="complete",
-            source_documents=(descriptor,) * 257,
+            source_documents=(descriptor,)
+            * (CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY + 1),
             inaccessible_evidence_ids=(),
             evidence_id="receipt:too-many",
         )
@@ -1062,3 +1196,233 @@ def test__bounds_and_canonical_input_order_fail_closed() -> None:
     )
     with pytest.raises(ValueError, match="not canonical"):
         _projection_request(observations=tuple(reversed(observations)))
+
+
+def test__hard_byte_and_evidence_bounds_hold_at_the_boundary() -> None:
+    with pytest.raises(ValueError, match="byte count"):
+        CitationContentIdentity(
+            algorithm="sha256",
+            digest="0" * 64,
+            byte_count=0,
+        )
+    CitationContentIdentity(
+        algorithm="sha256",
+        digest="0" * 64,
+        byte_count=CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES,
+    )
+    with pytest.raises(ValueError, match="byte count"):
+        CitationContentIdentity(
+            algorithm="sha256",
+            digest="0" * 64,
+            byte_count=CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES + 1,
+        )
+    with pytest.raises(ValueError, match="occurrence indexes"):
+        CitationTargetGroup(
+            group_id=_target_id("citation-group", "too-many-occurrences"),
+            group_index=0,
+            key="tooManyOccurrences",
+            occurrence_indexes=tuple(
+                range(CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD + 1)
+            ),
+            direct_occurrence_count=(
+                CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD + 1
+            ),
+            generated_occurrence_count=0,
+            bibliography_entry_index=None,
+        )
+
+    CitationSourceDocumentDescriptor(
+        source_document_id="application-source:max-pdf",
+        sha256="0" * 64,
+        byte_size=CITATION_DOCUMENT_MAX_PDF_BYTES,
+    )
+    with pytest.raises(ValueError, match="byte size"):
+        CitationSourceDocumentDescriptor(
+            source_document_id="application-source:oversize-pdf",
+            sha256="0" * 64,
+            byte_size=CITATION_DOCUMENT_MAX_PDF_BYTES + 1,
+        )
+
+    snapshot, _, _ = _fixture()
+    evidence_ids = tuple(
+        f"evidence:{index:03d}"
+        for index in range(CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY)
+    )
+    CitationSourceDocumentObservation(
+        target_snapshot_id=snapshot.snapshot_id,
+        literal_citekey="acceptedKey",
+        coverage_status="complete",
+        source_documents=(),
+        inaccessible_evidence_ids=evidence_ids,
+        evidence_id="receipt:evidence-boundary",
+    )
+    with pytest.raises(ValueError, match="not canonical"):
+        CitationSourceDocumentObservation(
+            target_snapshot_id=snapshot.snapshot_id,
+            literal_citekey="acceptedKey",
+            coverage_status="complete",
+            source_documents=(),
+            inaccessible_evidence_ids=(
+                *evidence_ids,
+                "evidence:overflow",
+            ),
+            evidence_id="receipt:evidence-overflow",
+        )
+
+    CitationTargetSnapshot(
+        snapshot_id=_target_id("citation-snapshot", "path-boundary"),
+        bibliography_source_path=("a" * CITATION_DOCUMENT_MAX_TEXT_BYTES),
+        bibliography_content_identity=_content(b"%"),
+        occurrences=(),
+        groups=(),
+        bibliography_entries=(),
+        source_gaps=(),
+        missing_keys=(),
+        duplicate_keys=(),
+        uncited_keys=(),
+    )
+    with pytest.raises(ValueError, match="text limit"):
+        CitationTargetSnapshot(
+            snapshot_id=_target_id("citation-snapshot", "path-overflow"),
+            bibliography_source_path=(
+                "a" * (CITATION_DOCUMENT_MAX_TEXT_BYTES + 1)
+            ),
+            bibliography_content_identity=_content(b"%"),
+            occurrences=(),
+            groups=(),
+            bibliography_entries=(),
+            source_gaps=(),
+            missing_keys=(),
+            duplicate_keys=(),
+            uncited_keys=(),
+        )
+
+    large_identity = CitationContentIdentity(
+        algorithm="sha256",
+        digest="1" * 64,
+        byte_count=(
+            CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES // 2 + 1
+        ),
+    )
+    large_gaps = tuple(
+        CitationTargetSourceGap(
+            source_gap_id=_target_id("citation-gap", f"large:{index}"),
+            source_gap_index=index,
+            locator=CitationSourceLocator(
+                source_path=f"large-{index}.tex",
+                source_content_identity=large_identity,
+                include_index=index,
+                byte_start=0,
+                byte_end=1,
+                line=1,
+                column=1,
+            ),
+            reason="placeholder_identifier",
+            placeholder_identifier=f"large-placeholder-{index}",
+        )
+        for index in range(2)
+    )
+    with pytest.raises(ValueError, match="aggregate source bytes"):
+        CitationTargetSnapshot(
+            snapshot_id=_target_id("citation-snapshot", "aggregate-overflow"),
+            bibliography_source_path="references.bib",
+            bibliography_content_identity=_content(b"%"),
+            occurrences=(),
+            groups=(),
+            bibliography_entries=(),
+            source_gaps=large_gaps,
+            missing_keys=(),
+            duplicate_keys=(),
+            uncited_keys=(),
+        )
+
+    empty_payload_bytes = len(
+        json.dumps(
+            {"value": ""},
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+    boundary_value = "x" * (
+        CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES - empty_payload_bytes
+    )
+    stable_id("boundary", {"value": boundary_value})
+    with pytest.raises(ValueError, match="payload exceeds"):
+        stable_id("boundary", {"value": boundary_value + "x"})
+
+
+def test__request_rejects_per_key_and_aggregate_evidence_overflow() -> None:
+    per_key = tuple(
+        sorted(
+            (
+                _document_observation(
+                    key="acceptedKey",
+                    coverage="incomplete",
+                    evidence=f"receipt:per-key:{index:03d}",
+                )
+                for index in range(
+                    CITATION_DOCUMENT_MAX_OBSERVATIONS_PER_KEY + 1
+                )
+            ),
+            key=lambda item: (item.literal_citekey, item.observation_id),
+        )
+    )
+    with pytest.raises(ValueError, match="per-key limit"):
+        _projection_request(observations=per_key)
+
+    documents = tuple(
+        sorted(
+            (
+                _descriptor(f"aggregate:{index:03d}")
+                for index in range(CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY)
+            ),
+            key=lambda item: item.descriptor_id,
+        )
+    )
+    aggregate_documents = tuple(
+        sorted(
+            (
+                _document_observation(
+                    key="acceptedKey",
+                    coverage="incomplete",
+                    documents=documents,
+                    evidence=f"receipt:aggregate-documents:{index:03d}",
+                )
+                for index in range(
+                    CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS
+                    // CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY
+                    + 1
+                )
+            ),
+            key=lambda item: (item.literal_citekey, item.observation_id),
+        )
+    )
+    with pytest.raises(ValueError, match="aggregate exceeds"):
+        _projection_request(observations=aggregate_documents)
+
+    evidence_ids = tuple(
+        f"evidence:{index:03d}"
+        for index in range(CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY)
+    )
+    aggregate_inaccessible = tuple(
+        sorted(
+            (
+                _document_observation(
+                    key="acceptedKey",
+                    coverage="incomplete",
+                    inaccessible=evidence_ids,
+                    evidence=f"receipt:aggregate-evidence:{index:03d}",
+                )
+                for index in range(
+                    CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS
+                    // CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY
+                    + 1
+                )
+            ),
+            key=lambda item: (item.literal_citekey, item.observation_id),
+        )
+    )
+    with pytest.raises(ValueError, match="aggregate exceeds"):
+        _projection_request(observations=aggregate_inaccessible)
