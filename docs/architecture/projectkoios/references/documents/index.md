@@ -37,8 +37,7 @@ resolved identity.
 
 This canonical facade exports document-owned names only. Citation inventory and
 bibliography binding records are imported directly from their canonical owner
-packages. Legacy cross-owner aliases exist only on the deprecated
-[`citation_document`](../citation_document/index.md) compatibility facade.
+packages; no legacy document namespace or cross-owner aliases are retained.
 
 See the [citation document control contracts](../../../../contracts/citation-document.md).
 

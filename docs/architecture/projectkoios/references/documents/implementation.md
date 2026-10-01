@@ -112,11 +112,9 @@ normalized relative POSIX source paths without filesystem mutation policy; its
 SHA-256 is
 `d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
-The canonical `documents` facade exports only document-owned names and emits no
-deprecation warning. The old `citation_document` namespace alone forwards exact
-objects from `documents`, `citations`, and `bibliography` with bounded
-`DeprecationWarning` messages; no wrapper, subclass, alternate payload, or
-duplicate identity is introduced.
+The canonical `documents` facade exports only document-owned names. Citation
+and bibliography inputs are consumed from their canonical owners; no legacy
+facade, wrapper, subclass, alternate payload, or duplicate identity is retained.
 
 Evidence:
 
@@ -128,7 +126,6 @@ Evidence:
 - linkage: [`linkage.py`](../../../../../src/python/projectkoios/references/documents/linkage.py)
 - focused tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
 - live adapter test: [`test__CitationDocumentTargetAdapter.py`](../../../../../tests/test__CitationDocumentTargetAdapter.py)
-- compatibility test: [`test__CitationCompatibilityFacade.py`](../../../../../tests/test__CitationCompatibilityFacade.py)
 - owner fixture: [`ksdft-3ec21b4-compact-result.json`](../../../../../tests/fixtures/citation_document/ksdft-3ec21b4-compact-result.json)
 - contract: [`citation-document.md`](../../../../contracts/citation-document.md)
 

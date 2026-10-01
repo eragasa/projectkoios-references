@@ -15,10 +15,8 @@ resolved/ambiguous/unresolved reduction over neutral candidate mappings. Every
 record is frozen, slotted, statically
 `final`, and accepted at composition boundaries only by exact runtime type.
 
-The package has no dependency on `documents`. The latter consumes these
-records and temporarily exposes deprecated identity-preserving attributes for
-old imports. Deprecation access does not create a subclass, wrapper, duplicate
-contract, or alternate identity payload.
+The package has no dependency on `documents`; the latter consumes these
+records through their canonical owner without re-exporting them.
 
 The live adapter evidence and target-owner provenance remain documented by the
 [citation-document implementation](../documents/implementation.md).

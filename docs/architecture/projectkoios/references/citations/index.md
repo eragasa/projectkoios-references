@@ -17,9 +17,8 @@ locators remain bounded normalized relative POSIX paths.
 
 ## Boundary
 
-`documents` depends on these records; this package never imports `documents`.
-Deprecated attributes on the compatibility facades resolve to these
-exact class objects and do not create wrappers or parallel identities.
+`documents` depends on these records through their canonical owner; this
+package never imports `documents`.
 
 ## Detail
 

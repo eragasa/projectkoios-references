@@ -14,8 +14,6 @@ manuscript use, rights clearance, or publication acceptance.
   bounded citation-facing projection over replay-derived identity state.
 - [`documents`](documents/index.md) — deterministic whole-target citation
   correlation and neutral source-document linkage.
-- [`citation_document`](citation_document/index.md) — deprecated exact-object
-  compatibility facade for `documents`.
 
 All other package modules remain listed as unmigrated in the
 [repository navigator](../../index.md).

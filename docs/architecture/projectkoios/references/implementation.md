@@ -31,9 +31,8 @@ sequenceDiagram
 The References root initializer is unchanged by these slices. Consumers import
 citation inventory and bibliography binding from their canonical focused
 package facades, identity from its owner, and document control from
-`documents`. The old `citation_document` package and moved citation/bibliography
-names are bounded deprecated identity-preserving aliases; there is no
-root-facade expansion or duplicate implementation.
+`documents`. There is no legacy document facade, root-facade expansion, or
+duplicate implementation.
 
 Evidence:
 
