@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from typing import final
 
 from projectkoios.base import DataObjectModel
 
@@ -14,6 +15,7 @@ from ._contract import (
 )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationSourceDocumentDescriptor(DataObjectModel):
     """Opaque PDF descriptor without bytes, path, rights, or ingestion state."""
@@ -29,14 +31,19 @@ class CitationSourceDocumentDescriptor(DataObjectModel):
             self.source_document_id,
             field_name="source document identity",
         )
-        if not _CitationDocumentContract._DIGEST.fullmatch(self.sha256):
+        if type(self.sha256) is not str or (
+            not _CitationDocumentContract._DIGEST.fullmatch(self.sha256)
+        ):
             raise ValueError("source document SHA-256 is invalid")
         if (
             type(self.byte_size) is not int
             or not 0 < self.byte_size <= CITATION_DOCUMENT_MAX_PDF_BYTES
         ):
             raise ValueError("source document byte size is invalid")
-        if self.media_type != "application/pdf":
+        if (
+            type(self.media_type) is not str
+            or self.media_type != "application/pdf"
+        ):
             raise ValueError(
                 "source document media type must be application/pdf"
             )
@@ -75,6 +82,7 @@ class CitationSourceDocumentDescriptor(DataObjectModel):
         return (self.sha256, self.byte_size)
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationSourceDocumentObservation(DataObjectModel):
     """Bounded document availability evidence for one literal key."""
@@ -97,14 +105,16 @@ class CitationSourceDocumentObservation(DataObjectModel):
             self.literal_citekey,
             field_name="document observation key",
         )
-        if self.coverage_status not in {"complete", "incomplete"}:
+        if type(self.coverage_status) is not str or (
+            self.coverage_status not in {"complete", "incomplete"}
+        ):
             raise ValueError("document evidence coverage status is invalid")
         if (
-            not isinstance(self.source_documents, tuple)
+            type(self.source_documents) is not tuple
             or len(self.source_documents)
             > CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY
             or any(
-                not isinstance(item, CitationSourceDocumentDescriptor)
+                type(item) is not CitationSourceDocumentDescriptor
                 for item in self.source_documents
             )
         ):
@@ -122,7 +132,7 @@ class CitationSourceDocumentObservation(DataObjectModel):
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("source document identities contain duplicates")
         if (
-            not isinstance(self.inaccessible_evidence_ids, tuple)
+            type(self.inaccessible_evidence_ids) is not tuple
             or len(self.inaccessible_evidence_ids)
             > CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY
             or self.inaccessible_evidence_ids

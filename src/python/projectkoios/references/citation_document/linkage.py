@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, final
 
 from projectkoios.base import (
     DataObjectActionizer,
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationSourceDocumentLink(DataObjectModel):
     """Neutral exact linkage; it grants no rights, use, or review authority."""
@@ -70,15 +71,12 @@ class CitationSourceDocumentLink(DataObjectModel):
             self.literal_citekey,
             field_name="linked literal key",
         )
-        if not isinstance(
-            self.source_document,
-            CitationSourceDocumentDescriptor,
-        ):
+        if type(self.source_document) is not CitationSourceDocumentDescriptor:
             raise TypeError(
                 "source_document must be a CitationSourceDocumentDescriptor"
             )
         if (
-            not isinstance(self.availability_observation_ids, tuple)
+            type(self.availability_observation_ids) is not tuple
             or not self.availability_observation_ids
             or len(self.availability_observation_ids)
             > CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY
@@ -93,11 +91,18 @@ class CitationSourceDocumentLink(DataObjectModel):
                 identity,
                 field_name="availability observation identity",
             )
-        if self.linkage_basis != "explicit-upload-for-requested-citation":
+        if (
+            type(self.linkage_basis) is not str
+            or self.linkage_basis != "explicit-upload-for-requested-citation"
+        ):
             raise ValueError(
                 "citation source-document linkage basis is invalid"
             )
-        if self.limitations != self.expected_limitations():
+        if (
+            type(self.limitations) is not tuple
+            or any(type(item) is not str for item in self.limitations)
+            or self.limitations != self.expected_limitations()
+        ):
             raise ValueError("citation source-document limitations are invalid")
         self.validate_identity()
 
@@ -144,6 +149,7 @@ class CitationSourceDocumentLink(DataObjectModel):
         )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationSourceDocumentLinkRequest(DataObjectActionRequest):
     """Request one neutral link from an exact available projection item."""
@@ -171,7 +177,10 @@ class CitationSourceDocumentLinkRequest(DataObjectActionRequest):
             (self.pre_effect_intent_id, "link pre-effect intent identity"),
         ):
             _CitationDocumentContract.opaque_id(value, field_name=field_name)
-        if self.linkage_basis != "explicit-upload-for-requested-citation":
+        if (
+            type(self.linkage_basis) is not str
+            or self.linkage_basis != "explicit-upload-for-requested-citation"
+        ):
             raise ValueError("source document linkage basis is invalid")
         item = self.selected_item()
         if (
@@ -291,6 +300,7 @@ def link_for(
     )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationSourceDocumentLinkResult(DataObjectActionResult):
     """Bind one exact link request to its neutral immutable link."""
@@ -344,6 +354,7 @@ class CitationSourceDocumentLinkResult(DataObjectActionResult):
         )
 
 
+@final
 class CitationSourceDocumentLinker(
     DataObjectActionizer[
         CitationSourceDocumentLinkRequest,
@@ -359,6 +370,8 @@ class CitationSourceDocumentLinker(
         *,
         request: CitationSourceDocumentLinkRequest,
     ) -> CitationSourceDocumentLinkResult:
+        if type(self) is not CitationSourceDocumentLinker:
+            raise TypeError("linker must be a CitationSourceDocumentLinker")
         return self.link(request=request)
 
     def link(
@@ -366,6 +379,8 @@ class CitationSourceDocumentLinker(
         *,
         request: CitationSourceDocumentLinkRequest,
     ) -> CitationSourceDocumentLinkResult:
+        if type(self) is not CitationSourceDocumentLinker:
+            raise TypeError("linker must be a CitationSourceDocumentLinker")
         if type(request) is not CitationSourceDocumentLinkRequest:
             raise TypeError(
                 "request must be a CitationSourceDocumentLinkRequest"

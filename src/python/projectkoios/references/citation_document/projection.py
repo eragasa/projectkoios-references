@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, final
 
 from projectkoios.base import (
     DataObjectActionizer,
@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationDocumentProjectionItem(DataObjectModel):
     """One literal key with every occurrence and orthogonal owner states."""
@@ -91,7 +92,7 @@ class CitationDocumentProjectionItem(DataObjectModel):
             field_name="projection literal key",
         )
         if (
-            not isinstance(self.occurrence_ids, tuple)
+            type(self.occurrence_ids) is not tuple
             or not self.occurrence_ids
             or len(self.occurrence_ids) > CITATION_DOCUMENT_MAX_OCCURRENCES
             or len(self.occurrence_ids) != len(set(self.occurrence_ids))
@@ -103,22 +104,19 @@ class CitationDocumentProjectionItem(DataObjectModel):
                 kind="occurrence",
                 field_name="projection occurrence identity",
             )
-        if not isinstance(
-            self.bibliography_membership_status,
-            CitationBibliographyMembershipStatus,
+        if (
+            type(self.bibliography_membership_status)
+            is not CitationBibliographyMembershipStatus
         ):
             raise TypeError("bibliography membership status is invalid")
-        if not isinstance(
-            self.key_resolution_status,
-            CitationKeyResolutionStatus,
-        ):
+        if type(self.key_resolution_status) is not CitationKeyResolutionStatus:
             raise TypeError("key resolution status is invalid")
         if (
-            not isinstance(self.identity_items, tuple)
+            type(self.identity_items) is not tuple
             or len(self.identity_items)
             > CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES
             or any(
-                not isinstance(item, CitationIdentityProjectionItem)
+                type(item) is not CitationIdentityProjectionItem
                 for item in self.identity_items
             )
         ):
@@ -134,10 +132,7 @@ class CitationDocumentProjectionItem(DataObjectModel):
         ):
             raise ValueError("identity projection item source conflicts")
         self._validate_key_resolution()
-        if not isinstance(
-            self.document_status,
-            CitationDocumentAvailabilityStatus,
-        ):
+        if type(self.document_status) is not CitationDocumentAvailabilityStatus:
             raise TypeError("document availability status is invalid")
         for values, field_name, maximum in (
             (
@@ -152,7 +147,7 @@ class CitationDocumentProjectionItem(DataObjectModel):
             ),
         ):
             if (
-                not isinstance(values, tuple)
+                type(values) is not tuple
                 or len(values) > maximum
                 or values != tuple(sorted(set(values)))
             ):
@@ -242,6 +237,7 @@ class CitationDocumentProjectionItem(DataObjectModel):
         }
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationDocumentProjection(DataObjectModel):
     """Canonical unversioned citation/document owner projection."""
@@ -260,7 +256,10 @@ class CitationDocumentProjection(DataObjectModel):
     projection_id: str
 
     def __post_init__(self) -> None:
-        if self.contract_id != CITATION_DOCUMENT_PROJECTION_CONTRACT_ID:
+        if (
+            type(self.contract_id) is not str
+            or self.contract_id != CITATION_DOCUMENT_PROJECTION_CONTRACT_ID
+        ):
             raise ValueError("citation document projection contract conflicts")
         _CitationDocumentContract.target_id(
             self.target_snapshot_id,
@@ -290,7 +289,7 @@ class CitationDocumentProjection(DataObjectModel):
             ),
         ):
             if (
-                not isinstance(values, tuple)
+                type(values) is not tuple
                 or len(values) > maximum
                 or values != tuple(sorted(set(values)))
             ):
@@ -301,11 +300,11 @@ class CitationDocumentProjection(DataObjectModel):
                     field_name=field_name,
                 )
         if (
-            not isinstance(self.source_documents, tuple)
+            type(self.source_documents) is not tuple
             or len(self.source_documents)
             > CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS
             or any(
-                not isinstance(item, CitationSourceDocumentDescriptor)
+                type(item) is not CitationSourceDocumentDescriptor
                 for item in self.source_documents
             )
         ):
@@ -321,10 +320,10 @@ class CitationDocumentProjection(DataObjectModel):
         ) != len(set(source_document_ids)):
             raise ValueError("projection source documents are not canonical")
         if (
-            not isinstance(self.items, tuple)
+            type(self.items) is not tuple
             or len(self.items) > CITATION_DOCUMENT_MAX_KEYS
             or any(
-                not isinstance(item, CitationDocumentProjectionItem)
+                type(item) is not CitationDocumentProjectionItem
                 for item in self.items
             )
         ):
@@ -357,10 +356,10 @@ class CitationDocumentProjection(DataObjectModel):
         ):
             raise ValueError("projection item document identities are unknown")
         if (
-            not isinstance(self.source_gaps, tuple)
+            type(self.source_gaps) is not tuple
             or len(self.source_gaps) > CITATION_DOCUMENT_MAX_SOURCE_GAPS
             or any(
-                not isinstance(item, CitationTargetSourceGap)
+                type(item) is not CitationTargetSourceGap
                 for item in self.source_gaps
             )
         ):
@@ -374,7 +373,11 @@ class CitationDocumentProjection(DataObjectModel):
             self.source_gaps
         ):
             raise ValueError("citation source gaps overlap")
-        if self.limitations != self.expected_limitations():
+        if (
+            type(self.limitations) is not tuple
+            or any(type(item) is not str for item in self.limitations)
+            or self.limitations != self.expected_limitations()
+        ):
             raise ValueError("citation document limitations are invalid")
         self.validate_identity()
 
@@ -417,6 +420,7 @@ class CitationDocumentProjection(DataObjectModel):
         )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationDocumentProjectionRequest(DataObjectActionRequest):
     """Complete immutable inputs to one citation/document projection."""
@@ -437,14 +441,11 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
             raise TypeError("target_snapshot must be a CitationTargetSnapshot")
         self.target_snapshot.validate_identity()
         if (
-            not isinstance(self.bibliography_bindings, tuple)
+            type(self.bibliography_bindings) is not tuple
             or len(self.bibliography_bindings)
             != len(self.target_snapshot.bibliography_entries)
             or any(
-                not isinstance(
-                    item,
-                    CitationBibliographyObservationBinding,
-                )
+                type(item) is not CitationBibliographyObservationBinding
                 for item in self.bibliography_bindings
             )
         ):
@@ -472,10 +473,10 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
         if replayed != self.identity_projection:
             raise ValueError("identity projection does not match replay")
         if (
-            not isinstance(self.document_observations, tuple)
+            type(self.document_observations) is not tuple
             or len(self.document_observations) > CITATION_DOCUMENT_MAX_KEYS
             or any(
-                not isinstance(item, CitationSourceDocumentObservation)
+                type(item) is not CitationSourceDocumentObservation
                 for item in self.document_observations
             )
         ):
@@ -521,11 +522,11 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
         ):
             raise ValueError("document observation aggregate exceeds the limit")
         if (
-            not isinstance(self.source_document_link_results, tuple)
+            type(self.source_document_link_results) is not tuple
             or len(self.source_document_link_results)
             > CITATION_DOCUMENT_MAX_LINKS
             or any(
-                not isinstance(item, CitationSourceDocumentLinkResult)
+                type(item) is not CitationSourceDocumentLinkResult
                 for item in self.source_document_link_results
             )
         ):
@@ -582,6 +583,7 @@ class CitationDocumentProjectionRequest(DataObjectActionRequest):
         )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationDocumentProjectionResult(DataObjectActionResult):
     """Bind one request and projector identity to its owner projection."""
@@ -1010,6 +1012,7 @@ def projection_for(
     return _CitationDocumentProjectionBuilder().build(request)
 
 
+@final
 class CitationDocumentProjector(
     DataObjectActionizer[
         CitationDocumentProjectionRequest,
@@ -1025,6 +1028,8 @@ class CitationDocumentProjector(
         *,
         request: CitationDocumentProjectionRequest,
     ) -> CitationDocumentProjectionResult:
+        if type(self) is not CitationDocumentProjector:
+            raise TypeError("projector must be a CitationDocumentProjector")
         return self.project(request=request)
 
     def project(
@@ -1032,6 +1037,8 @@ class CitationDocumentProjector(
         *,
         request: CitationDocumentProjectionRequest,
     ) -> CitationDocumentProjectionResult:
+        if type(self) is not CitationDocumentProjector:
+            raise TypeError("projector must be a CitationDocumentProjector")
         if type(request) is not CitationDocumentProjectionRequest:
             raise TypeError(
                 "request must be a CitationDocumentProjectionRequest"

@@ -146,7 +146,11 @@ bare links. Both result families replay the one canonical focused builder and
 require exact output equality before validating the result identity. The
 immutable projection, item, descriptor, observation, and link records are the
 current canonical prototype DataObjects. They have stable content identities
-but no separately promised wire compatibility.
+but no separately promised wire compatibility. These canonical implementations
+are closed value types rather than extension points: they are marked `final` for
+static checking, and every runtime composition boundary requires the exact
+canonical class. Subclasses cannot override replay validation or add mutable
+state to a canonical Request or Result graph.
 
 Absolute paths, PDF bytes, stores, clients, credentials, ingestion records, and
 mutable workflow state are prohibited from every References-owned record in

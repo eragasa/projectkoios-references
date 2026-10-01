@@ -56,6 +56,10 @@ consume exact link results rather than bare links. Focused non-recursive
 builders provide the sole projection and link behavior paths; each Result
 replays its builder and requires exact output equality. Reprojection also
 checks that every link remains current before reporting available-linked.
+Canonical DTOs, Requests, Results, and actionizers are statically `final`, and
+all runtime composition boundaries require exact canonical types. The base
+DataObject roles remain available for role classification, not subclass-based
+extension of identity-bearing records.
 
 ## Identity and bounds
 

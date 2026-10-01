@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field, replace
+from typing import final
 
 from projectkoios.base import DataObjectModel
 from projectkoios.references.identity import SourceBibliographyObservation
@@ -24,6 +25,7 @@ from ._contract import (
 )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationContentIdentity(DataObjectModel):
     """Exact bounded content identity supplied by the target owner."""
@@ -33,9 +35,13 @@ class CitationContentIdentity(DataObjectModel):
     byte_count: int
 
     def __post_init__(self) -> None:
-        if self.algorithm != "sha256":
+        if type(self.algorithm) is not str or self.algorithm != "sha256":
             raise ValueError("citation content algorithm must be sha256")
-        if not _CitationDocumentContract._DIGEST.fullmatch(self.digest):
+        if type(
+            self.digest
+        ) is not str or not _CitationDocumentContract._DIGEST.fullmatch(
+            self.digest
+        ):
             raise ValueError("citation content digest is invalid")
         if (
             type(self.byte_count) is not int
@@ -46,6 +52,7 @@ class CitationContentIdentity(DataObjectModel):
             raise ValueError("citation content byte count is invalid")
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationSourceLocator(DataObjectModel):
     """Source-relative citation location with no retained excerpt."""
@@ -63,10 +70,7 @@ class CitationSourceLocator(DataObjectModel):
             self.source_path,
             field_name="citation source path",
         )
-        if not isinstance(
-            self.source_content_identity,
-            CitationContentIdentity,
-        ):
+        if type(self.source_content_identity) is not CitationContentIdentity:
             raise TypeError(
                 "source_content_identity must be a CitationContentIdentity"
             )
@@ -90,6 +94,7 @@ class CitationSourceLocator(DataObjectModel):
             raise ValueError("citation source column is invalid")
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationTargetOccurrence(DataObjectModel):
     """One exact literal-key occurrence from a complete target snapshot."""
@@ -133,13 +138,13 @@ class CitationTargetOccurrence(DataObjectModel):
             self.key,
             field_name="literal citation key",
         )
-        if self.origin not in {
+        if type(self.origin) is not str or self.origin not in {
             "direct",
             "eqincite_expansion",
             "citation_todo_expansion",
         }:
             raise ValueError("citation occurrence origin is invalid")
-        if not isinstance(self.locator, CitationSourceLocator):
+        if type(self.locator) is not CitationSourceLocator:
             raise TypeError("locator must be a CitationSourceLocator")
         if self.bibliography_entry_index is not None and (
             type(self.bibliography_entry_index) is not int
@@ -164,6 +169,7 @@ class CitationTargetOccurrence(DataObjectModel):
             )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationTargetGroup(DataObjectModel):
     """All target occurrence indexes for one exact literal key."""
@@ -192,7 +198,7 @@ class CitationTargetGroup(DataObjectModel):
             field_name="citation group key",
         )
         if (
-            not isinstance(self.occurrence_indexes, tuple)
+            type(self.occurrence_indexes) is not tuple
             or not self.occurrence_indexes
             or len(self.occurrence_indexes)
             > CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD
@@ -229,6 +235,7 @@ class CitationTargetGroup(DataObjectModel):
             raise ValueError("group bibliography entry index is invalid")
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationTargetBibliographyEntry(DataObjectModel):
     """One target bibliography entry with an optional owner binding."""
@@ -263,12 +270,9 @@ class CitationTargetBibliographyEntry(DataObjectModel):
             field_name="bibliography entry type",
             maximum=CITATION_DOCUMENT_MAX_ID_BYTES,
         )
-        if not isinstance(self.locator, CitationSourceLocator):
+        if type(self.locator) is not CitationSourceLocator:
             raise TypeError("entry locator must be a CitationSourceLocator")
-        if not isinstance(
-            self.entry_content_identity,
-            CitationContentIdentity,
-        ):
+        if type(self.entry_content_identity) is not CitationContentIdentity:
             raise TypeError(
                 "entry_content_identity must be a CitationContentIdentity"
             )
@@ -279,6 +283,7 @@ class CitationTargetBibliographyEntry(DataObjectModel):
             )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationTargetSourceGap(DataObjectModel):
     """A target-owned citation placeholder without an invented key."""
@@ -302,11 +307,14 @@ class CitationTargetSourceGap(DataObjectModel):
             < CITATION_DOCUMENT_MAX_SOURCE_GAPS
         ):
             raise ValueError("citation source-gap index is invalid")
-        if not isinstance(self.locator, CitationSourceLocator):
+        if type(self.locator) is not CitationSourceLocator:
             raise TypeError(
                 "source-gap locator must be a CitationSourceLocator"
             )
-        if self.reason != "placeholder_identifier":
+        if (
+            type(self.reason) is not str
+            or self.reason != "placeholder_identifier"
+        ):
             raise ValueError("citation source-gap reason is invalid")
         _CitationDocumentContract.bounded_text(
             self.placeholder_identifier,
@@ -396,6 +404,7 @@ def _source_gap_value(
     }
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationTargetSnapshot(DataObjectModel):
     """Bounded neutral projection of one complete target-owned snapshot."""
@@ -422,9 +431,9 @@ class CitationTargetSnapshot(DataObjectModel):
             self.bibliography_source_path,
             field_name="bibliography source path",
         )
-        if not isinstance(
-            self.bibliography_content_identity,
-            CitationContentIdentity,
+        if (
+            type(self.bibliography_content_identity)
+            is not CitationContentIdentity
         ):
             raise TypeError(
                 "bibliography_content_identity must be a "
@@ -458,9 +467,9 @@ class CitationTargetSnapshot(DataObjectModel):
         )
         for values, expected, field_name, maximum in typed_values:
             if (
-                not isinstance(values, tuple)
+                type(values) is not tuple
                 or len(values) > maximum
-                or any(not isinstance(item, expected) for item in values)
+                or any(type(item) is not expected for item in values)
             ):
                 raise TypeError(f"{field_name} are invalid")
         if sum(len(values) for values, _, _, _ in typed_values) > (
@@ -586,9 +595,9 @@ class CitationTargetSnapshot(DataObjectModel):
             (self.uncited_keys, "uncited_keys"),
         ):
             if (
-                not isinstance(values, tuple)
+                type(values) is not tuple
                 or values != tuple(sorted(set(values)))
-                or any(not isinstance(item, str) for item in values)
+                or any(type(item) is not str for item in values)
             ):
                 raise ValueError(f"{field_name} must be sorted and unique")
             for key in values:
@@ -653,6 +662,7 @@ class CitationTargetSnapshot(DataObjectModel):
         )
 
 
+@final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationBibliographyObservationBinding(DataObjectModel):
     """Exact target-entry binding to one References source observation."""
@@ -662,9 +672,9 @@ class CitationBibliographyObservationBinding(DataObjectModel):
     binding_id: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.entry, CitationTargetBibliographyEntry):
+        if type(self.entry) is not CitationTargetBibliographyEntry:
             raise TypeError("entry must be a CitationTargetBibliographyEntry")
-        if not isinstance(self.observation, SourceBibliographyObservation):
+        if type(self.observation) is not SourceBibliographyObservation:
             raise TypeError(
                 "observation must be a SourceBibliographyObservation"
             )

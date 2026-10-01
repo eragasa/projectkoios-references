@@ -111,7 +111,7 @@ class _CitationDocumentContract:
         field_name: str,
         maximum: int = CITATION_DOCUMENT_MAX_TEXT_BYTES,
     ) -> str:
-        if not isinstance(value, str) or not value:
+        if type(value) is not str or not value:
             raise ValueError(f"{field_name} must be bounded non-empty text")
         if len(value) > maximum:
             raise ValueError(f"{field_name} exceeds the text limit")
@@ -146,15 +146,13 @@ class _CitationDocumentContract:
         kind: str,
         field_name: str,
     ) -> str:
-        if not isinstance(value, str) or not cls._TARGET_IDS[kind].fullmatch(
-            value
-        ):
+        if type(value) is not str or not cls._TARGET_IDS[kind].fullmatch(value):
             raise ValueError(f"{field_name} is invalid")
         return value
 
     @classmethod
     def content_id(cls, value: object, *, field_name: str) -> str:
-        if not isinstance(value, str) or not cls._CONTENT_ID.fullmatch(value):
+        if type(value) is not str or not cls._CONTENT_ID.fullmatch(value):
             raise ValueError(f"{field_name} is invalid")
         return value
 
@@ -179,5 +177,5 @@ class _CitationDocumentContract:
         payload: dict[str, object],
         field_name: str,
     ) -> None:
-        if actual != stable_id(prefix, payload):
+        if type(actual) is not str or actual != stable_id(prefix, payload):
             raise ValueError(f"{field_name} does not match content")

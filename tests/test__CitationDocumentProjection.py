@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from dataclasses import FrozenInstanceError, fields, replace
+from typing import Any
 
 import pytest
 from projectkoios.base import (
@@ -372,6 +373,16 @@ def _descriptor(label: str) -> CitationSourceDocumentDescriptor:
         source_document_id=f"application-source:{label}",
         sha256=hashlib.sha256(content).hexdigest(),
         byte_size=len(content),
+    )
+
+
+def _subclass_copy(value: Any, subclass: type[Any]) -> Any:
+    return subclass(
+        **{
+            item.name: getattr(value, item.name)
+            for item in fields(value)
+            if item.init
+        }
     )
 
 
@@ -1428,3 +1439,276 @@ def test__request_rejects_per_key_and_aggregate_evidence_overflow() -> None:
     )
     with pytest.raises(ValueError, match="aggregate exceeds"):
         _projection_request(observations=aggregate_inaccessible)
+
+
+def test__canonical_target_and_external_inputs_reject_subclasses() -> None:
+    snapshot, bindings, identity_projection = _fixture()
+
+    class UnvalidatedOccurrence(CitationTargetOccurrence):
+        def __post_init__(self) -> None:
+            pass
+
+    occurrence = snapshot.occurrences[0]
+    forged_occurrence = UnvalidatedOccurrence(
+        occurrence_id=occurrence.occurrence_id,
+        occurrence_index=occurrence.occurrence_index,
+        call_index=occurrence.call_index,
+        key_index=occurrence.key_index,
+        key=occurrence.key,
+        origin="fabricated-origin",
+        locator=occurrence.locator,
+        bibliography_entry_index=occurrence.bibliography_entry_index,
+        todo_marker_index=occurrence.todo_marker_index,
+    )
+    with pytest.raises(TypeError, match="target occurrences"):
+        replace(
+            snapshot,
+            occurrences=(forged_occurrence, *snapshot.occurrences[1:]),
+        )
+
+    class DerivedTuple(tuple[CitationTargetGroup, ...]):
+        pass
+
+    with pytest.raises(TypeError, match="target groups"):
+        replace(snapshot, groups=DerivedTuple(snapshot.groups))
+
+    class DerivedSnapshot(CitationTargetSnapshot):
+        pass
+
+    with pytest.raises(TypeError, match="target_snapshot"):
+        CitationDocumentProjectionRequest(
+            target_snapshot=_subclass_copy(snapshot, DerivedSnapshot),
+            bibliography_bindings=bindings,
+            identity_projection=identity_projection,
+        )
+
+    class DerivedBinding(CitationBibliographyObservationBinding):
+        pass
+
+    with pytest.raises(TypeError, match="bibliography bindings"):
+        CitationDocumentProjectionRequest(
+            target_snapshot=snapshot,
+            bibliography_bindings=(
+                _subclass_copy(bindings[0], DerivedBinding),
+                *bindings[1:],
+            ),
+            identity_projection=identity_projection,
+        )
+
+    class DerivedIdentityProjection(IdentityProjection):
+        pass
+
+    with pytest.raises(TypeError, match="identity_projection"):
+        derived_identity_projection = object.__new__(DerivedIdentityProjection)
+        for item in fields(identity_projection):
+            object.__setattr__(
+                derived_identity_projection,
+                item.name,
+                getattr(identity_projection, item.name),
+            )
+        CitationDocumentProjectionRequest(
+            target_snapshot=snapshot,
+            bibliography_bindings=bindings,
+            identity_projection=derived_identity_projection,
+        )
+
+    source_observation = bindings[0].observation
+
+    class DerivedSourceObservation(SourceBibliographyObservation):
+        pass
+
+    with pytest.raises(TypeError, match="SourceBibliographyObservation"):
+        CitationBibliographyObservationBinding(
+            entry=bindings[0].entry,
+            observation=_subclass_copy(
+                source_observation,
+                DerivedSourceObservation,
+            ),
+        )
+
+
+def test__descriptor_and_observation_subclasses_are_rejected() -> None:
+    descriptor = _descriptor("subclass-boundary")
+
+    class MutableText(str):
+        pass
+
+    mutable_media_type = MutableText("application/pdf")
+    mutable_media_type.mutable_state = []
+    with pytest.raises(ValueError, match="media type"):
+        replace(descriptor, media_type=mutable_media_type)
+
+    class MutableDescriptor(CitationSourceDocumentDescriptor):
+        pass
+
+    derived_descriptor = _subclass_copy(descriptor, MutableDescriptor)
+    derived_descriptor.mutable_state = []
+    derived_descriptor.mutable_state.append("changed")
+    with pytest.raises(TypeError, match="descriptors"):
+        _document_observation(
+            key="acceptedKey",
+            coverage="complete",
+            documents=(derived_descriptor,),
+        )
+
+    observation = _document_observation(
+        key="acceptedKey",
+        coverage="complete",
+    )
+
+    class ForgedObservation(CitationSourceDocumentObservation):
+        def validate_identity(self) -> None:
+            pass
+
+    forged_observation = _subclass_copy(observation, ForgedObservation)
+    object.__setattr__(
+        forged_observation,
+        "observation_id",
+        "attacker-controlled-observation-id",
+    )
+    forged_observation.mutable_state = []
+    with pytest.raises(TypeError, match="document observations"):
+        _projection_request(observations=(forged_observation,))
+
+
+def test__canonical_projection_and_link_boundaries_reject_subclasses() -> None:
+    descriptor = _descriptor("canonical-boundaries")
+    observation = _document_observation(
+        key="acceptedKey",
+        coverage="complete",
+        documents=(descriptor,),
+    )
+    request = _projection_request(observations=(observation,))
+    result = CitationDocumentProjector().project(request=request)
+    item = next(
+        value
+        for value in result.projection.items
+        if value.literal_citekey == "acceptedKey"
+    )
+    link_request = CitationSourceDocumentLinkRequest(
+        projection_result=result,
+        item_id=item.item_id,
+        identity_item_id=item.identity_items[0].item_id,
+        source_document_id=descriptor.source_document_id,
+        pre_effect_intent_id="application-intent:subclass-boundary",
+    )
+    link_result = CitationSourceDocumentLinker().link(request=link_request)
+
+    class MutableTuple(tuple[str, ...]):
+        pass
+
+    with pytest.raises(ValueError, match="limitations"):
+        replace(
+            result.projection,
+            limitations=MutableTuple(result.projection.limitations),
+        )
+
+    class DerivedProjector(CitationDocumentProjector):
+        pass
+
+    derived_projector = DerivedProjector()
+    with pytest.raises(TypeError, match="projector"):
+        derived_projector.action(request=request)
+    with pytest.raises(TypeError, match="projector"):
+        derived_projector.project(request=request)
+
+    class DerivedLinker(CitationSourceDocumentLinker):
+        pass
+
+    derived_linker = DerivedLinker()
+    with pytest.raises(TypeError, match="linker"):
+        derived_linker.action(request=link_request)
+    with pytest.raises(TypeError, match="linker"):
+        derived_linker.link(request=link_request)
+
+    class DerivedProjectionRequest(CitationDocumentProjectionRequest):
+        pass
+
+    with pytest.raises(TypeError, match="ProjectionRequest"):
+        CitationDocumentProjector().project(
+            request=_subclass_copy(request, DerivedProjectionRequest)
+        )
+
+    class DerivedProjection(CitationDocumentProjection):
+        pass
+
+    with pytest.raises(TypeError, match="Projection"):
+        CitationDocumentProjectionResult(
+            request=request,
+            projection=_subclass_copy(result.projection, DerivedProjection),
+        )
+
+    class DerivedProjectionResult(CitationDocumentProjectionResult):
+        pass
+
+    with pytest.raises(TypeError, match="ProjectionResult"):
+        CitationSourceDocumentLinkRequest(
+            projection_result=_subclass_copy(
+                result,
+                DerivedProjectionResult,
+            ),
+            item_id=item.item_id,
+            identity_item_id=item.identity_items[0].item_id,
+            source_document_id=descriptor.source_document_id,
+            pre_effect_intent_id="application-intent:subclass-result",
+        )
+
+    class DerivedLinkRequest(CitationSourceDocumentLinkRequest):
+        pass
+
+    with pytest.raises(TypeError, match="LinkRequest"):
+        CitationSourceDocumentLinker().link(
+            request=_subclass_copy(link_request, DerivedLinkRequest)
+        )
+
+    class DerivedLink(CitationSourceDocumentLink):
+        pass
+
+    with pytest.raises(TypeError, match="CitationSourceDocumentLink"):
+        CitationSourceDocumentLinkResult(
+            request=link_request,
+            link=_subclass_copy(link_result.link, DerivedLink),
+        )
+
+    class DerivedLinkResult(CitationSourceDocumentLinkResult):
+        def validate_identity(self) -> None:
+            pass
+
+    forged_link_result = _subclass_copy(link_result, DerivedLinkResult)
+    forged_link_result.mutable_state = []
+    with pytest.raises(TypeError, match="link results"):
+        CitationDocumentProjectionRequest(
+            target_snapshot=request.target_snapshot,
+            bibliography_bindings=request.bibliography_bindings,
+            identity_projection=request.identity_projection,
+            document_observations=request.document_observations,
+            source_document_link_results=(forged_link_result,),
+        )
+
+
+def test__canonical_facade_classes_are_statically_final() -> None:
+    canonical_classes = (
+        CitationBibliographyObservationBinding,
+        CitationContentIdentity,
+        CitationDocumentProjection,
+        CitationDocumentProjectionItem,
+        CitationDocumentProjectionRequest,
+        CitationDocumentProjectionResult,
+        CitationDocumentProjector,
+        CitationSourceDocumentDescriptor,
+        CitationSourceDocumentLink,
+        CitationSourceDocumentLinkRequest,
+        CitationSourceDocumentLinkResult,
+        CitationSourceDocumentLinker,
+        CitationSourceDocumentObservation,
+        CitationSourceLocator,
+        CitationTargetBibliographyEntry,
+        CitationTargetGroup,
+        CitationTargetOccurrence,
+        CitationTargetSnapshot,
+        CitationTargetSourceGap,
+    )
+
+    assert all(
+        getattr(value, "__final__", False) for value in canonical_classes
+    )
