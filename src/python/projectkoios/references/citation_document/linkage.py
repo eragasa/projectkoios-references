@@ -9,7 +9,6 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
-from projectkoios.references.path_safety import validate_citekey
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY,
@@ -17,6 +16,7 @@ from ._contract import (
     CITATION_SOURCE_DOCUMENT_LINKER_NAME,
     _CitationDocumentContract,
     stable_id,
+    validate_literal_citekey,
 )
 from .document import CitationSourceDocumentDescriptor
 from .statuses import (
@@ -66,7 +66,10 @@ class CitationSourceDocumentLink(DataObjectModel):
             kind="snapshot",
             field_name="link target snapshot identity",
         )
-        validate_citekey(self.literal_citekey, field="linked literal key")
+        validate_literal_citekey(
+            self.literal_citekey,
+            field_name="linked literal key",
+        )
         if not isinstance(
             self.source_document,
             CitationSourceDocumentDescriptor,

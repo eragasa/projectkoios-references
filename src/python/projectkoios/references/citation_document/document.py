@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 from projectkoios.base import DataObjectModel
-from projectkoios.references.path_safety import validate_citekey
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
@@ -11,6 +10,7 @@ from ._contract import (
     CITATION_DOCUMENT_MAX_PDF_BYTES,
     _CitationDocumentContract,
     stable_id,
+    validate_literal_citekey,
 )
 
 
@@ -93,7 +93,10 @@ class CitationSourceDocumentObservation(DataObjectModel):
             kind="snapshot",
             field_name="document observation target snapshot",
         )
-        validate_citekey(self.literal_citekey, field="document observation key")
+        validate_literal_citekey(
+            self.literal_citekey,
+            field_name="document observation key",
+        )
         if self.coverage_status not in {"complete", "incomplete"}:
             raise ValueError("document evidence coverage status is invalid")
         if (

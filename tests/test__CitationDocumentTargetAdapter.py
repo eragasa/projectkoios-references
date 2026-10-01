@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
+import pytest
 from projectkoios.references.citation_document import (
     CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES,
+    CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS,
     CITATION_DOCUMENT_MAX_ID_BYTES,
+    CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES,
     CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES,
     CITATION_DOCUMENT_MAX_TARGET_RECORDS,
     CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD,
@@ -21,6 +25,11 @@ from projectkoios.references.citation_document import (
     CitationTargetOccurrence,
     CitationTargetSnapshot,
     CitationTargetSourceGap,
+)
+from projectkoios.references.path_safety import (
+    PathSafetyError,
+    validate_citekey,
+    validate_relative_path,
 )
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -314,11 +323,67 @@ def test__corrected_ksdft_result__adapts_exact_neutral_shape() -> None:
     assert snapshot.uncited_keys == ()
 
 
+@pytest.mark.parametrize("literal_citekey", ("1leading", "a.", "CON"))
+def test__owner_valid_literal_keys_are_not_treated_as_filenames(
+    literal_citekey: str,
+) -> None:
+    payload = _object(json.loads(FIXTURE.read_bytes()))
+    snapshot = _adapt_snapshot(_object(payload["snapshot"]))
+
+    adapted = replace(
+        snapshot.occurrences[0],
+        key=literal_citekey,
+    )
+
+    assert adapted.key == literal_citekey
+    with pytest.raises(PathSafetyError):
+        validate_citekey(literal_citekey)
+
+
+def test__owner_valid_posix_source_path_is_not_treated_as_a_portable_path() -> (
+    None
+):
+    payload = _object(json.loads(FIXTURE.read_bytes()))
+    snapshot = _adapt_snapshot(_object(payload["snapshot"]))
+    source_path = "docs/publications/research-monograph/CON/source.tex"
+
+    adapted = replace(snapshot.occurrences[0].locator, source_path=source_path)
+
+    assert adapted.source_path == source_path
+    with pytest.raises(PathSafetyError):
+        validate_relative_path(source_path)
+
+
+def test__target_key_and_source_path_grammar_fails_closed() -> None:
+    payload = _object(json.loads(FIXTURE.read_bytes()))
+    snapshot = _adapt_snapshot(_object(payload["snapshot"]))
+    occurrence = snapshot.occurrences[0]
+    locator = occurrence.locator
+
+    for invalid_key in (
+        "a" * (CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS + 1),
+        "not:owner-grammar",
+    ):
+        with pytest.raises(ValueError, match="must match ASCII"):
+            replace(occurrence, key=invalid_key)
+    for invalid_path in (
+        "a" * (CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES + 1),
+        "../source.tex",
+        "docs/../source.tex",
+        "/absolute/source.tex",
+        "docs\\source.tex",
+    ):
+        with pytest.raises(ValueError, match="relative POSIX path"):
+            replace(locator, source_path=invalid_path)
+
+
 def test__corrected_ksdft_result__shares_exact_adapter_bounds() -> None:
     assert OWNER_COMMIT == "3ec21b4318020d700be671a8f220b2149b3d28c7"
     assert OWNER_TREE == "9953c0e99a28443426b5093852292f7cfbada2cc"
     assert CITATION_DOCUMENT_MAX_ID_BYTES == 512
+    assert CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS == 200
     assert CITATION_DOCUMENT_MAX_TEXT_BYTES == 4_096
+    assert CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES == 4_096
     assert CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES == 100_000_000
     assert CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES == 100_000_000
     assert CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD == 256

@@ -51,7 +51,11 @@ The live target adapter performs only two field renames:
 `bibliography_entry_id` to `entry_id` and `bibliography_path` to
 `bibliography_source_path`. Complete owner source-file, include, call, todo,
 request, and result records remain target-owned and are represented by the
-replay-validated opaque snapshot identity rather than copied.
+replay-validated opaque snapshot identity rather than copied. Literal citation
+keys use the owner's exact ASCII grammar `[A-Za-z0-9._-]{1,200}`; they are data,
+not portable filenames. Source locators use bounded, normalized, root-relative
+POSIX paths and therefore do not inherit Windows-reserved-name or portable
+filesystem mutation policy.
 
 A target bibliography entry may carry a nullable
 `source_bibliography_observation_id`. The target owner never fabricates that
@@ -152,7 +156,7 @@ this family.
 
 The implementation bounds occurrences, unique keys, bibliography entries,
 source gaps, source documents, links, per-key documents/evidence, identifiers,
-paths, and text before projection. A target source identity and a PDF
+normalized relative POSIX source paths, and text before projection. A target source identity and a PDF
 descriptor are each at most 100,000,000 bytes; per-record target references are
 at most 256; and every canonical identity payload is at most 20,000,000 UTF-8
 bytes.

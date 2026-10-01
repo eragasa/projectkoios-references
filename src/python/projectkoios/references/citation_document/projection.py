@@ -20,7 +20,6 @@ from projectkoios.references.identity import (
     IdentityProjection,
     replay_identity_decisions,
 )
-from projectkoios.references.path_safety import validate_citekey
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
@@ -36,6 +35,7 @@ from ._contract import (
     CITATION_DOCUMENT_PROJECTOR_NAME,
     _CitationDocumentContract,
     stable_id,
+    validate_literal_citekey,
 )
 from .document import (
     CitationSourceDocumentDescriptor,
@@ -86,7 +86,10 @@ class CitationDocumentProjectionItem(DataObjectModel):
             self.identity_projection_id,
             field_name="projection item identity projection",
         )
-        validate_citekey(self.literal_citekey, field="projection literal key")
+        validate_literal_citekey(
+            self.literal_citekey,
+            field_name="projection literal key",
+        )
         if (
             not isinstance(self.occurrence_ids, tuple)
             or not self.occurrence_ids

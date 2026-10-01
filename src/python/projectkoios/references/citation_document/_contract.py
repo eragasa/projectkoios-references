@@ -32,11 +32,51 @@ CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY = 256
 CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS = 10_000
 CITATION_DOCUMENT_MAX_LINKS = 20_000
 CITATION_DOCUMENT_MAX_ID_BYTES = 512
+CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS = 200
 CITATION_DOCUMENT_MAX_TEXT_BYTES = 4_096
+CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES = 4_096
 CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES = 20_000_000
 CITATION_DOCUMENT_MAX_PDF_BYTES = 100_000_000
 CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES = 100_000_000
 CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES = 100_000_000
+
+
+_CITATION_KEY = re.compile(
+    rf"^[A-Za-z0-9._-]{{1,{CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS}}}$"
+)
+
+
+def validate_literal_citekey(value: object, *, field_name: str) -> str:
+    """Validate target-owned literal data without filesystem naming policy."""
+    if type(value) is not str or _CITATION_KEY.fullmatch(value) is None:
+        raise ValueError(
+            f"{field_name} must match ASCII [A-Za-z0-9._-]"
+            f"{{1,{CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS}}}"
+        )
+    return value
+
+
+def validate_source_path(value: object, *, field_name: str) -> str:
+    """Validate one bounded normalized root-relative POSIX source path."""
+    if type(value) is not str:
+        raise TypeError(f"{field_name} must be a string")
+    try:
+        encoded = value.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise ValueError(f"{field_name} must be UTF-8 encodable") from error
+    parts = value.split("/")
+    if (
+        not value
+        or len(encoded) > CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES
+        or value.startswith("/")
+        or "\\" in value
+        or "\x00" in value
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        raise ValueError(
+            f"{field_name} must be a bounded normalized relative POSIX path"
+        )
+    return value
 
 
 def stable_id(prefix: str, payload: dict[str, object]) -> str:

@@ -21,11 +21,11 @@ from projectkoios.references.citation_document import (
     CITATION_DOCUMENT_MAX_OCCURRENCES,
     CITATION_DOCUMENT_MAX_PDF_BYTES,
     CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
+    CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES,
     CITATION_DOCUMENT_MAX_TARGET_AGGREGATE_SOURCE_BYTES,
     CITATION_DOCUMENT_MAX_TARGET_RECORDS,
     CITATION_DOCUMENT_MAX_TARGET_REFERENCES_PER_RECORD,
     CITATION_DOCUMENT_MAX_TARGET_SOURCE_BYTES,
-    CITATION_DOCUMENT_MAX_TEXT_BYTES,
     CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
     CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
     CitationBibliographyMembershipStatus,
@@ -1271,7 +1271,9 @@ def test__hard_byte_and_evidence_bounds_hold_at_the_boundary() -> None:
 
     CitationTargetSnapshot(
         snapshot_id=_target_id("citation-snapshot", "path-boundary"),
-        bibliography_source_path=("a" * CITATION_DOCUMENT_MAX_TEXT_BYTES),
+        bibliography_source_path=(
+            "a" * CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES
+        ),
         bibliography_content_identity=_content(b"%"),
         occurrences=(),
         groups=(),
@@ -1281,11 +1283,11 @@ def test__hard_byte_and_evidence_bounds_hold_at_the_boundary() -> None:
         duplicate_keys=(),
         uncited_keys=(),
     )
-    with pytest.raises(ValueError, match="text limit"):
+    with pytest.raises(ValueError, match="relative POSIX path"):
         CitationTargetSnapshot(
             snapshot_id=_target_id("citation-snapshot", "path-overflow"),
             bibliography_source_path=(
-                "a" * (CITATION_DOCUMENT_MAX_TEXT_BYTES + 1)
+                "a" * (CITATION_DOCUMENT_MAX_SOURCE_PATH_BYTES + 1)
             ),
             bibliography_content_identity=_content(b"%"),
             occurrences=(),

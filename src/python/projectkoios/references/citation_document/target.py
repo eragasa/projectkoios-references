@@ -5,10 +5,6 @@ from dataclasses import dataclass, field, replace
 
 from projectkoios.base import DataObjectModel
 from projectkoios.references.identity import SourceBibliographyObservation
-from projectkoios.references.path_safety import (
-    validate_citekey,
-    validate_relative_path,
-)
 
 from ._contract import (
     CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES,
@@ -23,6 +19,8 @@ from ._contract import (
     CITATION_DOCUMENT_MAX_TARGET_SOURCE_FILES,
     _CitationDocumentContract,
     stable_id,
+    validate_literal_citekey,
+    validate_source_path,
 )
 
 
@@ -61,8 +59,7 @@ class CitationSourceLocator(DataObjectModel):
     column: int
 
     def __post_init__(self) -> None:
-        validate_relative_path(self.source_path, field="citation source path")
-        _CitationDocumentContract.bounded_text(
+        validate_source_path(
             self.source_path,
             field_name="citation source path",
         )
@@ -132,7 +129,10 @@ class CitationTargetOccurrence(DataObjectModel):
         ):
             if type(value) is not int or not 0 <= value < maximum:
                 raise ValueError(f"{field_name} is outside the canonical bound")
-        validate_citekey(self.key, field="literal citation key")
+        validate_literal_citekey(
+            self.key,
+            field_name="literal citation key",
+        )
         if self.origin not in {
             "direct",
             "eqincite_expansion",
@@ -187,7 +187,10 @@ class CitationTargetGroup(DataObjectModel):
             or not 0 <= self.group_index < CITATION_DOCUMENT_MAX_KEYS
         ):
             raise ValueError("citation group index is invalid")
-        validate_citekey(self.key, field="citation group key")
+        validate_literal_citekey(
+            self.key,
+            field_name="citation group key",
+        )
         if (
             not isinstance(self.occurrence_indexes, tuple)
             or not self.occurrence_indexes
@@ -251,7 +254,10 @@ class CitationTargetBibliographyEntry(DataObjectModel):
             < CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES
         ):
             raise ValueError("citation bibliography entry index is invalid")
-        validate_citekey(self.key, field="bibliography entry key")
+        validate_literal_citekey(
+            self.key,
+            field_name="bibliography entry key",
+        )
         _CitationDocumentContract.bounded_text(
             self.entry_type,
             field_name="bibliography entry type",
@@ -412,11 +418,7 @@ class CitationTargetSnapshot(DataObjectModel):
             kind="snapshot",
             field_name="target citation snapshot identity",
         )
-        validate_relative_path(
-            self.bibliography_source_path,
-            field="bibliography source path",
-        )
-        _CitationDocumentContract.bounded_text(
+        validate_source_path(
             self.bibliography_source_path,
             field_name="bibliography source path",
         )
@@ -590,7 +592,7 @@ class CitationTargetSnapshot(DataObjectModel):
             ):
                 raise ValueError(f"{field_name} must be sorted and unique")
             for key in values:
-                validate_citekey(key, field=field_name)
+                validate_literal_citekey(key, field_name=field_name)
         group_keys = {item.key for item in self.groups}
         counts: dict[str, int] = {}
         for entry in self.bibliography_entries:

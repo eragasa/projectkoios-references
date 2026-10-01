@@ -85,8 +85,10 @@ The privacy-safe compact fixture from replay-valid ksdft owner commit
 The only field renames are owner `bibliography_entry_id` to `entry_id` and
 `bibliography_path` to `bibliography_source_path`. Owner-only source-file,
 include, call, todo, request, and result records are not copied. The fixture
-covers all three origin values, nullable fields, owner ordering, exact IDs, and
-shared bounds; its SHA-256 is
+covers all three origin values, nullable fields, owner ordering, exact IDs,
+shared bounds, the exact `[A-Za-z0-9._-]{1,200}` literal-key grammar, and
+normalized relative POSIX source paths without filesystem mutation policy; its
+SHA-256 is
 `d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
 Evidence:
