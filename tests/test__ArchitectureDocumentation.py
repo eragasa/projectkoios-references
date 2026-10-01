@@ -223,7 +223,8 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
 def test__citation_package_dependencies_are_one_way() -> None:
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
-    forbidden = "projectkoios.references.citation_document"
+    forbidden_document = "projectkoios.references.citation_document"
+    forbidden_bibliography = "projectkoios.references.bibliography"
     for package_name in ("citations", "bibliography"):
         for source in (source_root / package_name).glob("*.py"):
             tree = ast.parse(source.read_text(encoding="utf-8"))
@@ -239,8 +240,14 @@ def test__citation_package_dependencies_are_one_way() -> None:
                 for alias in node.names
             )
             assert all(
-                not name.startswith(forbidden) for name in imported_modules
+                not name.startswith(forbidden_document)
+                for name in imported_modules
             ), source
+            if package_name == "citations":
+                assert all(
+                    not name.startswith(forbidden_bibliography)
+                    for name in imported_modules
+                ), source
 
 
 def test__architecture_docs__have_no_orphans_or_broken_local_links() -> None:

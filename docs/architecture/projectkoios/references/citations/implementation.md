@@ -9,7 +9,10 @@ flowchart LR
 
 The canonical implementations live in `citations/base.py`; key resolution state
 lives in `citations/statuses.py`, and target grammar and resource ceilings live
-in the private contract module. Every record is frozen, slotted, statically
+in the private contract module. `citations/resolution.py` applies accepted
+canonical-name and alias precedence, bounded identity projection, and fail-closed
+resolved/ambiguous/unresolved reduction over neutral candidate mappings. Every
+record is frozen, slotted, statically
 `final`, and accepted at composition boundaries only by exact runtime type.
 
 The package has no dependency on `citation_document`. The latter consumes these
@@ -23,3 +26,4 @@ The live adapter evidence and target-owner provenance remain documented by the
 - [Module index](index.md)
 - [Schematic](schematic.md)
 - source base: [`citations/base.py`](../../../../../src/python/projectkoios/references/citations/base.py)
+- resolution: [`citations/resolution.py`](../../../../../src/python/projectkoios/references/citations/resolution.py)

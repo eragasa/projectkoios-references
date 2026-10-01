@@ -13,12 +13,12 @@ from projectkoios.references.bibliography import (
     CitationBibliographyMembershipStatus,
     CitationBibliographyObservationBinding,
 )
+from projectkoios.references.bibliography.resolution import (
+    candidate_identity_ids_by_key,
+)
 from projectkoios.references.citation_identity import (
-    CITATION_IDENTITY_PROJECTION_MAX_IDENTITIES,
     CitationIdentityProjectionItem,
-    CitationIdentityProjectionRequest,
     CitationIdentityProjectionStatus,
-    CitationIdentityProjector,
 )
 from projectkoios.references.citations import (
     CITATION_DOCUMENT_MAX_BIBLIOGRAPHY_ENTRIES,
@@ -32,6 +32,11 @@ from projectkoios.references.citations import (
 )
 from projectkoios.references.citations._contract import (
     validate_literal_citekey,
+)
+from projectkoios.references.citations.resolution import (
+    key_resolution_status,
+    project_identity_ids,
+    resolve_identity_ids_by_key,
 )
 from projectkoios.references.identity import (
     IdentityProjection,
@@ -652,7 +657,15 @@ class _CitationDocumentProjectionBuilder:
             raise TypeError(
                 "request must be a CitationDocumentProjectionRequest"
             )
-        identity_ids_by_key = self._identity_ids_by_key(request)
+        candidate_ids_by_key = candidate_identity_ids_by_key(
+            bindings=request.bibliography_bindings,
+            identity_projection=request.identity_projection,
+        )
+        identity_ids_by_key = resolve_identity_ids_by_key(
+            groups=request.target_snapshot.groups,
+            identity_projection=request.identity_projection,
+            candidate_ids_by_key=candidate_ids_by_key,
+        )
         all_ids = tuple(
             sorted(
                 {
@@ -662,9 +675,9 @@ class _CitationDocumentProjectionBuilder:
                 }
             )
         )
-        identity_items = self._project_identity_ids(
-            request.identity_projection,
-            all_ids,
+        identity_items = project_identity_ids(
+            identity_projection=request.identity_projection,
+            identity_ids=all_ids,
         )
         item_by_identity = {
             item.requested_identity_id: item for item in identity_items
@@ -684,7 +697,7 @@ class _CitationDocumentProjectionBuilder:
         for group in request.target_snapshot.groups:
             ids = identity_ids_by_key[group.key]
             projected = tuple(item_by_identity[item] for item in ids)
-            key_status = self._key_status(projected)
+            key_status = key_resolution_status(projected)
             observations = observations_by_key.get(group.key, ())
             group_links = links_by_key.get(group.key, ())
             self._validate_links(
@@ -786,104 +799,6 @@ class _CitationDocumentProjectionBuilder:
             ),
         )
         return projection
-
-    @staticmethod
-    def _identity_ids_by_key(
-        request: CitationDocumentProjectionRequest,
-    ) -> dict[str, tuple[str, ...]]:
-        projection = request.identity_projection
-        active_ids = set(projection.active_reference_ids)
-        accepted_by_key: dict[str, str] = {}
-        for name in projection.name_history:
-            if not name.active or name.reference_id not in active_ids:
-                continue
-            if name.canonical_citekey in accepted_by_key:
-                raise ValueError("active canonical citekey is ambiguous")
-            accepted_by_key[name.canonical_citekey] = name.reference_id
-        for alias in projection.alias_history:
-            if not alias.active or alias.target_reference_id not in active_ids:
-                continue
-            existing = accepted_by_key.get(alias.alias_citekey)
-            if existing is not None and existing != alias.target_reference_id:
-                raise ValueError("active citation alias is ambiguous")
-            accepted_by_key[alias.alias_citekey] = alias.target_reference_id
-        candidates_by_observation: dict[str, list[str]] = {}
-        for candidate in projection.candidates:
-            for observation_id in candidate.source_observation_ids:
-                candidates_by_observation.setdefault(
-                    observation_id,
-                    [],
-                ).append(candidate.candidate_id)
-        bindings_by_key: dict[str, list[str]] = {}
-        candidate_by_id = {
-            item.candidate_id: item for item in projection.candidates
-        }
-        for binding in request.bibliography_bindings:
-            candidate_ids = candidates_by_observation.get(
-                binding.observation.observation_id,
-                [],
-            )
-            for candidate_id in candidate_ids:
-                if candidate_by_id[candidate_id].proposed_citekey == (
-                    binding.entry.key
-                ):
-                    bindings_by_key.setdefault(binding.entry.key, []).append(
-                        candidate_id
-                    )
-        result: dict[str, tuple[str, ...]] = {}
-        for group in request.target_snapshot.groups:
-            accepted = accepted_by_key.get(group.key)
-            if accepted is not None:
-                result[group.key] = (accepted,)
-                continue
-            result[group.key] = tuple(
-                sorted(set(bindings_by_key.get(group.key, ())))
-            )
-        return result
-
-    @staticmethod
-    def _project_identity_ids(
-        projection: IdentityProjection,
-        identity_ids: tuple[str, ...],
-    ) -> tuple[CitationIdentityProjectionItem, ...]:
-        values: list[CitationIdentityProjectionItem] = []
-        for offset in range(
-            0,
-            len(identity_ids),
-            CITATION_IDENTITY_PROJECTION_MAX_IDENTITIES,
-        ):
-            batch = identity_ids[
-                offset : offset + CITATION_IDENTITY_PROJECTION_MAX_IDENTITIES
-            ]
-            if not batch:
-                continue
-            result = CitationIdentityProjector().project(
-                request=CitationIdentityProjectionRequest(
-                    projection=projection,
-                    identity_ids=batch,
-                )
-            )
-            values.extend(result.items)
-        return tuple(values)
-
-    @staticmethod
-    def _key_status(
-        items: tuple[CitationIdentityProjectionItem, ...],
-    ) -> CitationKeyResolutionStatus:
-        if len(items) == 1 and items[0].status in {
-            CitationIdentityProjectionStatus.ACCEPTED_ACTIVE_CANONICAL,
-            CitationIdentityProjectionStatus.CANDIDATE_PROPOSED_NONCANONICAL,
-        }:
-            return CitationKeyResolutionStatus.RESOLVED
-        if len(items) > 1 and all(
-            item.status
-            is CitationIdentityProjectionStatus.CANDIDATE_PROPOSED_NONCANONICAL
-            for item in items
-        ):
-            return CitationKeyResolutionStatus.AMBIGUOUS
-        if not items:
-            return CitationKeyResolutionStatus.UNRESOLVED
-        raise ValueError("literal key identity projection is inconsistent")
 
     @staticmethod
     def _source_documents(

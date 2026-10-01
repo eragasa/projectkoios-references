@@ -73,7 +73,8 @@ A non-null target field must equal the bound observation identity.
 
 ## Deterministic literal-key bridge
 
-The projector performs the bridge; Applications, API, and Web must not infer
+The projector composes the canonical citation and bibliography resolution
+helpers to perform the bridge; Applications, API, and Web must not infer
 identity.
 
 1. Replay the supplied `IdentityProjection` and require exact equality.

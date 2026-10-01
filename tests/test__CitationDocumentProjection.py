@@ -17,6 +17,9 @@ from projectkoios.references.bibliography import (
     CitationBibliographyMembershipStatus,
     CitationBibliographyObservationBinding,
 )
+from projectkoios.references.bibliography.resolution import (
+    candidate_identity_ids_by_key,
+)
 from projectkoios.references.citation_document import (
     CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
     CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
@@ -60,6 +63,11 @@ from projectkoios.references.citations import (
     CitationTargetSourceGap,
 )
 from projectkoios.references.citations._contract import stable_id
+from projectkoios.references.citations.resolution import (
+    key_resolution_status,
+    project_identity_ids,
+    resolve_identity_ids_by_key,
+)
 from projectkoios.references.identity import (
     ActorAuthorityScope,
     ActorKind,
@@ -409,6 +417,50 @@ def _document_observation(
         inaccessible_evidence_ids=tuple(sorted(inaccessible)),
         evidence_id=evidence,
     )
+
+
+def test__citation_and_bibliography_resolution_compose_without_first_win() -> (
+    None
+):
+    snapshot, bindings, identity_projection = _fixture()
+    candidate_ids = candidate_identity_ids_by_key(
+        bindings=bindings,
+        identity_projection=identity_projection,
+    )
+    identity_ids = resolve_identity_ids_by_key(
+        groups=snapshot.groups,
+        identity_projection=identity_projection,
+        candidate_ids_by_key=candidate_ids,
+    )
+    all_ids = tuple(
+        sorted(
+            {
+                identity_id
+                for values in identity_ids.values()
+                for identity_id in values
+            }
+        )
+    )
+    projected = project_identity_ids(
+        identity_projection=identity_projection,
+        identity_ids=all_ids,
+    )
+    projected_by_id = {item.requested_identity_id: item for item in projected}
+    statuses = {
+        key: key_resolution_status(
+            tuple(projected_by_id[identity_id] for identity_id in values)
+        )
+        for key, values in identity_ids.items()
+    }
+
+    assert len(identity_ids["acceptedKey"]) == 1
+    assert identity_ids["acceptedKey"] == identity_ids["aliasOld"]
+    assert len(identity_ids["ambiguousKey"]) == 2
+    assert identity_ids["unresolved"] == ()
+    assert statuses["acceptedKey"] is CitationKeyResolutionStatus.RESOLVED
+    assert statuses["candidateOnly"] is CitationKeyResolutionStatus.RESOLVED
+    assert statuses["ambiguousKey"] is CitationKeyResolutionStatus.AMBIGUOUS
+    assert statuses["unresolved"] is CitationKeyResolutionStatus.UNRESOLVED
 
 
 def test__projector__bridges_literal_keys_without_first_win() -> None:

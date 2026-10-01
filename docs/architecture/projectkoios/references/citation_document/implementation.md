@@ -35,11 +35,13 @@ flowchart TD
 ## Literal-key bridge
 
 Active canonical names and active aliases take precedence over proposed
-candidate keys. Otherwise candidate lookup is restricted to exact
-`SourceBibliographyObservation` identities bound to target bibliography
-entries. Multiple candidates are projected together; the implementation never
-chooses the first. Identity IDs are sorted, deduplicated, and processed through
-the existing bounded `CitationIdentityProjector` in batches.
+candidate keys. `bibliography/resolution.py` restricts candidate lookup to
+exact `SourceBibliographyObservation` identities bound to exact target
+bibliography keys. `citations/resolution.py` applies accepted-name precedence,
+retains multiple candidates, and never chooses the first. Identity IDs are
+sorted, deduplicated, and processed through the existing bounded
+`CitationIdentityProjector` in batches. The document projector composes these
+two one-way helpers without duplicating either behavior.
 
 ## Document reduction
 
@@ -106,6 +108,8 @@ Evidence:
 
 - source facade: [`citation_document/__init__.py`](../../../../../src/python/projectkoios/references/citation_document/__init__.py)
 - projection: [`projection.py`](../../../../../src/python/projectkoios/references/citation_document/projection.py)
+- citation resolution: [`citations/resolution.py`](../../../../../src/python/projectkoios/references/citations/resolution.py)
+- bibliography resolution: [`bibliography/resolution.py`](../../../../../src/python/projectkoios/references/bibliography/resolution.py)
 - linkage: [`linkage.py`](../../../../../src/python/projectkoios/references/citation_document/linkage.py)
 - focused tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
 - live adapter test: [`test__CitationDocumentTargetAdapter.py`](../../../../../tests/test__CitationDocumentTargetAdapter.py)
