@@ -7,6 +7,12 @@ from pathlib import Path
 import projectkoios.references.catalog as catalog_module
 import projectkoios.references.state_projection as state_projection_module
 import pytest
+from projectkoios.base import (
+    DataObjectActionizer,
+    DataObjectActionRequest,
+    DataObjectActionResult,
+    DataObjectModel,
+)
 from projectkoios.references.acquisition import (
     ACQUISITION_CONTRACT_ID,
     ACQUISITION_CONTRACT_STATUS,
@@ -68,6 +74,11 @@ from projectkoios.references.state_projection import (
     projection_to_biblatex,
     projection_to_csv,
     replay_reference_state,
+)
+from projectkoios.references.state_projection_replay import (
+    ReferenceStateReplayer,
+    ReferenceStateReplayRequest,
+    ReferenceStateReplayResult,
 )
 
 _SUBJECT = "reference-candidate:sha256:" + "1" * 64
@@ -186,6 +197,38 @@ def _field_value(field: str) -> object:
     if field == "collection_inclusion":
         return "included"
     return "synthetic-value"
+
+
+def test__state_replay__uses_the_project_koios_action_contract() -> None:
+    assert issubclass(StateClaim, DataObjectModel)
+    assert issubclass(ReferenceStateProjection, DataObjectModel)
+    assert issubclass(ReferenceStateReplayRequest, DataObjectActionRequest)
+    assert issubclass(ReferenceStateReplayResult, DataObjectActionResult)
+    assert issubclass(ReferenceStateReplayer, DataObjectActionizer)
+
+    claim = StateClaim.observed(
+        subject_id=_SUBJECT,
+        field="rights_status",
+        value="synthetic-rights-observation",
+        record_kind=StateRecordKind.IMMUTABLE_OBSERVATION,
+        authoritative_input_id=_INPUT_A,
+        source_locator="synthetic/rights",
+    )
+    request = ReferenceStateReplayRequest(
+        subject_id=_SUBJECT,
+        claims=(claim,),
+        authoritative_input_ids=(_INPUT_A,),
+    )
+
+    result = ReferenceStateReplayer().action(request=request)
+
+    assert result.request is request
+    assert result.projection == replay_reference_state(
+        subject_id=_SUBJECT,
+        claims=(claim,),
+        authoritative_input_ids=(_INPUT_A,),
+    )
+    assert result.result_id.startswith("reference-state-replay-result:sha256:")
 
 
 def test__state_projection__round_trips_every_authority_field() -> None:
