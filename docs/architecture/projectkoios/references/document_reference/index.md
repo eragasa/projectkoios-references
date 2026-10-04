@@ -8,10 +8,14 @@ The source is organized by bibliography metadata, collections, documents and
 receipt, bindings, and intake. Namespace initializers are markers; consumers
 import the named owning modules directly. Browser selection and verified local
 import use separate actions so callers cannot choose provenance strings.
+Same-store idempotence and independent rebuild have separate nominal
+replay-data-object bases; neither defines a runner or operation contract yet.
 
 ## Public classes
 
 - [`AbstractDocumentReferenceDataObject`](AbstractDocumentReferenceDataObject/index.md)
+- [`AbstractRebuildReplayDataObject`](AbstractRebuildReplayDataObject/index.md)
+- [`AbstractSameStoreReplayDataObject`](AbstractSameStoreReplayDataObject/index.md)
 - [`BibliographyMetadataError`](BibliographyMetadataError/index.md)
 - [`BibliographyMetadataReader`](BibliographyMetadataReader/index.md)
 - [`BindPdfToReference`](BindPdfToReference/index.md)

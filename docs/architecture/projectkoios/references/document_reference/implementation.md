@@ -12,6 +12,14 @@ Explicit browser binding always resolves
 Exact retries are idempotent and different citekey, digest, or basis occupancy
 fails closed.
 
+Replay capability ownership is split before concrete operations are defined.
+`AbstractSameStoreReplayDataObject` is reserved for canonical values proving
+that applying the same input twice to one fresh store is a semantic no-op with
+no new logical records or provenance drift. `AbstractRebuildReplayDataObject`
+is reserved for canonical values proving that one application to each of two
+fresh stores is logically equivalent. Neither base defines a runner, request,
+result, shared replay superclass, or persisted replay state.
+
 Receipt precedes binding in composed intake. If custody succeeds and one-to-one
 binding conflicts, the result is `received-unbound` and retains the
 receipt result rather than representing the request as mutation-free.
@@ -28,6 +36,8 @@ flowchart TD
     A -->|exact replay| I[Already bound]
     A -->|new| N[Bound]
     A -->|conflict after receipt| C[Received unbound conflict]
+    S[Same-store replay data-object seam] -.-> A
+    D[Independent rebuild data-object seam] -.-> A
 ```
 
 No operation changes BibTeX, establishes publication rights, accepts scientific
