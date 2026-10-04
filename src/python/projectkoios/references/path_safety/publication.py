@@ -6,8 +6,9 @@ import hashlib
 import os
 import re
 import stat
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Self
+from typing import BinaryIO, Self
 
 from projectkoios.references.path_safety import (
     errors,
@@ -26,6 +27,16 @@ _FILE_FLAGS = (
     os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
 )
 _MAX_STREAMED_FILE_BYTES = 4_000_000_000
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AddressedFilePublication:
+    """Describe one verified content-addressed file publication."""
+
+    path: Path
+    sha256: str
+    byte_size: int
+    created: bool
 
 
 class AuthorizedRootPublication(AuthorizedRootIdentity):
@@ -189,6 +200,109 @@ class AuthorizedRootPublication(AuthorizedRootIdentity):
                 os.close(descriptor)
             os.close(parent)
         return self.child_path(safe)
+
+    def write_stream_addressed(
+        self,
+        stream: BinaryIO,
+        *,
+        suffix: str,
+        max_bytes: int,
+        required_prefix: bytes = b"",
+        expected_size: int | None = None,
+        chunk_bytes: int = 1_048_576,
+    ) -> AddressedFilePublication:
+        """Publish a bounded stream under its SHA-256 digest without replace."""
+        self._require_local_mutation()
+        if (
+            type(suffix) is not str
+            or re.fullmatch(r"\.[a-z0-9]{1,15}", suffix) is None
+            or type(required_prefix) is not bytes
+            or len(required_prefix) > 64
+            or not 1 <= max_bytes <= _MAX_STREAMED_FILE_BYTES
+            or not 0 < chunk_bytes <= 8_000_000
+            or (
+                expected_size is not None
+                and (
+                    type(expected_size) is not int
+                    or not 1 <= expected_size <= max_bytes
+                )
+            )
+        ):
+            raise ValueError("stream-publication limits are invalid")
+        parent = self._open_root()
+        descriptor = -1
+        digest = hashlib.sha256()
+        total = 0
+        prefix = bytearray()
+        try:
+            descriptor = platform.DescriptorFilesystem.open_anonymous_file(
+                parent=parent,
+                label=f"{self.label} content-addressed stream",
+            )
+            with os.fdopen(descriptor, "wb", closefd=False) as writer:
+                while True:
+                    block = stream.read(min(chunk_bytes, max_bytes - total + 1))
+                    if not block:
+                        break
+                    if type(block) is not bytes:
+                        raise ValueError("stream must return bytes")
+                    total += len(block)
+                    if total > max_bytes:
+                        raise errors.PathLimitError(
+                            resource=f"{self.label} input stream",
+                            limit_name="max_file_bytes",
+                            limit=max_bytes,
+                            observed=total,
+                        )
+                    if len(prefix) < len(required_prefix):
+                        prefix.extend(
+                            block[: len(required_prefix) - len(prefix)]
+                        )
+                    digest.update(block)
+                    writer.write(block)
+                writer.flush()
+                os.fsync(writer.fileno())
+            if total == 0:
+                raise ValueError("stream must not be empty")
+            if bytes(prefix) != required_prefix:
+                raise ValueError("stream does not have the required prefix")
+            if expected_size is not None and total != expected_size:
+                raise ValueError("stream size differs from expected_size")
+            staged = os.fstat(descriptor)
+            if not stat.S_ISREG(staged.st_mode) or staged.st_size != total:
+                raise errors.PathSafetyError(
+                    f"{self.label} staged bytes are unstable"
+                )
+            sha256 = digest.hexdigest()
+            leaf = f"{sha256}{suffix}"
+            safe = validation.validate_relative_path(leaf)
+            try:
+                platform.DescriptorFilesystem.publish_open_file_no_replace(
+                    parent=parent,
+                    descriptor=descriptor,
+                    destination=leaf,
+                )
+                created = True
+            except FileExistsError:
+                created = False
+            self._require_published_file(
+                parent=parent,
+                leaf=leaf,
+                safe=safe,
+                expected_sha256=sha256,
+                expected_size=total,
+                chunk_bytes=chunk_bytes,
+            )
+            return AddressedFilePublication(
+                path=self.child_path(safe),
+                sha256=sha256,
+                byte_size=total,
+                created=created,
+            )
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            os.close(parent)
 
     def copy_file_from(
         self,

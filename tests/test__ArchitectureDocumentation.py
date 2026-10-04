@@ -96,6 +96,7 @@ MIGRATED_MODULES = {
         "ReferenceStateReplayResult",
     },
     "path_safety": {
+        "AddressedFilePublication",
         "AuthorizedRoot",
         "AuthorizedRootIdentity",
         "AuthorizedRootObservation",
@@ -123,9 +124,27 @@ MIGRATED_MODULES = {
         "UnsupportedCloudPlaceholderProbe",
     },
 }
+MIGRATED_FILE_MODULES = {
+    "adapters/bibliography/pybtex_metadata_reader": {
+        "PybtexBibliographyMetadataReader",
+    },
+    "adapters/filesystem/sha256_pdf_object_store": {
+        "Sha256PdfObjectStore",
+    },
+    "adapters/sql/sqlite/document_reference_schema": {
+        "DocumentReferenceSchema",
+    },
+    "adapters/sql/sqlite/document_reference_store": {
+        "SqliteDocumentReferenceStore",
+    },
+}
 MODULE_DIRECTORIES = {
     name: ARCHITECTURE / "projectkoios" / "references" / name
     for name in MIGRATED_MODULES
+}
+FILE_MODULE_DIRECTORIES = {
+    name: ARCHITECTURE / "projectkoios" / "references" / name
+    for name in MIGRATED_FILE_MODULES
 }
 PACKAGE_DIRECTORIES = {
     ARCHITECTURE / "projectkoios",
@@ -140,6 +159,7 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.citation_draft",
     "projectkoios.references.coverage",
     "projectkoios.references.enrichment",
+    "projectkoios.references.document_reference",
     "projectkoios.references.graph",
     "projectkoios.references.identity",
     "projectkoios.references.ingestion_evidence",
@@ -177,11 +197,19 @@ def _public_classes(path: Path) -> set[str]:
 
 def _expected_documents() -> set[Path]:
     expected = {ARCHITECTURE / "index.md"}
-    for directory in (*PACKAGE_DIRECTORIES, *MODULE_DIRECTORIES.values()):
+    module_directories = {
+        **MODULE_DIRECTORIES,
+        **FILE_MODULE_DIRECTORIES,
+    }
+    for directory in (*PACKAGE_DIRECTORIES, *module_directories.values()):
         expected.update(directory / name for name in NODE_DOCUMENTS)
-    for module_name, public_classes in MIGRATED_MODULES.items():
+    public_classes_by_module = {
+        **MIGRATED_MODULES,
+        **MIGRATED_FILE_MODULES,
+    }
+    for module_name, public_classes in public_classes_by_module.items():
         expected.update(
-            MODULE_DIRECTORIES[module_name] / class_name / "index.md"
+            module_directories[module_name] / class_name / "index.md"
             for class_name in public_classes
         )
     return expected
@@ -258,7 +286,11 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     assert not (source_root / "citation_document" / "target.py").exists()
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
-    for module_name, public_classes in MIGRATED_MODULES.items():
+    public_classes_by_module = {
+        **MIGRATED_MODULES,
+        **MIGRATED_FILE_MODULES,
+    }
+    for module_name, public_classes in public_classes_by_module.items():
         module_file = source_root / f"{module_name}.py"
         module_path = (
             module_file
@@ -270,17 +302,18 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 130
+    assert len(actual) == 147
 
     mermaid_documents = {
         directory / name
         for directory in (
             *PACKAGE_DIRECTORIES,
             *MODULE_DIRECTORIES.values(),
+            *FILE_MODULE_DIRECTORIES.values(),
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 20
+    assert len(mermaid_documents) == 28
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
@@ -297,7 +330,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "130 pages; 219 remain unmigrated" in navigator
+    assert "147 pages; 255 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -306,9 +339,10 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         1
         + package_count * 3
         + len(all_modules) * 3
+        + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 349
+    assert expected_total == 402
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

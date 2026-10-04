@@ -9,6 +9,7 @@ This package owns portable locator validation, storage preflight, descriptor-con
 - [`AuthorizedRootObservation`](AuthorizedRootObservation/index.md)
 - [`AuthorizedRootPublication`](AuthorizedRootPublication/index.md)
 - [`AuthorizedRootScanning`](AuthorizedRootScanning/index.md)
+- [`AddressedFilePublication`](AddressedFilePublication/index.md)
 - [`CloudPlaceholderProbe`](CloudPlaceholderProbe/index.md)
 - [`CloudRootMutationError`](CloudRootMutationError/index.md)
 - [`DescriptorFilesystem`](DescriptorFilesystem/index.md)

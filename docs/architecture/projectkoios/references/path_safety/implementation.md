@@ -22,8 +22,12 @@ named collaborator classes or the authorized-root class family; the package has
 no ownerless private module helper functions and no generic contracts module.
 Cloud-backed roots remain metadata-only. Local file creation stages bytes in an
 anonymous inode and publishes through a descriptor-bound no-replace primitive.
-Linux uses `O_TMPFILE` plus the unprivileged `/proc/self/fd` `linkat` technique
-and fails closed without procfs; macOS requires the staging inode to have zero
+Content-addressed stream publication applies a hard byte cap, hashes while
+writing, validates a required prefix and optional size, and re-verifies either
+a newly published or deduplicated destination before returning
+`AddressedFilePublication`. Linux uses `O_TMPFILE` plus the unprivileged
+`/proc/self/fd` `linkat` technique and fails closed without procfs; macOS
+requires the staging inode to have zero
 links before any content is written and publishes with `fclonefileat`.
 Path replacement and automatic destructive rollback are disabled.
 
@@ -40,6 +44,7 @@ flowchart TD
     S --> B
     U --> B
     U --> N[Atomic no-replace directory claim]
+    U --> C[Bounded content-addressed stream publication]
     U --> R[No destructive rollback]
 ```
 
