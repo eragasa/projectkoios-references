@@ -14,6 +14,8 @@ manuscript use, rights clearance, or publication acceptance.
   bounded citation-facing projection over replay-derived identity state.
 - [`citation_document`](citation_document/index.md) — deterministic
   whole-target citation correlation and neutral source-document linkage.
+- [`document_reference`](document_reference/index.md) — independent document
+  and reference identity, custody, collection requirements, and neutral binding.
 
 ## Parallel document/reference adapters
 
@@ -26,8 +28,7 @@ manuscript use, rights clearance, or publication acceptance.
 - [`sha256_pdf_object_store`](adapters/filesystem/sha256_pdf_object_store/index.md)
   — bounded no-replace content-addressed PDF receipt.
 
-The owning `document_reference` module remains outside the completed
-architecture-documentation milestone; its focused operator contract is in
+The focused operator contract remains in
 [`document-reference-operations.md`](../../../document-reference-operations.md).
 
 All other package modules remain listed as unmigrated in the

@@ -7,4 +7,4 @@ created a new file or verified an existing one.
 It grants no rights, use, ingestion, review, Search, scientific, bibliographic,
 or publication authority.
 
-Evidence: [path-safety implementation](../implementation.md) and [document/reference operation tests](../../../../../../tests/test__DocumentReferenceOperations.py).
+Evidence: [path-safety implementation](../implementation.md) and [document/reference operation tests](../../../../../../tests/package/projectkoios/references/document_reference/test__DocumentReferenceOperations.py).

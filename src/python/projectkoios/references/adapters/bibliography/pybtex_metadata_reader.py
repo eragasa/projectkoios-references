@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Protocol, cast, final
 
-from projectkoios.references.document_reference import (
-    BibliographyMetadataError,
+from projectkoios.references.document_reference.bibliography.metadata.display import (  # noqa: E501
     ReferenceDisplayMetadata,
+)
+from projectkoios.references.document_reference.bibliography.metadata.errors import (  # noqa: E501
+    BibliographyMetadataError,
 )
 from pybtex.database import parse_string  # type: ignore[import-untyped]
 from pybtex.scanner import PybtexSyntaxError  # type: ignore[import-untyped]

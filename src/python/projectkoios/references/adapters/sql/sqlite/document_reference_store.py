@@ -12,36 +12,72 @@ from typing import final
 from projectkoios.references.adapters.sql.sqlite import (
     document_reference_schema,
 )
-from projectkoios.references.document_reference import (
-    MAX_COLLECTION_MEMBERS,
+from projectkoios.references.document_reference.base import (
+    AbstractDocumentReferenceDataObject,
+)
+from projectkoios.references.document_reference.bibliography.metadata.errors import (  # noqa: E501
     BibliographyMetadataError,
+)
+from projectkoios.references.document_reference.bibliography.metadata.reader import (  # noqa: E501
     BibliographyMetadataReader,
-    BindingDisposition,
-    BindPdfToReferenceRequest,
-    BindPdfToReferenceResult,
-    DocumentContentConflict,
-    DocumentReferenceStoreError,
-    ListMissingPdfReferencesResult,
-    MissingPdfReference,
-    PdfRequirement,
-    ReceiptRecordEffect,
-    ReferenceCollection,
-    ReferenceCollectionMembership,
-    ReferenceDocumentBinding,
-    ReferenceDocumentBindingConflict,
+)
+from projectkoios.references.document_reference.bibliography.record import (
     ReferenceRecord,
-    StoredPdfObject,
+)
+from projectkoios.references.document_reference.bindings.binding import (
+    ReferenceDocumentBinding,
+)
+from projectkoios.references.document_reference.bindings.disposition import (
+    BindingDisposition,
+)
+from projectkoios.references.document_reference.bindings.errors import (
+    ReferenceDocumentBindingConflict,
+)
+from projectkoios.references.document_reference.bindings.result import (
+    BindPdfToReferenceResult,
+)
+from projectkoios.references.document_reference.bindings.selection import (
+    ReferenceDocumentBindingSelection,
+)
+from projectkoios.references.document_reference.collections.collection import (
+    ReferenceCollection,
+)
+from projectkoios.references.document_reference.collections.errors import (
     UnknownCollection,
-    UnknownDocument,
     UnknownReference,
-    validate_identifier,
-    validate_source_link,
+)
+from projectkoios.references.document_reference.collections.membership import (
+    ReferenceCollectionMembership,
+)
+from projectkoios.references.document_reference.collections.missing.item import (  # noqa: E501
+    MissingPdfReference,
+)
+from projectkoios.references.document_reference.collections.missing.result import (  # noqa: E501
+    ListMissingPdfReferencesResult,
+)
+from projectkoios.references.document_reference.collections.pdf_requirement import (  # noqa: E501
+    PdfRequirement,
+)
+from projectkoios.references.document_reference.constants import (
+    MAX_COLLECTION_MEMBERS,
+)
+from projectkoios.references.document_reference.documents.errors import (
+    DocumentContentConflict,
+    UnknownDocument,
+)
+from projectkoios.references.document_reference.documents.receipt.effect import (  # noqa: E501
+    ReceiptRecordEffect,
+)
+from projectkoios.references.document_reference.documents.stored_pdf import (
+    StoredPdfObject,
+)
+from projectkoios.references.document_reference.errors import (
+    DocumentReferenceStoreError,
 )
 from projectkoios.references.path_safety.preflight import RootStorageClass
 from projectkoios.references.path_safety.root import AuthorizedRoot
 
 _DATABASE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}\.sqlite3")
-_EXPLICIT_BINDING_BASIS = "explicit-reference-document-selection"
 
 
 @final
@@ -267,7 +303,7 @@ class SqliteDocumentReferenceStore:
         source_link: str | None,
     ) -> ReceiptRecordEffect:
         """Atomically record a document and one immutable source observation."""
-        validate_source_link(source_link)
+        AbstractDocumentReferenceDataObject._validate_source_link(source_link)
         receipt_id = self.receipt_id(
             document_sha256=document.sha256,
             source_link=source_link,
@@ -332,7 +368,10 @@ class SqliteDocumentReferenceStore:
         self, *, collection_id: str
     ) -> ListMissingPdfReferencesResult:
         """Derive missing rows; never persist a separate missing status."""
-        validate_identifier(collection_id, field="collection_id")
+        AbstractDocumentReferenceDataObject._validate_identifier(
+            collection_id,
+            field="collection_id",
+        )
         connection = self._open()
         try:
             collection = connection.execute(
@@ -410,11 +449,11 @@ class SqliteDocumentReferenceStore:
         finally:
             connection.close()
 
-    def bind_pdf_to_reference(
-        self, *, request: BindPdfToReferenceRequest
+    def bind_reference_document(
+        self, *, selection: ReferenceDocumentBindingSelection
     ) -> BindPdfToReferenceResult:
         """Atomically create one binding, accept an exact retry, or conflict."""
-        binding = self.binding_for(request=request)
+        binding = self.binding_for(selection=selection)
         connection = self._open()
         try:
             with connection:
@@ -423,7 +462,7 @@ class SqliteDocumentReferenceStore:
                     connection.execute(
                         "SELECT 1 FROM reference_collections "
                         "WHERE collection_id = ?",
-                        (request.collection_id,),
+                        (selection.collection_id,),
                     ).fetchone()
                     is None
                 ):
@@ -432,7 +471,7 @@ class SqliteDocumentReferenceStore:
                     "SELECT pdf_requirement "
                     "FROM reference_collection_memberships "
                     "WHERE collection_id = ? AND citekey = ?",
-                    (request.collection_id, request.citekey),
+                    (selection.collection_id, selection.citekey),
                 ).fetchone()
                 if membership is None:
                     raise UnknownReference(
@@ -445,7 +484,7 @@ class SqliteDocumentReferenceStore:
                 if (
                     connection.execute(
                         "SELECT 1 FROM documents WHERE sha256 = ?",
-                        (request.document_sha256,),
+                        (selection.document_sha256,),
                     ).fetchone()
                     is None
                 ):
@@ -455,7 +494,7 @@ class SqliteDocumentReferenceStore:
                     "linkage_basis "
                     "FROM reference_document_bindings "
                     "WHERE citekey = ? OR document_sha256 = ?",
-                    (request.citekey, request.document_sha256),
+                    (selection.citekey, selection.document_sha256),
                 ).fetchall()
                 expected = (
                     binding.binding_id,
@@ -508,11 +547,15 @@ class SqliteDocumentReferenceStore:
 
     @staticmethod
     def binding_for(
-        *, request: BindPdfToReferenceRequest
+        *, selection: ReferenceDocumentBindingSelection
     ) -> ReferenceDocumentBinding:
         """Derive the neutral binding and its stable identity."""
         payload = json.dumps(
-            [request.citekey, request.document_sha256, _EXPLICIT_BINDING_BASIS],
+            [
+                selection.citekey,
+                selection.document_sha256,
+                selection.linkage_basis.value,
+            ],
             ensure_ascii=True,
             separators=(",", ":"),
         ).encode("ascii")
@@ -522,9 +565,9 @@ class SqliteDocumentReferenceStore:
         )
         return ReferenceDocumentBinding(
             binding_id=binding_id,
-            citekey=request.citekey,
-            document_sha256=request.document_sha256,
-            linkage_basis=_EXPLICIT_BINDING_BASIS,
+            citekey=selection.citekey,
+            document_sha256=selection.document_sha256,
+            linkage_basis=selection.linkage_basis,
         )
 
     def _open_unverified(self) -> sqlite3.Connection:

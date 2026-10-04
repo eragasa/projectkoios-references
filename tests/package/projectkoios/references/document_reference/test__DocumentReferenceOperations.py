@@ -15,24 +15,72 @@ from projectkoios.references.adapters.filesystem import (
 from projectkoios.references.adapters.sql.sqlite import (
     document_reference_store,
 )
-from projectkoios.references.document_reference import (
+from projectkoios.references.document_reference.bibliography.metadata.errors import (  # noqa: E501
     BibliographyMetadataError,
-    BindingDisposition,
-    BindPdfToReference,
-    BindPdfToReferenceRequest,
-    DocumentContentConflict,
-    InvalidPdfUpload,
-    ListMissingPdfReferences,
-    ListMissingPdfReferencesRequest,
-    PdfReceiptDisposition,
-    PdfRequirement,
-    PdfUploadTooLarge,
-    ReceivePdf,
-    ReceivePdfRequest,
-    ReferenceCollection,
-    ReferenceCollectionMembership,
-    ReferenceDocumentBindingConflict,
+)
+from projectkoios.references.document_reference.bibliography.record import (
     ReferenceRecord,
+)
+from projectkoios.references.document_reference.bindings.basis import (
+    ReferenceDocumentLinkageBasis,
+)
+from projectkoios.references.document_reference.bindings.disposition import (
+    BindingDisposition,
+)
+from projectkoios.references.document_reference.bindings.errors import (
+    ReferenceDocumentBindingConflict,
+)
+from projectkoios.references.document_reference.bindings.explicit.action import (  # noqa: E501
+    BindPdfToReference,
+)
+from projectkoios.references.document_reference.bindings.explicit.request import (  # noqa: E501
+    BindPdfToReferenceRequest,
+)
+from projectkoios.references.document_reference.bindings.verified_local.action import (  # noqa: E501
+    BindVerifiedLocalEvidence,
+)
+from projectkoios.references.document_reference.bindings.verified_local.request import (  # noqa: E501
+    BindVerifiedLocalEvidenceRequest,
+)
+from projectkoios.references.document_reference.collections.collection import (
+    ReferenceCollection,
+)
+from projectkoios.references.document_reference.collections.membership import (
+    ReferenceCollectionMembership,
+)
+from projectkoios.references.document_reference.collections.missing.action import (  # noqa: E501
+    ListMissingPdfReferences,
+)
+from projectkoios.references.document_reference.collections.missing.request import (  # noqa: E501
+    ListMissingPdfReferencesRequest,
+)
+from projectkoios.references.document_reference.collections.pdf_requirement import (  # noqa: E501
+    PdfRequirement,
+)
+from projectkoios.references.document_reference.documents.errors import (
+    DocumentContentConflict,
+)
+from projectkoios.references.document_reference.documents.receipt.action import (  # noqa: E501
+    ReceivePdf,
+)
+from projectkoios.references.document_reference.documents.receipt.disposition import (  # noqa: E501
+    PdfReceiptDisposition,
+)
+from projectkoios.references.document_reference.documents.receipt.errors import (  # noqa: E501
+    InvalidPdfUpload,
+    PdfUploadTooLarge,
+)
+from projectkoios.references.document_reference.documents.receipt.request import (  # noqa: E501
+    ReceivePdfRequest,
+)
+from projectkoios.references.document_reference.intake.action import (
+    ProvideReferencePdf,
+)
+from projectkoios.references.document_reference.intake.request import (
+    ProvideReferencePdfRequest,
+)
+from projectkoios.references.document_reference.intake.status import (
+    ReferencePdfProvisionStatus,
 )
 from projectkoios.references.path_safety.preflight import RootStorageClass
 from projectkoios.references.path_safety.root import AuthorizedRoot
@@ -55,6 +103,8 @@ class _Harness:
     receive: ReceivePdf
     list_missing: ListMissingPdfReferences
     bind: BindPdfToReference
+    bind_verified: BindVerifiedLocalEvidence
+    provide: ProvideReferencePdf
     object_path: Path
 
 
@@ -81,11 +131,15 @@ def _harness(tmp_path: Path, *, max_pdf_bytes: int = 128) -> _Harness:
         root=object_root,
         max_pdf_bytes=max_pdf_bytes,
     )
+    receive = ReceivePdf(objects=objects, repository=store)
+    bind = BindPdfToReference(repository=store)
     return _Harness(
         store=store,
-        receive=ReceivePdf(objects=objects, repository=store),
+        receive=receive,
         list_missing=ListMissingPdfReferences(repository=store),
-        bind=BindPdfToReference(repository=store),
+        bind=bind,
+        bind_verified=BindVerifiedLocalEvidence(repository=store),
+        provide=ProvideReferencePdf(receive=receive, bind=bind),
         object_path=object_path,
     )
 
@@ -367,6 +421,100 @@ def test__document_reference_operations__binding_conflicts_are_atomic(
         assert connection.execute(
             "SELECT citekey, document_sha256 FROM reference_document_bindings"
         ).fetchall() == [("requiredOne", first.sha256)]
+    finally:
+        connection.close()
+
+
+def test__document_reference_operations__preserve_binding_provenance_and_replay(
+    tmp_path: Path,
+) -> None:
+    explicit = _harness(tmp_path / "explicit")
+    _seed(explicit)
+    explicit_receipt = _receive(explicit, _PDF_ONE)
+    explicit_result = explicit.bind.action(
+        request=BindPdfToReferenceRequest(
+            collection_id="ksdft2effmass",
+            citekey="requiredOne",
+            document_sha256=explicit_receipt.sha256,
+        )
+    )
+    with pytest.raises(ReferenceDocumentBindingConflict):
+        explicit.bind_verified.action(
+            request=BindVerifiedLocalEvidenceRequest(
+                collection_id="ksdft2effmass",
+                citekey="requiredOne",
+                document_sha256=explicit_receipt.sha256,
+            )
+        )
+
+    imported = _harness(tmp_path / "imported")
+    _seed(imported)
+    imported_receipt = _receive(imported, _PDF_ONE)
+    request = BindVerifiedLocalEvidenceRequest(
+        collection_id="ksdft2effmass",
+        citekey="requiredOne",
+        document_sha256=imported_receipt.sha256,
+    )
+    imported_result = imported.bind_verified.action(request=request)
+    imported_replay = imported.bind_verified.action(request=request)
+
+    assert (
+        explicit_result.binding.linkage_basis
+        is ReferenceDocumentLinkageBasis.EXPLICIT_SELECTION
+    )
+    assert (
+        imported_result.binding.linkage_basis
+        is ReferenceDocumentLinkageBasis.VERIFIED_LOCAL_EVIDENCE_IMPORT
+    )
+    assert explicit_result.binding.binding_id == (
+        "reference-document-binding:sha256:"
+        "8a6ce0b5ce3697298c9e76f89f04b1fa1436832f59f8d71d7add36aa1c11b526"
+    )
+    assert imported_result.binding.binding_id == (
+        "reference-document-binding:sha256:"
+        "e6c1a18cf7cdc25a022b49352535b07647fef8696e08fd6545d13ba49b2d3feb"
+    )
+    assert imported_replay.binding == imported_result.binding
+    assert imported_replay.disposition is BindingDisposition.ALREADY_BOUND
+
+
+def test__document_reference_operations__report_received_unbound_conflict(
+    tmp_path: Path,
+) -> None:
+    harness = _harness(tmp_path)
+    _seed(harness)
+    first = harness.provide.provide(
+        request=ProvideReferencePdfRequest(
+            collection_id="ksdft2effmass",
+            citekey="requiredOne",
+            declared_byte_size=len(_PDF_ONE),
+        ),
+        stream=io.BytesIO(_PDF_ONE),
+    )
+    conflict = harness.provide.provide(
+        request=ProvideReferencePdfRequest(
+            collection_id="ksdft2effmass",
+            citekey="requiredOne",
+            declared_byte_size=len(_PDF_TWO),
+        ),
+        stream=io.BytesIO(_PDF_TWO),
+    )
+
+    assert first.status is ReferencePdfProvisionStatus.BOUND
+    assert first.binding is not None
+    assert conflict.status is ReferencePdfProvisionStatus.RECEIVED_UNBOUND
+    assert conflict.binding is None
+    connection = sqlite3.connect(harness.store.database_path)
+    try:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM documents"
+        ).fetchone() == (2,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM document_receipts"
+        ).fetchone() == (2,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_document_bindings"
+        ).fetchone() == (1,)
     finally:
         connection.close()
 
