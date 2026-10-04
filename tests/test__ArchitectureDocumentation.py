@@ -95,6 +95,54 @@ MIGRATED_MODULES = {
         "ReferenceStateReplayRequest",
         "ReferenceStateReplayResult",
     },
+    "document_reference": {
+        "AbstractDocumentReferenceDataObject",
+        "BibliographyMetadataError",
+        "BibliographyMetadataReader",
+        "BindPdfToReference",
+        "BindPdfToReferenceRequest",
+        "BindPdfToReferenceResult",
+        "BindVerifiedLocalEvidence",
+        "BindVerifiedLocalEvidenceRequest",
+        "BindingDisposition",
+        "DocumentContentConflict",
+        "DocumentReferenceError",
+        "DocumentReferenceStoreError",
+        "InvalidPdfUpload",
+        "ListMissingPdfReferences",
+        "ListMissingPdfReferencesRequest",
+        "ListMissingPdfReferencesResult",
+        "MissingPdfReference",
+        "MissingPdfReferencesRepository",
+        "PdfObjectReceiver",
+        "PdfReceiptDisposition",
+        "PdfReceiptRepository",
+        "PdfRequirement",
+        "PdfUploadTooLarge",
+        "ProvideReferencePdf",
+        "ProvideReferencePdfRequest",
+        "ProvideReferencePdfResult",
+        "ReceiptRecordEffect",
+        "ReceivePdf",
+        "ReceivePdfRequest",
+        "ReceivePdfResult",
+        "ReferenceCollection",
+        "ReferenceCollectionMembership",
+        "ReferenceCollectionRepository",
+        "ReferenceDisplayMetadata",
+        "ReferenceDocumentBinding",
+        "ReferenceDocumentBindingConflict",
+        "ReferenceDocumentBindingRepository",
+        "ReferenceDocumentBindingSelection",
+        "ReferenceDocumentLinkageBasis",
+        "ReferencePdfProvisionStatus",
+        "ReferenceRecord",
+        "ReferenceRecordRepository",
+        "StoredPdfObject",
+        "UnknownCollection",
+        "UnknownDocument",
+        "UnknownReference",
+    },
     "path_safety": {
         "AddressedFilePublication",
         "AuthorizedRoot",
@@ -159,7 +207,6 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.citation_draft",
     "projectkoios.references.coverage",
     "projectkoios.references.enrichment",
-    "projectkoios.references.document_reference",
     "projectkoios.references.graph",
     "projectkoios.references.identity",
     "projectkoios.references.ingestion_evidence",
@@ -275,6 +322,30 @@ def _source_public_class_count() -> int:
 def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
     assert not (source_root / "catalog.py").exists()
+    assert not (source_root / "document_reference.py").exists()
+    document_reference = source_root / "document_reference"
+    assert document_reference.is_dir()
+    for initializer in document_reference.rglob("__init__.py"):
+        tree = ast.parse(initializer.read_text(encoding="utf-8"))
+        assert all(
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            for node in tree.body
+        ), initializer
+    for source in document_reference.rglob("*.py"):
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        assert not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            for node in tree.body
+        ), source
+        if source.name in {"__init__.py", "errors.py"}:
+            continue
+        assert len(_public_classes(source)) <= 1, source
+    assert (
+        REPOSITORY / "tests/package/projectkoios/references/document_reference/"
+        "test__DocumentReferenceOperations.py"
+    ).is_file()
     assert (source_root / "catalog" / "__init__.py").is_file()
     assert not (source_root / "collection_reconciliation.py").exists()
     assert not (source_root / "collection_reconciliation").exists()
@@ -302,7 +373,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 147
+    assert len(actual) == 196
 
     mermaid_documents = {
         directory / name
@@ -313,7 +384,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 28
+    assert len(mermaid_documents) == 30
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
@@ -326,11 +397,18 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         "projectkoios.references." + name.replace("/", ".")
         for name in MIGRATED_MODULES
     }
-    assert all_modules - migrated == EXPECTED_REMAINING_MODULES
+    remaining = {
+        module
+        for module in all_modules
+        if not any(
+            module == root or module.startswith(f"{root}.") for root in migrated
+        )
+    }
+    assert remaining == EXPECTED_REMAINING_MODULES
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "147 pages; 255 remain unmigrated" in navigator
+    assert "196 pages; 249 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -342,7 +420,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 402
+    assert expected_total == 445
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

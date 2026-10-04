@@ -7,4 +7,4 @@ atomic idempotent one-to-one binding.
 It does not import records automatically or mutate the authoritative schema-5
 catalog.
 
-Evidence: [store implementation](../implementation.md) and [focused tests](../../../../../../../../../tests/test__DocumentReferenceOperations.py).
+Evidence: [store implementation](../implementation.md) and [focused tests](../../../../../../../../../tests/package/projectkoios/references/document_reference/test__DocumentReferenceOperations.py).

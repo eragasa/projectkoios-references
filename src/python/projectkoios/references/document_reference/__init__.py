@@ -1,0 +1,1 @@
+"""Document/reference ownership namespace."""

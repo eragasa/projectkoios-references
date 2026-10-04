@@ -17,5 +17,5 @@ It never returns a path through the Web-facing result and never binds a citekey.
 - [Implementation](implementation.md)
 - [Operator operations](../../../../../../document-reference-operations.md)
 - source: [`sha256_pdf_object_store.py`](../../../../../../../src/python/projectkoios/references/adapters/filesystem/sha256_pdf_object_store.py)
-- tests: [`test__DocumentReferenceOperations.py`](../../../../../../../tests/test__DocumentReferenceOperations.py)
+- tests: [`test__DocumentReferenceOperations.py`](../../../../../../../tests/package/projectkoios/references/document_reference/test__DocumentReferenceOperations.py)
 - [References architecture](../../../index.md)

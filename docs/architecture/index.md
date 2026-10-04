@@ -19,6 +19,7 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.citation_document`](projectkoios/references/citation_document/index.md)
 - [`projectkoios.references.catalog`](projectkoios/references/catalog/index.md)
 - [`projectkoios.references.collections.reconciliation`](projectkoios/references/collections/reconciliation/index.md)
+- [`projectkoios.references.document_reference`](projectkoios/references/document_reference/index.md)
 - [`projectkoios.references.path_safety`](projectkoios/references/path_safety/index.md)
 - [`projectkoios.references.state_projection_replay`](projectkoios/references/state_projection_replay/index.md)
 - [`projectkoios.references.adapters.bibliography.pybtex_metadata_reader`](projectkoios/references/adapters/bibliography/pybtex_metadata_reader/index.md)
@@ -26,8 +27,8 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_schema`](projectkoios/references/adapters/sql/sqlite/document_reference_schema/index.md)
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_store`](projectkoios/references/adapters/sql/sqlite/document_reference_store/index.md)
 
-The current source tree requires 402 component-architecture pages under the
-established convention. These slices supply 147 pages; 255 remain unmigrated.
+The current source tree requires 445 component-architecture pages under the
+established convention. These slices supply 196 pages; 249 remain unmigrated.
 That count is coverage evidence, not a request for a bulk retrofit.
 
 ## Remaining unmigrated modules
@@ -39,7 +40,6 @@ That count is coverage evidence, not a request for a bulk retrofit.
 - `projectkoios.references.citation_draft`
 - `projectkoios.references.coverage`
 - `projectkoios.references.enrichment`
-- `projectkoios.references.document_reference`
 - `projectkoios.references.graph`
 - `projectkoios.references.identity`
 - `projectkoios.references.ingestion_evidence`

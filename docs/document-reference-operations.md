@@ -59,25 +59,44 @@ reports `received`, `source-observation-added`, or `already-present`.
 Receipt does not select a citekey, bind a reference, update BibTeX, accept
 metadata, assert rights, or schedule processing.
 
-## Explicit binding
+## Provenance-specific binding
 
-`BindPdfToReference.action()` requires collection ID, selected citekey, and an
-existing document SHA-256. The collection membership must exist and require a
-PDF. One `BEGIN IMMEDIATE` transaction either:
+`BindPdfToReference.action()` is the browser-selection operation. It requires
+collection ID, selected citekey, and an existing document SHA-256 and always
+uses `explicit-reference-document-selection`. Callers cannot supply its basis.
+
+`BindVerifiedLocalEvidence.action()` is the separate owner-only import
+operation and always uses `verified-local-evidence-import`. Its request likewise
+contains no caller-selectable basis. The linkage basis participates in the
+binding identity, so exact replay requires citekey, digest, and basis equality.
+
+The collection membership must exist and require a PDF. One
+`BEGIN IMMEDIATE` transaction either:
 
 - creates the one-to-one neutral binding and reports `bound`;
 - recognizes the exact binding and reports `already-bound`; or
 - rolls back and raises a typed unknown-entity or binding-conflict error.
 
-Neither citekey nor document may be rebound implicitly. Upload and binding stay
-separate so bytes cannot auto-accept bibliographic metadata.
+Neither citekey nor document may be rebound implicitly. Receipt and binding
+remain separate owner actions so bytes cannot auto-accept bibliographic
+metadata.
+
+## Composed intake outcome
+
+`ProvideReferencePdf.provide()` composes receipt with explicit browser binding.
+If custody succeeds but one-to-one binding conflicts, it returns
+`received-unbound` with the durable receipt and no binding result. It
+does not represent the request as mutation-free. Successful creation and exact
+replay return `bound` and `already-bound`, respectively. API and Web may map the
+typed result to privacy-reduced transport behavior without inspecting SQLite or
+object storage.
 
 ## Validation
 
 ```bash
 uv run python -m pytest -q \
   tests/test__DocumentReferenceSchema.py \
-  tests/test__DocumentReferenceOperations.py
+  tests/package/projectkoios/references/document_reference/test__DocumentReferenceOperations.py
 uv run ruff check src/python tests tools
 uv run mypy src/python/projectkoios/references
 ```

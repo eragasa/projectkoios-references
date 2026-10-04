@@ -18,5 +18,5 @@ document identities to callers.
 - [Implementation](implementation.md)
 - [Operator operations](../../../../../../document-reference-operations.md)
 - source: [`pybtex_metadata_reader.py`](../../../../../../../src/python/projectkoios/references/adapters/bibliography/pybtex_metadata_reader.py)
-- tests: [`test__DocumentReferenceOperations.py`](../../../../../../../tests/test__DocumentReferenceOperations.py)
+- tests: [`test__DocumentReferenceOperations.py`](../../../../../../../tests/package/projectkoios/references/document_reference/test__DocumentReferenceOperations.py)
 - [References architecture](../../../index.md)

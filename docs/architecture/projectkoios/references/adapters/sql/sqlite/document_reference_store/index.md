@@ -21,5 +21,5 @@ of the 107 monograph records.
 - [Operator operations](../../../../../../../document-reference-operations.md)
 - [Schema module](../document_reference_schema/index.md)
 - source: [`document_reference_store.py`](../../../../../../../../src/python/projectkoios/references/adapters/sql/sqlite/document_reference_store.py)
-- tests: [`test__DocumentReferenceOperations.py`](../../../../../../../../tests/test__DocumentReferenceOperations.py)
+- tests: [`test__DocumentReferenceOperations.py`](../../../../../../../../tests/package/projectkoios/references/document_reference/test__DocumentReferenceOperations.py)
 - [References architecture](../../../../index.md)
