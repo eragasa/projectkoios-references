@@ -225,7 +225,7 @@ class SourceBibliographyObservation:
                 data["authority_kind"], field="authority_kind"
             ),
             source_id=_required_string(data["source_id"], field="source_id"),
-            asserted_source_revision=cast(str | None, revision),
+            asserted_source_revision=revision,
             source_path=_required_string(
                 data["source_path"], field="source_path"
             ),
@@ -1817,13 +1817,13 @@ def _required_string(value: object, *, field: str) -> str:
 def _optional_string(value: object, *, field: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise IdentityRecordError(f"{field} must be a string or null")
-    return cast(str | None, value)
+    return value
 
 
 def _required_int(value: object, *, field: str) -> int:
     if type(value) is not int:
         raise IdentityRecordError(f"{field} must be an integer")
-    return cast(int, value)
+    return value
 
 
 def _string_array(value: object, *, field: str) -> tuple[str, ...]:

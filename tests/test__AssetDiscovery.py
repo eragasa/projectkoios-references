@@ -303,7 +303,7 @@ def test__assets_apply__catalog_preflight_prevents_destination_mutation(
 
 
 @pytest.mark.parametrize("preexisting", (False, True))
-def test__assets_apply__rolls_back_only_exact_new_file_on_catalog_failure(
+def test__assets_apply__leaves_materialized_file_for_reconciliation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     preexisting: bool,
@@ -369,9 +369,7 @@ def test__assets_apply__rolls_back_only_exact_new_file_on_catalog_failure(
                 "local",
             ]
         )
-    assert destination_file.exists() is preexisting
-    if preexisting:
-        assert destination_file.read_bytes() == b"%PDF catalog fixture"
+    assert destination_file.read_bytes() == b"%PDF catalog fixture"
 
 
 def test__exact_filename_is_only_an_unresolved_observation(

@@ -37,7 +37,10 @@ never inspected to infer a storage class.
 
 A local declaration means the operator has authorized the root as containing
 ordinary local filesystem objects for this operation. It is not a probe result
-and must not be used for a mixed or streaming provider root.
+and must not be used for a mixed or streaming provider root. Descriptor
+confinement prevents symlink and mount traversal but cannot distinguish a hard
+link from its inode; local-root file contents, including hard-linked contents,
+therefore remain inside the operator's trusted content boundary.
 
 ## Portable preflight model
 
@@ -67,17 +70,20 @@ coverage. Existing fail-closed single-file APIs raise
 typed skipped observation in an `incomplete` canonical plan. A known
 placeholder is represented by root alias, normalized relative path, declared
 storage class, probe identity, and typed status. Absolute paths are excluded.
-Hashing, PDF-header reads, verification, reconciliation, validation reads,
-rebind, and materialization recheck preflight before opening candidate bytes. A
-placeholder, inaccessible file, or other non-ordinary observation cannot
-produce complete evidence. Typed diagnostics and plan JSON are privacy reduced.
-All generic mutation methods reject cloud-backed destinations even when an
-injected probe reports supported. Materialization remains a separate explicit
-local-destination operation and never requests placeholder hydration.
+Cloud-backed roots are metadata-only. Hashing, PDF-header reads,
+verification, reconciliation, validation reads, rebind, and materialization
+cannot open their candidate bytes even when a supported probe reports
+`ordinary-file`; the byte-access boundary reports that state as
+`access-controlled`. Typed diagnostics and plan JSON are privacy reduced. All
+generic mutation methods reject cloud-backed destinations. Materialization
+requires a separately authorized local source and local destination and never
+requests placeholder hydration.
 
 Generic corpus discovery also rejects duplicate or overlapping roots before
-traversal and rechecks resolved paths after metadata binding. Every subsequently
-opened parent and candidate leaf must remain on the authorized root device, so
+traversal. Root authorization walks every absolute path component through
+no-follow directory descriptors; it does not resolve symlinks into authorized
+targets. Every subsequently opened parent and candidate leaf must remain on the
+bound root device and Linux mount identity, so
 post-inventory replacement, child mounts, and mounted leaves are retained as
 incomplete filesystem-boundary skips rather than read. Rebind applies the same
 boundary and fails. A boundary must be handled as a separately classified,
@@ -105,9 +111,8 @@ every intermediate directory and candidate leaf. `SF_DATALESS` is
 `cloud-placeholder`. A readable regular file with available flags and no
 `SF_DATALESS` may be `ordinary-file`; uncertain metadata is `ambiguous`.
 
-Metadata preflight and byte opening are separate system calls. The implementation
-rechecks immediately before access and detects bound-root, open-leaf, size,
-hash, and metadata changes where possible, but cannot make provider metadata
-and byte access atomic. A concurrent/provider state transition is residual
-TOCTOU risk and fails closed when detected. Use a separately authorized local
-export when that provider risk is unacceptable.
+Metadata preflight does not grant byte-opening authority. A provider state
+transition after observation therefore cannot cause this package to hydrate a
+candidate through its cloud-backed root. Use a separately authorized local
+export when bytes are required; that export is a distinct operation outside
+this package and must be declared as a local root.

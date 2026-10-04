@@ -114,11 +114,13 @@ def _replace_path_during_first_read(
         return metadata
 
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.fdopen",
+        os,
+        "fdopen",
         replacing_fdopen,
     )
     monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.fstat",
+        os,
+        "fstat",
         stable_open_file_fstat,
     )
 

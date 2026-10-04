@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -22,19 +23,26 @@ from projectkoios.references.acquisition import create_acquisition_manifest
 from projectkoios.references.assets import (
     AssetDiscoveryPlanner,
     SearchRoot,
-    materialize_asset,
 )
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.collection_reconciliation import (
-    CollectionReconciliationError,
-    ManagedPdfScan,
+from projectkoios.references.citation_closure import (
+    CitationCoverageIncomplete,
     build_citation_closure,
-    reconcile_collection,
-    scan_managed_pdfs,
+)
+from projectkoios.references.collections.reconciliation.errors import (
+    CollectionReconciliationError,
+)
+from projectkoios.references.collections.reconciliation.loading import (
+    ManagedPdfScan,
+    ManagedPdfScanner,
+    ManagedPdfScanRequest,
+)
+from projectkoios.references.collections.reconciliation.reconciliation import (
+    CollectionReconciler,
+    CollectionReconciliationRequest,
 )
 from projectkoios.references.path_safety import read_path_bytes
 from projectkoios.references.validation import validate_reference_objects
-from test_asset_authorization_helpers import authorize_asset
 
 from scripts.koios_ref import main
 
@@ -102,9 +110,7 @@ def test__unsupported_cloud_root__fails_before_filesystem_open(
         opened = True
         raise AssertionError("unsupported cloud root was opened")
 
-    monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.open", forbidden_open
-    )
+    monkeypatch.setattr(os, "open", forbidden_open)
     root = SearchRoot(
         "streaming",
         tmp_path / "not-opened",
@@ -135,9 +141,7 @@ def test__standalone_cloud_path__fails_before_parent_open(
         opened = True
         raise AssertionError("unsupported standalone path parent was opened")
 
-    monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.open", forbidden_open
-    )
+    monkeypatch.setattr(os, "open", forbidden_open)
     with pytest.raises(PlaceholderPreflightError) as caught:
         read_path_bytes(
             tmp_path / "placeholder.pdf",
@@ -192,9 +196,7 @@ def test__cloud_mutations__fail_before_filesystem_access(
         opened = True
         raise AssertionError("cloud mutation touched the filesystem")
 
-    monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.open", forbidden_open
-    )
+    monkeypatch.setattr(os, "open", forbidden_open)
     with pytest.raises(CloudRootMutationError):
         ReferenceCatalog(
             tmp_path / "cloud.sqlite3",
@@ -344,10 +346,12 @@ def test__acquisition_and_managed_scan__fail_typed_without_reading(
     )
 
     with pytest.raises(PlaceholderPreflightError) as managed_failure:
-        scan_managed_pdfs(
-            source,
-            storage_class=RootStorageClass.CLOUD_BACKED,
-            placeholder_probe=probe,
+        ManagedPdfScanner().action(
+            request=ManagedPdfScanRequest(
+                directory=source,
+                storage_class=RootStorageClass.CLOUD_BACKED,
+                placeholder_probe=probe,
+            )
         )
     assert (
         managed_failure.value.observation.status
@@ -388,14 +392,16 @@ def test__managed_scan_and_reconcile__reject_skipped_observations() -> None:
         CollectionReconciliationError,
         match="cannot consume skipped",
     ):
-        reconcile_collection(
-            (),
-            bibliography_bytes=b"",
-            collection_id="synthetic",
-            source_revision="asserted",
-            collection_rows={},
-            managed_pdfs=invalid,
-            citation_closure=None,
+        CollectionReconciler().action(
+            request=CollectionReconciliationRequest(
+                records=(),
+                bibliography_bytes=b"",
+                collection_id="synthetic",
+                source_revision="asserted",
+                collection_rows={},
+                managed_pdfs=invalid,
+                citation_closure=None,
+            )
         )
 
 
@@ -422,19 +428,19 @@ def test__cloud_manuscript_verification__never_invokes_git(
         "projectkoios.references.citation_closure.subprocess.run",
         forbidden_run,
     )
-    closure = build_citation_closure(
-        manuscript,
-        storage_class=RootStorageClass.CLOUD_BACKED,
-        mode=CitationScanMode.ALL_FILES_OBSERVATION,
-        entrypoint=None,
-        placeholder_probe=probe,
-        bibliography_keys=("example2026",),
-        source_revision="a" * 40,
-    )
+    with pytest.raises(
+        CitationCoverageIncomplete, match="citation source is unavailable"
+    ):
+        build_citation_closure(
+            manuscript,
+            storage_class=RootStorageClass.CLOUD_BACKED,
+            mode=CitationScanMode.ALL_FILES_OBSERVATION,
+            entrypoint=None,
+            placeholder_probe=probe,
+            bibliography_keys=("example2026",),
+            source_revision="a" * 40,
+        )
 
-    assert closure.verified_source_tree is None
-    assert closure.root_preflight.storage_class is RootStorageClass.CLOUD_BACKED
-    assert closure.root_preflight.probe_id == probe.probe_id
     assert not invoked
 
 
@@ -447,55 +453,27 @@ def test__cloud_manuscript_verification__never_invokes_git(
         PlaceholderStatus.UNREADABLE,
     ),
 )
-def test__materialization_rechecks_preflight_before_destination_mutation(
+def test__asset_discovery__cloud_source_remains_metadata_only(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     status: PlaceholderStatus,
 ) -> None:
-    local = tmp_path / "local"
-    local.mkdir()
-    source = local / "example2026.pdf"
-    source.write_bytes(b"%PDF synthetic fixture")
-    probe = SyntheticProbe()
-    cloud_roots = (
+    source_root = tmp_path / "cloud"
+    source_root.mkdir()
+    (source_root / "example2026.pdf").write_bytes(b"%PDF synthetic fixture")
+    probe = SyntheticProbe({"example2026.pdf": status})
+    roots = (
         SearchRoot(
             "papers",
-            local,
+            source_root,
             RootStorageClass.CLOUD_BACKED,
             probe,
         ),
     )
-    plan = AssetDiscoveryPlanner().scan((_record(),), cloud_roots)
-    candidate = plan.candidates[0]
-    authorization, projection = authorize_asset(plan, candidate, _record())
-    probe.statuses["example2026.pdf"] = status
-    destination = tmp_path / "must-not-exist"
-    opened: list[object] = []
-    original_open = __import__("os").open
 
-    def recorded_open(path: object, *args: object, **kwargs: object) -> int:
-        opened.append(path)
-        return original_open(path, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.open", recorded_open
-    )
     with pytest.raises(PlaceholderPreflightError) as caught:
-        materialize_asset(
-            candidate,
-            authorization=authorization,
-            plan=plan,
-            identity_projection=projection,
-            expected_root_preflight=plan.root_preflights[0],
-            roots=cloud_roots,
-            destination_directory=destination,
-            destination_storage_class=RootStorageClass.LOCAL,
-        )
+        AssetDiscoveryPlanner().scan((_record(),), roots)
 
     assert caught.value.observation.status is status
-    assert caught.value.coverage_status == "incomplete"
-    assert not destination.exists()
-    assert "example2026.pdf" not in opened
 
 
 def test__local_metadata_preflight__distinguishes_file_states(
@@ -574,9 +552,7 @@ def test__duplicate_cli_storage_declaration__fails_before_path_access(
         opened = True
         raise AssertionError("duplicate declaration reached path access")
 
-    monkeypatch.setattr(
-        "projectkoios.references.path_safety.os.open", forbidden_open
-    )
+    monkeypatch.setattr(os, "open", forbidden_open)
     with pytest.raises(SystemExit, match="duplicate storage declaration"):
         main(
             [

@@ -26,7 +26,7 @@ root-facade count includes constants, records, exceptions, and functions.
 | `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | OUT_OF_SCOPE |
 | `citation_closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | OUT_OF_SCOPE |
 | `citation_draft` | 8 | 2 deprecated forwards | 0 | 0 | `test__CitationDraft.py` | IMPLEMENTED |
-| `collection_reconciliation` | 15 | 7 | 24 | 19 | `test__CollectionReconciliation.py` | OUT_OF_SCOPE |
+| `collections.reconciliation` | 36 | 0 | 23 | 0 | mirrored `tests/package/projectkoios/references/collections/reconciliation/` | IMPLEMENTED |
 | `coverage` | 7 public + 1 focused private collaborator | 0 | 0 | 7 | `test__CoverageObservation.py` | IMPLEMENTED |
 | `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | OUT_OF_SCOPE |
 | `graph` | 7 | 1 | 21 | 8 | `test__CitationGraph.py`, `test__CitationGraphSeed.py` | OUT_OF_SCOPE |
@@ -35,7 +35,7 @@ root-facade count includes constants, records, exceptions, and functions.
 | `io_limits` | 2 | 3 | 0 | 12 | `test__IOBounds.py` | CURRENT |
 | `models` | 2 | 1 | 0 | 3 | exercised across catalog/state tests | OUT_OF_SCOPE |
 | `naming` | 1 | 0 | 0 | 1 | `test__ReferenceFilenames.py` | IMPLEMENTED |
-| `path_safety` | 18 | 9 | 7 | 16 | `test__PathSafety.py`, `test__CloudPlaceholderSafety.py` | OUT_OF_SCOPE |
+| `path_safety` | 25 | 9 | 0 | 28 | mirrored `tests/package/projectkoios/references/path_safety/`, `test__CloudPlaceholderSafety.py` | IMPLEMENTED |
 | `pdf_corpus` | 6 | 2 | 21 | 15 | `test__PdfCorpusDiscovery.py` | OUT_OF_SCOPE |
 | `provided_intake` | 5 | 0 | 11 | 5 | `test__ProvidedReferenceIntake.py` | OUT_OF_SCOPE |
 | `reconciliation_package` | 8 | 6 | 7 | 3 | `test__ReconciliationPackage.py` | OUT_OF_SCOPE |
@@ -43,7 +43,8 @@ root-facade count includes constants, records, exceptions, and functions.
 | `state_projection` | 10 | 14 | 23 | 29 | `test__StateProjection.py` | OUT_OF_SCOPE |
 | `validation` | 1 | 1 | 3 | 0 | validation cases in safety tests | OUT_OF_SCOPE |
 
-The suite contains 25 maintained `tests/test*.py` files. Cross-family I/O,
+The suite contains 28 maintained top-level `tests/test*.py` files plus mirrored
+package tests. Cross-family I/O,
 placeholder, reconciliation, catalog, and state tests exercise the same public
 objects in addition to the primary tests named above.
 
@@ -93,6 +94,18 @@ include `AssetDiscoveryPlanner.scan`, `ReferenceCatalog` methods,
 create/load/build/discover/rebind/replay/reconcile/publish/verify/materialize and
 validate operations. They are explicitly out of scope: this milestone neither
 changes their boundaries nor establishes a deferred migration backlog.
+
+`path_safety` is now a focused package with named ownership for errors,
+validation, preflight models, platform probes, immutable inventories,
+descriptor mechanics, root authorization, observation, scanning, publication,
+and explicit-path adapters. It contains no generic `_contracts.py`, no private
+module-level helper functions, and no operation implementation in
+`__init__.py`. Immutable evidence and inventory records are frozen, slotted
+`DataObjectModel` values. Cloud-backed roots are metadata-only without explicit
+hydration authority; local directory publication uses platform atomic
+no-replace claims; local files stage in anonymous inodes and publish through
+descriptor-bound no-replace primitives; pathname replacement and automatic
+destructive rollback are disabled.
 
 `ReferenceFilenames` is now an immutable, slotted `DataObjectModel`. Its
 `from_citekey` classmethod remains the single owner of pure filename derivation;

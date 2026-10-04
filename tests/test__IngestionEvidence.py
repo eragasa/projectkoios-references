@@ -7,9 +7,11 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from projectkoios.references.collection_reconciliation import (
-    ManagedPdf,
+from projectkoios.references.collections.reconciliation.evidence import (
     ProcessingEvidence,
+)
+from projectkoios.references.collections.reconciliation.loading import (
+    ManagedPdf,
 )
 from projectkoios.references.ingestion_evidence import (
     REFERENCE_EVIDENCE_CONTRACT_STATUS,

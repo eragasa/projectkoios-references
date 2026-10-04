@@ -15,6 +15,21 @@ manuscript use, rights clearance, or publication acceptance.
 - [`citation_document`](citation_document/index.md) — deterministic
   whole-target citation correlation and neutral source-document linkage.
 
+## Parallel document/reference adapters
+
+- [`pybtex_metadata_reader`](adapters/bibliography/pybtex_metadata_reader/index.md)
+  — PyBTeX implementation of the vendor-neutral display-metadata boundary.
+- [`document_reference_schema`](adapters/sql/sqlite/document_reference_schema/index.md)
+  — executable empty SQLite schema.
+- [`document_reference_store`](adapters/sql/sqlite/document_reference_store/index.md)
+  — idempotent collection, receipt, missing-query, and binding persistence.
+- [`sha256_pdf_object_store`](adapters/filesystem/sha256_pdf_object_store/index.md)
+  — bounded no-replace content-addressed PDF receipt.
+
+The owning `document_reference` module remains outside the completed
+architecture-documentation milestone; its focused operator contract is in
+[`document-reference-operations.md`](../../../document-reference-operations.md).
+
 All other package modules remain listed as unmigrated in the
 [repository navigator](../../index.md).
 

@@ -11,6 +11,54 @@ MIGRATED_MODULES = {
         "CitationBibliographyMembershipStatus",
         "CitationBibliographyObservationBinding",
     },
+    "catalog": {
+        "CandidateConflictError",
+        "CatalogConflictError",
+        "CatalogError",
+        "CatalogMigrationPlan",
+        "CatalogMigrationRequired",
+        "CatalogSchemaError",
+        "CatalogSchemaInfo",
+        "ReferenceCatalog",
+    },
+    "collections/reconciliation": {
+        "CitationStatus",
+        "CollectionManifest",
+        "CollectionReconciliationError",
+        "CollectionReconciliationRequest",
+        "CollectionReconciliationResult",
+        "CollectionReconciler",
+        "CollectionReference",
+        "CollectionRowEvidence",
+        "CollectionRowsLoadRequest",
+        "CollectionRowsLoadResult",
+        "CollectionRowsLoader",
+        "EvidenceMapping",
+        "ExtraPdf",
+        "IncompleteReconciliationPublicationError",
+        "ManagedPdf",
+        "ManagedPdfScan",
+        "ManagedPdfScanRequest",
+        "ManagedPdfScanResult",
+        "ManagedPdfScanner",
+        "PdfExpectation",
+        "PdfStatus",
+        "ProcessingEvidence",
+        "PublicationResult",
+        "ReconciliationOutputs",
+        "ReconciliationPackageParseRequest",
+        "ReconciliationPackageParseResult",
+        "ReconciliationPackageParser",
+        "ReconciliationPackageVerificationRequest",
+        "ReconciliationPackageVerificationResult",
+        "ReconciliationPackageVerifier",
+        "ReconciliationPublicationRequest",
+        "ReconciliationPublicationResult",
+        "ReconciliationPublisher",
+        "ReconciliationReplayRequest",
+        "ReconciliationReplayResult",
+        "ReconciliationReplayer",
+    },
     "citations": {
         "CitationContentIdentity",
         "CitationKeyResolutionStatus",
@@ -42,10 +90,61 @@ MIGRATED_MODULES = {
         "CitationIdentityProjectionStatus",
         "CitationIdentityProjector",
     },
+    "state_projection_replay": {
+        "ReferenceStateReplayer",
+        "ReferenceStateReplayRequest",
+        "ReferenceStateReplayResult",
+    },
+    "path_safety": {
+        "AddressedFilePublication",
+        "AuthorizedRoot",
+        "AuthorizedRootIdentity",
+        "AuthorizedRootObservation",
+        "AuthorizedRootPublication",
+        "AuthorizedRootScanning",
+        "CloudPlaceholderProbe",
+        "CloudRootMutationError",
+        "DescriptorFilesystem",
+        "FileObservation",
+        "FilesystemBoundaryError",
+        "FilesystemInventory",
+        "FilesystemInventoryIssue",
+        "FilesystemIssueKind",
+        "MacOSFileProviderPlaceholderProbe",
+        "PathLimitError",
+        "PathSafetyError",
+        "PlaceholderObservation",
+        "PlaceholderPreflightError",
+        "PlaceholderProbeIdentity",
+        "PlaceholderProbeSupport",
+        "PlaceholderStatus",
+        "PortablePathValidator",
+        "RootPreflightEvidence",
+        "RootStorageClass",
+        "UnsupportedCloudPlaceholderProbe",
+    },
+}
+MIGRATED_FILE_MODULES = {
+    "adapters/bibliography/pybtex_metadata_reader": {
+        "PybtexBibliographyMetadataReader",
+    },
+    "adapters/filesystem/sha256_pdf_object_store": {
+        "Sha256PdfObjectStore",
+    },
+    "adapters/sql/sqlite/document_reference_schema": {
+        "DocumentReferenceSchema",
+    },
+    "adapters/sql/sqlite/document_reference_store": {
+        "SqliteDocumentReferenceStore",
+    },
 }
 MODULE_DIRECTORIES = {
     name: ARCHITECTURE / "projectkoios" / "references" / name
     for name in MIGRATED_MODULES
+}
+FILE_MODULE_DIRECTORIES = {
+    name: ARCHITECTURE / "projectkoios" / "references" / name
+    for name in MIGRATED_FILE_MODULES
 }
 PACKAGE_DIRECTORIES = {
     ARCHITECTURE / "projectkoios",
@@ -56,19 +155,17 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.acquisition",
     "projectkoios.references.assets",
     "projectkoios.references.biblatex",
-    "projectkoios.references.catalog",
     "projectkoios.references.citation_closure",
     "projectkoios.references.citation_draft",
-    "projectkoios.references.collection_reconciliation",
     "projectkoios.references.coverage",
     "projectkoios.references.enrichment",
+    "projectkoios.references.document_reference",
     "projectkoios.references.graph",
     "projectkoios.references.identity",
     "projectkoios.references.ingestion_evidence",
     "projectkoios.references.io_limits",
     "projectkoios.references.models",
     "projectkoios.references.naming",
-    "projectkoios.references.path_safety",
     "projectkoios.references.pdf_corpus",
     "projectkoios.references.provided_intake",
     "projectkoios.references.reconciliation_package",
@@ -86,7 +183,7 @@ _MERMAID = re.compile(
 
 
 def _public_classes(path: Path) -> set[str]:
-    sources = tuple(path.glob("*.py")) if path.is_dir() else (path,)
+    sources = tuple(path.rglob("*.py")) if path.is_dir() else (path,)
     result: set[str] = set()
     for source in sources:
         tree = ast.parse(source.read_text(encoding="utf-8"))
@@ -100,11 +197,19 @@ def _public_classes(path: Path) -> set[str]:
 
 def _expected_documents() -> set[Path]:
     expected = {ARCHITECTURE / "index.md"}
-    for directory in (*PACKAGE_DIRECTORIES, *MODULE_DIRECTORIES.values()):
+    module_directories = {
+        **MODULE_DIRECTORIES,
+        **FILE_MODULE_DIRECTORIES,
+    }
+    for directory in (*PACKAGE_DIRECTORIES, *module_directories.values()):
         expected.update(directory / name for name in NODE_DOCUMENTS)
-    for module_name, public_classes in MIGRATED_MODULES.items():
+    public_classes_by_module = {
+        **MIGRATED_MODULES,
+        **MIGRATED_FILE_MODULES,
+    }
+    for module_name, public_classes in public_classes_by_module.items():
         expected.update(
-            MODULE_DIRECTORIES[module_name] / class_name / "index.md"
+            module_directories[module_name] / class_name / "index.md"
             for class_name in public_classes
         )
     return expected
@@ -129,11 +234,13 @@ def _source_modules() -> set[str]:
         if path.name != "__init__.py"
     }
     modules.update(
-        f"projectkoios.references.{path.name}"
-        for path in references.iterdir()
+        "projectkoios.references."
+        + ".".join(path.relative_to(references).parts)
+        for path in references.rglob("*")
         if path.is_dir()
         and not path.name.startswith("_")
         and (path / "__init__.py").is_file()
+        and any(child.name != "__init__.py" for child in path.glob("*.py"))
     )
     modules.update(
         f"scripts.{path.stem}"
@@ -153,9 +260,8 @@ def _source_public_class_count() -> int:
         )
         + tuple(
             path
-            for package in references.iterdir()
-            if package.is_dir() and (package / "__init__.py").is_file()
-            for path in package.glob("*.py")
+            for path in references.rglob("*.py")
+            if path.parent != references
         )
         + tuple(
             path
@@ -168,32 +274,46 @@ def _source_public_class_count() -> int:
 
 def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
+    assert not (source_root / "catalog.py").exists()
+    assert (source_root / "catalog" / "__init__.py").is_file()
+    assert not (source_root / "collection_reconciliation.py").exists()
+    assert not (source_root / "collection_reconciliation").exists()
+    assert (
+        source_root / "collections" / "reconciliation" / "__init__.py"
+    ).is_file()
     assert not (source_root / "citation_document.py").exists()
     assert (source_root / "citation_document" / "__init__.py").is_file()
     assert not (source_root / "citation_document" / "target.py").exists()
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
-    for module_name, public_classes in MIGRATED_MODULES.items():
+    public_classes_by_module = {
+        **MIGRATED_MODULES,
+        **MIGRATED_FILE_MODULES,
+    }
+    for module_name, public_classes in public_classes_by_module.items():
         module_file = source_root / f"{module_name}.py"
         module_path = (
-            module_file if module_file.is_file() else source_root / module_name
+            module_file
+            if module_file.is_file()
+            else source_root.joinpath(*module_name.split("/"))
         )
         assert _public_classes(module_path) == public_classes
 
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 46
+    assert len(actual) == 147
 
     mermaid_documents = {
         directory / name
         for directory in (
             *PACKAGE_DIRECTORIES,
             *MODULE_DIRECTORIES.values(),
+            *FILE_MODULE_DIRECTORIES.values(),
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 12
+    assert len(mermaid_documents) == 28
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
@@ -202,12 +322,15 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
     None
 ):
     all_modules = _source_modules()
-    migrated = {f"projectkoios.references.{name}" for name in MIGRATED_MODULES}
+    migrated = {
+        "projectkoios.references." + name.replace("/", ".")
+        for name in MIGRATED_MODULES
+    }
     assert all_modules - migrated == EXPECTED_REMAINING_MODULES
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "46 pages; 269 remain unmigrated" in navigator
+    assert "147 pages; 255 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -216,9 +339,10 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         1
         + package_count * 3
         + len(all_modules) * 3
+        + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 315
+    assert expected_total == 402
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

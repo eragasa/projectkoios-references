@@ -8,10 +8,10 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from enum import StrEnum
-from itertools import islice
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
+from projectkoios.base import DataObjectModel
 from projectkoios.references.acquisition import AcquisitionProjection
 from projectkoios.references.assets import (
     ASSET_AMBIGUITY_STATUSES,
@@ -32,10 +32,12 @@ from projectkoios.references.review import (
 )
 
 if TYPE_CHECKING:
-    from projectkoios.references.collection_reconciliation import (
+    from projectkoios.references.collections.reconciliation.evidence import (
+        ProcessingEvidence,
+    )
+    from projectkoios.references.collections.reconciliation.loading import (
         CollectionRowEvidence,
         ManagedPdf,
-        ProcessingEvidence,
     )
 
 STATE_PROJECTION_SCHEMA_VERSION = 1
@@ -50,6 +52,10 @@ _MAX_CLAIMS = 4096
 _MAX_INPUTS = 4096
 _MAX_EXCLUSIONS = 128
 _MAX_PROJECTION_BYTES = 4_000_000
+STATE_PROJECTION_MAX_CLAIMS = _MAX_CLAIMS
+STATE_PROJECTION_MAX_INPUTS = _MAX_INPUTS
+STATE_PROJECTION_MAX_EXCLUSIONS = _MAX_EXCLUSIONS
+STATE_PROJECTION_MAX_BYTES = _MAX_PROJECTION_BYTES
 _MAX_PROJECTION_CSV_BYTES = 10_000_000
 _MAX_PROJECTION_CSV_FIELD_CHARACTERS = 1_000_000
 _MAX_VALUE_BYTES = 100_000
@@ -125,8 +131,8 @@ class StateDimension(StrEnum):
     CONTRACT_ACCEPTANCE = "contract-acceptance"
 
 
-@dataclass(frozen=True)
-class StateFieldRule:
+@dataclass(frozen=True, slots=True)
+class StateFieldRule(DataObjectModel):
     dimension: StateDimension
     authority_owner: str
     allowed_record_kinds: tuple[StateRecordKind, ...]
@@ -395,8 +401,8 @@ if (
     raise RuntimeError("state field value contracts are incomplete")
 
 
-@dataclass(frozen=True, init=False)
-class StateClaim:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StateClaim(DataObjectModel):
     subject_id: str
     field: str
     knowledge: StateKnowledge
@@ -408,12 +414,6 @@ class StateClaim:
     actor_id: str | None = None
     authority_scope: str | None = None
     actor_verification_record_id: str | None = None
-
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        del args, kwargs
-        raise StateProjectionError(
-            "state claims require a typed observation or decision adapter"
-        )
 
     def __post_init__(self) -> None:
         _content_id(self.subject_id, field="state subject_id")
@@ -492,7 +492,7 @@ class StateClaim:
             raise StateProjectionError(
                 "human decisions require a typed actor-provenanced adapter"
             )
-        return _make_state_claim(
+        return cls(
             subject_id=subject_id,
             field=field,
             knowledge=StateKnowledge.OBSERVED,
@@ -516,7 +516,6 @@ class StateClaim:
         authoritative_input_id: str,
         source_locator: str,
     ) -> StateClaim:
-        del cls
         if knowledge is StateKnowledge.OBSERVED:
             raise StateProjectionError(
                 "observed state requires the observed claim factory"
@@ -528,7 +527,7 @@ class StateClaim:
             raise StateProjectionError(
                 f"{field} does not accept unavailable observations"
             )
-        return _make_state_claim(
+        return cls(
             subject_id=subject_id,
             field=field,
             knowledge=knowledge,
@@ -550,8 +549,8 @@ class StateClaim:
         )
 
 
-@dataclass(frozen=True)
-class ProjectedValue:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProjectedValue(DataObjectModel):
     knowledge: StateKnowledge
     value_json: str | None
     authoritative_input_ids: tuple[str, ...]
@@ -613,8 +612,8 @@ class ProjectedValue:
         )
 
 
-@dataclass(frozen=True)
-class ProjectedField:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProjectedField(DataObjectModel):
     field: str
     dimension: StateDimension
     authority_owner: str
@@ -662,8 +661,8 @@ class ProjectedField:
             )
 
 
-@dataclass(frozen=True, init=False)
-class ReferenceStateProjection:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReferenceStateProjection(DataObjectModel):
     schema_version: int
     artifact_kind: str
     generator_name: str
@@ -675,12 +674,6 @@ class ReferenceStateProjection:
     exclusions: tuple[str, ...]
     exact_replay: bool
     projection_id: str
-
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        del args, kwargs
-        raise StateProjectionError(
-            "state projections can only be created by deterministic replay"
-        )
 
     def __post_init__(self) -> None:
         if self.schema_version != STATE_PROJECTION_SCHEMA_VERSION:
@@ -885,7 +878,7 @@ class ReferenceStateProjection:
                     values=tuple(values),
                 )
             )
-        projection = _make_projection(
+        projection = cls(
             schema_version=_integer(
                 data["schema_version"], field="schema_version"
             ),
@@ -926,105 +919,19 @@ def replay_reference_state(
     authoritative_input_ids: Iterable[str],
     exclusions: Iterable[str] = (),
 ) -> ReferenceStateProjection:
-    """Reduce immutable observations and human decisions without preference."""
-    _content_id(subject_id, field="state subject_id")
-    claim_values = tuple(islice(iter(claims), _MAX_CLAIMS + 1))
-    if len(claim_values) > _MAX_CLAIMS:
-        raise StateProjectionError("state claims exceed the record limit")
-    if any(not isinstance(item, StateClaim) for item in claim_values):
-        raise StateProjectionError("claims must contain StateClaim values")
-    if any(item.subject_id != subject_id for item in claim_values):
-        raise StateProjectionError(
-            "state claim subject differs from projection"
-        )
-    raw_input_ids = tuple(
-        islice(iter(authoritative_input_ids), _MAX_INPUTS + 1)
+    """Compatibility entry point for the typed replay operation."""
+    from projectkoios.references.state_projection_replay import (
+        ReferenceStateReplayer,
+        ReferenceStateReplayRequest,
     )
-    if len(raw_input_ids) > _MAX_INPUTS:
-        raise StateProjectionError(
-            "state projection inputs exceed the record limit"
-        )
-    input_ids = tuple(sorted(set(raw_input_ids)))
-    _ordered_unique_content_ids(input_ids, field="authoritative_input_ids")
-    if not input_ids:
-        raise StateProjectionError(
-            "state projection requires authoritative inputs"
-        )
-    undeclared = {item.authoritative_input_id for item in claim_values} - set(
-        input_ids
+
+    request = ReferenceStateReplayRequest.from_iterables(
+        subject_id=subject_id,
+        claims=claims,
+        authoritative_input_ids=authoritative_input_ids,
+        exclusions=exclusions,
     )
-    if undeclared:
-        raise StateProjectionError(
-            f"state claims cite undeclared inputs: {sorted(undeclared)}"
-        )
-    grouped: dict[str, list[StateClaim]] = {
-        name: [] for name in STATE_FIELD_RULES
-    }
-    for claim in claim_values:
-        grouped[claim.field].append(claim)
-    fields: list[ProjectedField] = []
-    for name in sorted(STATE_FIELD_RULES):
-        rule = STATE_FIELD_RULES[name]
-        by_value: dict[tuple[StateKnowledge, str | None], list[StateClaim]] = {}
-        for claim in grouped[name]:
-            by_value.setdefault((claim.knowledge, claim.value_json), []).append(
-                claim
-            )
-        values = tuple(
-            ProjectedValue(
-                knowledge=knowledge,
-                value_json=value_json,
-                authoritative_input_ids=tuple(
-                    sorted({item.authoritative_input_id for item in items})
-                ),
-                record_kinds=tuple(
-                    sorted({item.record_kind for item in items}, key=str)
-                ),
-                source_locators=tuple(
-                    sorted({item.source_locator for item in items})
-                ),
-            )
-            for (knowledge, value_json), items in sorted(
-                by_value.items(),
-                key=lambda item: (item[0][0].value, item[0][1] or ""),
-            )
-        )
-        fields.append(
-            ProjectedField(
-                field=name,
-                dimension=rule.dimension,
-                authority_owner=rule.authority_owner,
-                resolution=_resolution(values),
-                values=values,
-            )
-        )
-    raw_exclusions = tuple(islice(iter(exclusions), _MAX_EXCLUSIONS + 1))
-    if len(raw_exclusions) > _MAX_EXCLUSIONS:
-        raise StateProjectionError(
-            "state projection exclusions exceed the record limit"
-        )
-    exclusion_values = tuple(sorted(set(raw_exclusions)))
-    payload = {
-        "artifact_kind": STATE_PROJECTION_ARTIFACT_KIND,
-        "authoritative_input_ids": input_ids,
-        "exact_replay": True,
-        "exclusions": exclusion_values,
-        "fields": tuple(fields),
-        "configuration_id": STATE_PROJECTION_CONFIGURATION_ID,
-        "generator_name": STATE_PROJECTION_GENERATOR,
-        "generator_version": STATE_PROJECTION_GENERATOR_VERSION,
-        "schema_version": STATE_PROJECTION_SCHEMA_VERSION,
-        "subject_id": subject_id,
-    }
-    projection = _make_projection(
-        **payload,
-        projection_id=_stable_id("reference-state-projection", payload),
-    )
-    if len(projection.to_json().encode("utf-8")) > _MAX_PROJECTION_BYTES:
-        raise StateProjectionError(
-            "state projection exceeds its aggregate byte limit"
-        )
-    return projection
+    return ReferenceStateReplayer().action(request=request).projection
 
 
 def candidate_state_claims(
@@ -1388,7 +1295,7 @@ def review_state_claims(
             ),
         }[decision.dimension]
         claims.append(
-            _make_state_claim(
+            StateClaim(
                 subject_id=subject_id,
                 field=field,
                 knowledge=StateKnowledge.OBSERVED,
@@ -1835,7 +1742,7 @@ def projection_from_csv(text: str) -> ReferenceStateProjection:
         raise StateProjectionError(
             "state projection CSV schema_version is invalid"
         ) from error
-    projection = _make_projection(
+    projection = ReferenceStateProjection(
         schema_version=schema_version,
         artifact_kind=metadata["artifact_kind"],
         generator_name=metadata["generator_name"],
@@ -1921,14 +1828,6 @@ def projection_to_biblatex(projection: ReferenceStateProjection) -> str:
     return f"@{entry_type}{{{citekey},\n{rendered}\n}}\n"
 
 
-def _make_state_claim(**values: object) -> StateClaim:
-    claim = object.__new__(StateClaim)
-    for name, value in values.items():
-        object.__setattr__(claim, name, value)
-    claim.__post_init__()
-    return claim
-
-
 def _resolution(values: tuple[ProjectedValue, ...]) -> StateResolution:
     if not values:
         return StateResolution.NOT_OBSERVED
@@ -1939,14 +1838,6 @@ def _resolution(values: tuple[ProjectedValue, ...]) -> StateResolution:
         if len(values[0].authoritative_input_ids) > 1
         else StateResolution.SINGLE
     )
-
-
-def _make_projection(**values: object) -> ReferenceStateProjection:
-    projection = object.__new__(ReferenceStateProjection)
-    for name, value in values.items():
-        object.__setattr__(projection, name, value)
-    projection.__post_init__()
-    return projection
 
 
 def _validate_state_value(field: str, value: object) -> None:

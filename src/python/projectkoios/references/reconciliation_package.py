@@ -138,10 +138,10 @@ class ContentEvidence:
         ):
             raise ValueError("content-evidence fields have invalid types")
         return cls(
-            role=cast(str, data["role"]),
-            filename=cast(str, data["filename"]),
-            byte_size=cast(int, data["byte_size"]),
-            sha256=cast(str, data["sha256"]),
+            role=data["role"],
+            filename=data["filename"],
+            byte_size=data["byte_size"],
+            sha256=data["sha256"],
         )
 
 
@@ -168,8 +168,8 @@ class SoftwareIdentity:
         ):
             raise ValueError("software identity fields must be strings")
         return cls(
-            name=cast(str, data["name"]),
-            version=cast(str, data["version"]),
+            name=data["name"],
+            version=data["version"],
         )
 
 
@@ -401,7 +401,7 @@ class ReconciliationPackageManifest:
             )
         source = data["verified_source_tree"]
         manifest = cls(
-            schema_version=cast(int, data["schema_version"]),
+            schema_version=data["schema_version"],
             artifact_kind=cast(str, data["artifact_kind"]),
             collection_id=cast(str, data["collection_id"]),
             asserted_source_revision=cast(
