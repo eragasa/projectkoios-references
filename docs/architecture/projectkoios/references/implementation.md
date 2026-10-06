@@ -30,10 +30,9 @@ sequenceDiagram
 
 The References root initializer is unchanged by these slices. Consumers import
 citation inventory and bibliography binding from their canonical focused
-package facades, identity from its owner, and document control from
-`citation_document`. Moved names on the latter are bounded deprecated
-identity-preserving attributes; there is no root-facade expansion or duplicate
-implementation.
+owner modules, identity from its owner, and document control from
+`citation.document`. Documentation-only package initializers expose no moved
+names or compatibility implementation.
 
 Evidence:
 

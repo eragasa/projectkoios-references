@@ -15,13 +15,12 @@ resolved/ambiguous/unresolved reduction over neutral candidate mappings. Every
 record is frozen, slotted, statically
 `final`, and accepted at composition boundaries only by exact runtime type.
 
-The package has no dependency on `citation_document`. The latter consumes these
-records and temporarily exposes deprecated identity-preserving attributes for
-old imports. Deprecation access does not create a subclass, wrapper, duplicate
-contract, or alternate identity payload.
+The package has no dependency on `citation.document`. The latter consumes these
+records through direct owner-module imports and exposes no compatibility facade,
+wrapper, duplicate contract, or alternate identity payload.
 
 The live adapter evidence and target-owner provenance remain documented by the
-[citation-document implementation](../citation_document/implementation.md).
+[citation-document implementation](../citation/document/implementation.md).
 
 - [Module index](index.md)
 - [Schematic](schematic.md)

@@ -6,7 +6,7 @@ The canonical package implements two one-path actions.
 separate document evidence, projection, linkage, document status, and
 contract bounds. Canonical target DTOs come from `citations`; canonical
 bibliography bindings come from `bibliography`. The dependency direction is
-one-way into `citation_document`.
+one-way into `citation.document`.
 
 ```mermaid
 flowchart TD
@@ -99,23 +99,21 @@ normalized relative POSIX source paths without filesystem mutation policy; its
 SHA-256 is
 `d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
-The facade retains deprecated attributes for moved citation and bibliography
-names. Each resolves to the exact canonical object and emits at most one
-`DeprecationWarning` per name in one process; no wrapper, subclass, alternate
-payload, or duplicate identity is introduced.
+Both package initializers are documentation-only. Canonical types are imported
+directly from their semantic owner modules; no moved export, deprecation proxy,
+wrapper, or duplicate identity remains.
 
 Evidence:
 
-- source facade: [`citation_document/__init__.py`](../../../../../src/python/projectkoios/references/citation_document/__init__.py)
-- projection: [`projection.py`](../../../../../src/python/projectkoios/references/citation_document/projection.py)
-- citation resolution: [`citations/resolution.py`](../../../../../src/python/projectkoios/references/citations/resolution.py)
-- bibliography resolution: [`bibliography/resolution.py`](../../../../../src/python/projectkoios/references/bibliography/resolution.py)
-- linkage: [`linkage.py`](../../../../../src/python/projectkoios/references/citation_document/linkage.py)
-- focused tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
-- live adapter test: [`test__CitationDocumentTargetAdapter.py`](../../../../../tests/test__CitationDocumentTargetAdapter.py)
-- compatibility test: [`test__CitationCompatibilityFacade.py`](../../../../../tests/test__CitationCompatibilityFacade.py)
-- owner fixture: [`ksdft-3ec21b4-compact-result.json`](../../../../../tests/fixtures/citation_document/ksdft-3ec21b4-compact-result.json)
-- contract: [`citation-document.md`](../../../../contracts/citation-document.md)
+- source package: [`citation/document`](../../../../../../src/python/projectkoios/references/citation/document)
+- projection: [`projection.py`](../../../../../../src/python/projectkoios/references/citation/document/projection.py)
+- citation resolution: [`citations/resolution.py`](../../../../../../src/python/projectkoios/references/citations/resolution.py)
+- bibliography resolution: [`bibliography/resolution.py`](../../../../../../src/python/projectkoios/references/bibliography/resolution.py)
+- linkage: [`linkage.py`](../../../../../../src/python/projectkoios/references/citation/document/linkage.py)
+- focused tests: [`test__CitationDocumentProjection.py`](../../../../../../tests/test__CitationDocumentProjection.py)
+- live adapter test: [`test__CitationDocumentTargetAdapter.py`](../../../../../../tests/test__CitationDocumentTargetAdapter.py)
+- owner fixture: [`ksdft-3ec21b4-compact-result.json`](../../../../../../tests/fixtures/citation/document/ksdft-3ec21b4-compact-result.json)
+- contract: [`citation-document.md`](../../../../../contracts/citation-document.md)
 
 - [Module index](index.md)
 - [Schematic](schematic.md)

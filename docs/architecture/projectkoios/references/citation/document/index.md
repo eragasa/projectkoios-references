@@ -1,4 +1,4 @@
-# `projectkoios.references.citation_document`
+# `projectkoios.references.citation.document`
 
 This module consumes a bounded neutral projection of one complete target-owned
 citation snapshot. It correlates exact literal keys to replay-derived reference
@@ -23,23 +23,23 @@ files or owning PDF bytes, rights, review, use, or ingestion state.
 ## Boundaries
 
 The two prototype contract identities are canonical and unversioned. The
-projector consumes canonical [citation inventory](../citations/index.md) and
-[bibliography binding](../bibliography/index.md) records through one-way
+projector consumes canonical [citation inventory](../../citations/index.md) and
+[bibliography binding](../../bibliography/index.md) records through one-way
 package dependencies. It preserves every occurrence and source gap, admits no
 first-match identity selection, and treats `not-observed` as the only safe
 missing-document state. A neutral link means only that an exact descriptor is
 attached to an exact resolved identity.
 
-Moved citation and bibliography attributes remain temporarily available from
-this facade as deprecated identity-preserving aliases. New code imports them
-from their canonical packages.
+The package initializers are documentation-only. Consumers import each owner
+type directly from `document.py`, `linkage.py`, `projection.py`, or
+`statuses.py`; no compatibility facade or moved export remains.
 
-See the [citation document control contracts](../../../../contracts/citation-document.md).
+See the [citation document control contracts](../../../../../contracts/citation-document.md).
 
 ## Detail
 
 - [Schematic](schematic.md)
 - [Implementation](implementation.md)
-- source facade: [`citation_document/__init__.py`](../../../../../src/python/projectkoios/references/citation_document/__init__.py)
-- tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
-- [Package index](../index.md)
+- source package: [`citation/document`](../../../../../../src/python/projectkoios/references/citation/document)
+- tests: [`test__CitationDocumentProjection.py`](../../../../../../tests/test__CitationDocumentProjection.py)
+- [Package index](../../index.md)

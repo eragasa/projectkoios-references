@@ -12,7 +12,7 @@ manuscript use, rights clearance, or publication acceptance.
   and membership state.
 - [`citation_identity`](citation_identity/index.md) — a
   bounded citation-facing projection over replay-derived identity state.
-- [`citation_document`](citation_document/index.md) — deterministic
+- [`citation.document`](citation/document/index.md) — deterministic
   whole-target citation correlation and neutral source-document linkage.
 - [`document_reference`](document_reference/index.md) — independent document
   and reference identity, custody, collection requirements, and neutral binding.

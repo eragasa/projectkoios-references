@@ -69,7 +69,7 @@ MIGRATED_MODULES = {
         "CitationTargetSnapshot",
         "CitationTargetSourceGap",
     },
-    "citation_document": {
+    "citation/document": {
         "CitationDocumentAvailabilityStatus",
         "CitationDocumentProjection",
         "CitationDocumentProjectionItem",
@@ -355,8 +355,22 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         source_root / "collections" / "reconciliation" / "__init__.py"
     ).is_file()
     assert not (source_root / "citation_document.py").exists()
-    assert (source_root / "citation_document" / "__init__.py").is_file()
-    assert not (source_root / "citation_document" / "target.py").exists()
+    assert not (source_root / "citation_document").exists()
+    citation = source_root / "citation"
+    citation_document = citation / "document"
+    assert citation_document.is_dir()
+    for initializer in (
+        citation / "__init__.py",
+        citation_document / "__init__.py",
+    ):
+        tree = ast.parse(initializer.read_text(encoding="utf-8"))
+        assert all(
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            for node in tree.body
+        ), initializer
+    assert not (citation_document / "target.py").exists()
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
     public_classes_by_module = {
@@ -427,7 +441,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
 def test__citation_package_dependencies_are_one_way() -> None:
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
-    forbidden_document = "projectkoios.references.citation_document"
+    forbidden_document = "projectkoios.references.citation.document"
     forbidden_bibliography = "projectkoios.references.bibliography"
     for package_name in ("citations", "bibliography"):
         for source in (source_root / package_name).glob("*.py"):
