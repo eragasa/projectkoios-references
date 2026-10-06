@@ -336,6 +336,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         "collections/pdf_requirement.py",
         "documents/stored_pdf.py",
         "replay/same_store",
+        "replay/same",
     ):
         assert not (document_reference / obsolete).exists()
     for initializer in (

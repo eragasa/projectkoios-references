@@ -2,7 +2,7 @@
 
 from abc import ABC
 
-from ....base import (
+from ...base import (
     AbstractDocumentReferenceDataObject,
 )
 

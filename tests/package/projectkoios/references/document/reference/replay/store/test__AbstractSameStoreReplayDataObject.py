@@ -6,7 +6,7 @@ import pytest
 from projectkoios.references.document.reference.base import (
     AbstractDocumentReferenceDataObject,
 )
-from projectkoios.references.document.reference.replay.same.store.base import (
+from projectkoios.references.document.reference.replay.store.base import (
     AbstractSameStoreReplayDataObject,
 )
 
