@@ -329,6 +329,18 @@ def _source_public_class_count() -> int:
 
 def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
+    assert not (source_root / "asset_application.py").exists()
+    asset_application = source_root / "asset_application"
+    assert asset_application.is_dir()
+    asset_initializer = ast.parse(
+        (asset_application / "__init__.py").read_text(encoding="utf-8")
+    )
+    assert all(
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        for node in asset_initializer.body
+    )
     assert not (source_root / "catalog.py").exists()
     assert not (source_root / "document_reference.py").exists()
     document_reference = source_root / "document_reference"

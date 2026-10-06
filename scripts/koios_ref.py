@@ -17,9 +17,13 @@ from projectkoios.references.acquisition import (
     publish_acquisition_manifest,
     verify_acquisition_manifest,
 )
-from projectkoios.references.asset_application import (
-    AssetApplicationError,
+from projectkoios.references.asset_application.action import (
     AssetApplicationOperation,
+)
+from projectkoios.references.asset_application.errors import (
+    AssetApplicationError,
+)
+from projectkoios.references.asset_application.request import (
     AssetApplicationOperationRequest,
 )
 from projectkoios.references.assets import (

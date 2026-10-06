@@ -1,10 +1,11 @@
 # Asset-application implementation
 
-`asset_application.py` owns the runtime-neutral composite request, actionizer,
-result, stable action identity, and selection error. It directly composes
-existing References-owned types and actions from `assets.py`, `identity.py`,
-`catalog`, `models.py`, and `path_safety` without copying their invariants or
-adding a compatibility facade.
+The semantic `asset_application` package owns one explicit spine:
+`request.py`, `action.py`, and `result.py`, with the expected selection error in
+`errors.py`. Its initializer is documentation-only and provides no compatibility
+facade. The package directly composes existing References-owned types and
+actions from `assets.py`, `identity.py`, `catalog`, `models.py`, and
+`path_safety` without copying their invariants.
 
 ```mermaid
 flowchart TD
