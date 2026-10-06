@@ -28,6 +28,32 @@ Explicit-path read, observe, and write functions are adapters that authorize
 the parent root and immediately perform the descriptor-confined operation.
 The metadata-only `assert_safe_explicit_path` function was deleted.
 
+## VVUQ classification
+
+This test suite supplies bounded `software_verification` evidence only. It does
+not establish `numerical_verification`, `scientific_validation`, or
+`uncertainty_quantification`; this filesystem/citation slice contains no
+numerical method, physical model, scientific reference comparison, or
+uncertainty-propagation protocol.
+
+## Software-verification command
+
+Run the complete maintained suite from this worktree with:
+
+```bash
+PYTHONPATH=$PWD/src/python python -m pytest -q --disable-warnings
+```
+
+The implementation milestone completed with `467 passed`. These are routine,
+unmarked software tests; they have not been admitted as formal claim-bearing
+evidence with structured declaration records. Focused class-level software
+verification is documented on the relevant class pages. In addition,
+`test__removed_facades__are_not_public_api` in
+`tests/package/projectkoios/references/filesystem/root/test__RootComposition.py`
+proves that the old root exports are absent, while
+`tests/test__ArchitectureDocumentation.py` proves that the `path_safety`
+package is absent and semantic package initializers are Docstring-only.
+
 ```mermaid
 flowchart LR
   Caller --> Root[AuthorizedRoot]
