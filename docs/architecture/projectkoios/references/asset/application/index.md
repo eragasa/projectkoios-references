@@ -1,4 +1,4 @@
-# `projectkoios.references.asset_application`
+# `projectkoios.references.asset.application`
 
 Runtime-neutral References-owned operation for applying one explicitly
 authorized asset under its canonical filename, optionally coupled to the
@@ -10,7 +10,7 @@ schema-5 working catalog transaction.
 - [`AssetApplicationError`](AssetApplicationError/index.md)
 
 The stable action identity is
-`projectkoios.references.asset_application.operation@1`. An external Workflow
+`projectkoios.references.asset.application@1`. An external Workflow
 CPN transition may bind that identity explicitly and use the request/result as
 token colors. References retains authority validation, source and destination
 preflight, no-replace publication, catalog conflict checks, and transaction
@@ -19,4 +19,4 @@ state is defined here.
 
 - [Schematic](schematic.md)
 - [Implementation](implementation.md)
-- [`projectkoios.references`](../index.md)
+- [`projectkoios.references`](../../index.md)

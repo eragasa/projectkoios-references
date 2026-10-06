@@ -9,17 +9,17 @@ from projectkoios.base import (
     DataObjectActionRequest,
     DataObjectActionResult,
 )
-from projectkoios.references.asset_application.action import (
+from projectkoios.references.asset.application.action import (
     ASSET_APPLICATION_OPERATION_ACTION_ID,
     AssetApplicationOperation,
 )
-from projectkoios.references.asset_application.errors import (
+from projectkoios.references.asset.application.error import (
     AssetApplicationError,
 )
-from projectkoios.references.asset_application.request import (
+from projectkoios.references.asset.application.request import (
     AssetApplicationOperationRequest,
 )
-from projectkoios.references.asset_application.result import (
+from projectkoios.references.asset.application.result import (
     AssetApplicationOperationResult,
 )
 from projectkoios.references.assets import (

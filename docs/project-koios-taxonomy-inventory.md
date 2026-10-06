@@ -21,7 +21,7 @@ root-facade count includes constants, records, exceptions, and functions.
 | Family | Objects | Actions | Helpers | Root facade | Primary tests | Disposition |
 |---|---:|---:|---:|---:|---|---|
 | `acquisition` | 8 | 3 | 18 | 18 | `test__AcquisitionManifest.py` | OUT_OF_SCOPE |
-| `asset_application` | 4 | 0 | 0 | 0 | mirrored `tests/package/projectkoios/references/asset_application/` | IMPLEMENTED |
+| `asset.application` | 4 | 0 | 0 | 0 | mirrored `tests/package/projectkoios/references/asset/application/` | IMPLEMENTED |
 | `assets` | 11 | 3 | 12 | 13 | `test__AssetDiscovery.py` | OUT_OF_SCOPE |
 | `biblatex` | 3 | 2 | 4 | 2 | `test__BibLaTeXImport.py` | OUT_OF_SCOPE |
 | `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | OUT_OF_SCOPE |

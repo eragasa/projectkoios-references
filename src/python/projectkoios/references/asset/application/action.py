@@ -14,12 +14,12 @@ from projectkoios.references.io_limits import ASSET_DISCOVERY_IO_LIMITS
 from projectkoios.references.models import SourceAssetRecord
 from projectkoios.references.path_safety import read_path_text
 
-from .errors import AssetApplicationError
+from .error import AssetApplicationError
 from .request import AssetApplicationOperationRequest
 from .result import AssetApplicationOperationResult
 
 ASSET_APPLICATION_OPERATION_ACTION_ID = (
-    "projectkoios.references.asset_application.operation@1"
+    "projectkoios.references.asset.application@1"
 )
 
 

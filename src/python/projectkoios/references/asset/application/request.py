@@ -12,7 +12,7 @@ from projectkoios.references.path_safety import (
     validate_relative_path,
 )
 
-from .errors import AssetApplicationError
+from .error import AssetApplicationError
 
 
 @final

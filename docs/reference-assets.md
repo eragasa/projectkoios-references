@@ -66,7 +66,7 @@ unselected asset fails before a filesystem root is opened.
 `assets-apply` is a thin operator adapter over the runtime-neutral
 `AssetApplicationOperationRequest -> AssetApplicationOperation ->
 AssetApplicationOperationResult` References owner action. Its stable identity,
-`projectkoios.references.asset_application.operation@1`, is available for
+`projectkoios.references.asset.application@1`, is available for
 explicit Workflow CPN transition binding; References defines no scheduler,
 marking, retry, approval, or transition-occurrence state. The operation remains
 one indivisible transition binding and requires canonical authorization and

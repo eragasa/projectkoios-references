@@ -1,11 +1,12 @@
 # Asset-application implementation
 
-The semantic `asset_application` package owns one explicit spine:
+The semantic `asset.application` package owns one explicit spine:
 `request.py`, `action.py`, and `result.py`, with the expected selection error in
-`errors.py`. Its initializer is documentation-only and provides no compatibility
-facade. The package directly composes existing References-owned types and
-actions from `assets.py`, `identity.py`, `catalog`, `models.py`, and
-`path_safety` without copying their invariants.
+`error.py`. Both `asset` and `asset.application` initializers are
+documentation-only and provide no compatibility facade. The package directly
+composes existing References-owned types and actions from `assets.py`,
+`identity.py`, `catalog`, `models.py`, and `path_safety` without copying their
+invariants.
 
 ```mermaid
 flowchart TD
