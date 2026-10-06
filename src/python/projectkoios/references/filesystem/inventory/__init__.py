@@ -1,0 +1,1 @@
+"""Immutable filesystem inventory records."""

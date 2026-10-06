@@ -1,0 +1,1 @@
+"""Verified file copy publication."""

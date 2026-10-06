@@ -9,6 +9,40 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Self
 
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+    validate_root_alias,
+)
+from projectkoios.references.filesystem.publication.error import (
+    FilesystemPublicationError,
+)
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.error import (
+    PlaceholderPreflightError,
+)
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.observation import (
+    PlaceholderObservation,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.filesystem.root.preflight.support import (
+    PlaceholderProbeSupport,
+)
 from projectkoios.references.identity import (
     ActorProvenance,
     IdentityProjection,
@@ -20,21 +54,6 @@ from projectkoios.references.io_limits import (
     ReferenceIOLimits,
     bounded_utf8_size,
     validate_json_text_nesting,
-)
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    PathLimitError,
-    PathSafetyError,
-    PlaceholderObservation,
-    PlaceholderPreflightError,
-    PlaceholderProbeSupport,
-    PlaceholderStatus,
-    RootPreflightEvidence,
-    RootStorageClass,
-    validate_citekey,
-    validate_relative_path,
-    validate_root_alias,
 )
 
 
@@ -831,7 +850,7 @@ class AssetDiscoveryPlanner:
                     max_entries=entries_per_root,
                     max_depth=64,
                 )
-            except PathLimitError as error:
+            except FilesystemLimitError as error:
                 raise _limit_error(error, limits) from error
             files_seen += len(relative_files)
             for relative in relative_files:
@@ -866,7 +885,7 @@ class AssetDiscoveryPlanner:
                         max_bytes=max_file_bytes,
                         prefix_bytes=4,
                     )
-                except PathLimitError as error:
+                except FilesystemLimitError as error:
                     raise _limit_error(error, limits) from error
                 if observation.byte_size <= 0:
                     raise ValueError("asset candidate is empty")
@@ -1071,7 +1090,7 @@ def materialize_asset_with_result(
             max_bytes=max_file_bytes,
             prefix_bytes=4,
         )
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise _limit_error(error, limits) from error
     if source_observation.prefix != b"%PDF":
         raise ValueError("candidate source is no longer a PDF")
@@ -1117,9 +1136,9 @@ def materialize_asset_with_result(
             expected_size=candidate.byte_size,
         )
         return AssetMaterializationResult(created, created=True)
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise _limit_error(error, limits) from error
-    except PathSafetyError as error:
+    except FilesystemOperationError as error:
         if "source identity changed" in str(error):
             raise ValueError(
                 "candidate source hash or size changed after planning"
@@ -1167,7 +1186,7 @@ def rollback_materialized_asset(
     del destination_storage_class, limits
     if not isinstance(result, AssetMaterializationResult) or not result.created:
         raise ValueError("rollback requires a newly materialized asset")
-    raise PathSafetyError(
+    raise FilesystemPublicationError(
         "automatic asset rollback is disabled because portable conditional "
         "unlink cannot bind deletion to the verified inode"
     )
@@ -1376,7 +1395,7 @@ def _required_limit(value: int | None, name: str) -> int:
 
 
 def _limit_error(
-    error: PathLimitError,
+    error: FilesystemLimitError,
     limits: ReferenceIOLimits,
 ) -> ReferenceIOLimitError:
     return ReferenceIOLimitError(

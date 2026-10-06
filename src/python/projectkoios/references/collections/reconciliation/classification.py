@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from projectkoios.base import DataObjectModel
 from projectkoios.references.assets import AssetDiscoveryPlan
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.citation_closure import (
     CitationClosure,
 )
@@ -16,12 +17,13 @@ from projectkoios.references.coverage import (
     CoverageState,
     ReferenceCoverage,
 )
-from projectkoios.references.identity import ReferenceCandidate
-from projectkoios.references.path_safety import (
+from projectkoios.references.filesystem.root.preflight.observation import (
     PlaceholderObservation,
-    PlaceholderStatus,
-    validate_citekey,
 )
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.identity import ReferenceCandidate
 
 from ._contract import (
     _EXPECTED_PDF_TYPES,

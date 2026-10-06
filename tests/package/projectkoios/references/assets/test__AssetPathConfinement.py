@@ -3,10 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from projectkoios.references import (
-    PathSafetyError,
-    RootStorageClass,
-)
 from projectkoios.references.assets import (
     AssetCandidate,
     AssetCandidateDisposition,
@@ -16,6 +12,12 @@ from projectkoios.references.assets import (
     CanonicalAssetAuthorization,
     SearchRoot,
     materialize_asset,
+)
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from projectkoios.references.identity import (
     ActorAuthorityScope,
@@ -112,7 +114,7 @@ def test__asset_scan__rejects_symlink_file_and_directory(
     file_root = tmp_path / "file-root"
     file_root.mkdir()
     (file_root / "example2026.pdf").symlink_to(external)
-    with pytest.raises(PathSafetyError, match="symlink"):
+    with pytest.raises(FilesystemOperationError, match="symlink"):
         AssetDiscoveryPlanner().scan(
             (_record(),),
             (SearchRoot("papers", file_root, RootStorageClass.LOCAL),),
@@ -124,7 +126,7 @@ def test__asset_scan__rejects_symlink_file_and_directory(
         outside,
         target_is_directory=True,
     )
-    with pytest.raises(PathSafetyError, match="symlink"):
+    with pytest.raises(FilesystemOperationError, match="symlink"):
         AssetDiscoveryPlanner().scan(
             (_record(),),
             (SearchRoot("papers", directory_root, RootStorageClass.LOCAL),),
@@ -148,7 +150,7 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     outside.write_bytes(content)
     source.unlink()
     source.symlink_to(outside)
-    with pytest.raises(PathSafetyError):
+    with pytest.raises(FilesystemOperationError):
         materialize_asset(
             candidate,
             authorization=authorization,
@@ -167,7 +169,7 @@ def test__materialize_asset__rechecks_source_and_destination_symlinks(
     protected = tmp_path / "protected.pdf"
     protected.write_bytes(b"do not replace")
     (destination / "example2026.pdf").symlink_to(protected)
-    with pytest.raises(PathSafetyError):
+    with pytest.raises(FilesystemOperationError):
         materialize_asset(
             candidate,
             authorization=authorization,

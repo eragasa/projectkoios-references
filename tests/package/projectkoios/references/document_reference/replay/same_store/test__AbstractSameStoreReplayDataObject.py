@@ -11,9 +11,7 @@ from projectkoios.references.document_reference.replay.same_store.base import (
 )
 
 
-class _ConcreteSameStoreReplayDataObject(
-    AbstractSameStoreReplayDataObject
-):
+class _ConcreteSameStoreReplayDataObject(AbstractSameStoreReplayDataObject):
     __slots__ = ()
 
     def __init__(self) -> None:

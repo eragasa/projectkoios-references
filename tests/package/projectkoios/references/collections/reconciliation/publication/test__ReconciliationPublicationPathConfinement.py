@@ -3,9 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from projectkoios.references import (
-    RootStorageClass,
-)
 from projectkoios.references.collections.reconciliation.errors import (
     CollectionReconciliationError,
 )
@@ -19,6 +16,9 @@ from projectkoios.references.collections.reconciliation.publication import (
 from projectkoios.references.collections.reconciliation.reconciliation import (
     CollectionReconciler,
     CollectionReconciliationRequest,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,

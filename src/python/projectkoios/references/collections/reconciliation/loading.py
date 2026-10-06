@@ -16,6 +16,34 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.read import read_path_bytes
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.action import (
+    authorize_root_preflight,
+)
+from projectkoios.references.filesystem.root.preflight.error import (
+    PlaceholderPreflightError,
+)
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.observation import (
+    PlaceholderObservation,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.io_limits import (
     RECONCILIATION_IO_LIMITS,
     ReferenceIOLimitError,
@@ -23,20 +51,6 @@ from projectkoios.references.io_limits import (
     bounded_csv_field_size,
     bounded_utf8_size,
     validate_json_text_nesting,
-)
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    PathLimitError,
-    PathSafetyError,
-    PlaceholderObservation,
-    PlaceholderPreflightError,
-    PlaceholderStatus,
-    RootPreflightEvidence,
-    RootStorageClass,
-    authorize_root_preflight,
-    read_path_bytes,
-    validate_citekey,
 )
 from projectkoios.references.reconciliation_package import ContentEvidence
 
@@ -226,7 +240,7 @@ class CollectionRowsLoader(
                 placeholder_probe=placeholder_probe,
                 max_bytes=max_csv_bytes,
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise _limit_error(error, limits) from error
         try:
             text = content.decode("utf-8")
@@ -276,7 +290,7 @@ class CollectionRowsLoader(
                         )
                     try:
                         validate_citekey(citekey)
-                    except PathSafetyError as error:
+                    except FilesystemOperationError as error:
                         raise CollectionReconciliationError(
                             f"collection row has an unsafe citekey: {citekey}"
                         ) from error
@@ -401,11 +415,11 @@ class ManagedPdfScanner(
                 max_entries=_required_limit(limits.max_entries, "max_entries"),
                 max_depth=1,
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise _limit_error(error, limits) from error
         except PlaceholderPreflightError:
             raise
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise CollectionReconciliationError(str(error)) from error
         if (source_discovery is None) != (
             source_discovery_storage_class is None
@@ -445,11 +459,11 @@ class ManagedPdfScanner(
                 observation = root.observe_file(
                     relative, max_bytes=max_file_bytes, prefix_bytes=5
                 )
-            except PathLimitError as error:
+            except FilesystemLimitError as error:
                 raise _limit_error(error, limits) from error
             except PlaceholderPreflightError:
                 raise
-            except PathSafetyError as error:
+            except FilesystemOperationError as error:
                 raise CollectionReconciliationError(str(error)) from error
             byte_size = observation.byte_size
             if byte_size <= 0:
@@ -539,7 +553,7 @@ def _load_source_discovery(
             placeholder_probe=placeholder_probe,
             max_bytes=_required_limit(limits.max_json_bytes, "max_json_bytes"),
         )
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise _limit_error(error, limits) from error
     try:
         text = content.decode("utf-8")
@@ -602,7 +616,7 @@ def _load_source_discovery(
             )
         try:
             validate_citekey(citekey, field="source-discovery citekey")
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise CollectionReconciliationError(str(error)) from error
         if citekey in result:
             raise CollectionReconciliationError(

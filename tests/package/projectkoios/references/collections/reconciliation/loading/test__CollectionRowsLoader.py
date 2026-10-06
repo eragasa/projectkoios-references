@@ -7,7 +7,9 @@ from projectkoios.references.collections.reconciliation.loading import (
     CollectionRowsLoadRequest,
     CollectionRowsLoadResult,
 )
-from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 
 def test__CollectionRowsLoader__returns_deterministic_typed_evidence(

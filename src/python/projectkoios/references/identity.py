@@ -7,15 +7,15 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import StrEnum
 from typing import Any, Self, cast
 
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+)
 from projectkoios.references.io_limits import (
     IDENTITY_IO_LIMITS,
     validate_json_text_nesting,
 )
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import (
-    validate_citekey,
-    validate_relative_path,
-)
 
 _IDENTITY_SCHEMA_VERSION = 1
 _MAX_TEXT = 4096

@@ -1,0 +1,1 @@
+"""Filesystem root preflight contracts."""

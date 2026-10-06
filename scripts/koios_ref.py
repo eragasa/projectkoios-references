@@ -58,6 +58,15 @@ from projectkoios.references.collections.reconciliation.reconciliation import (
 )
 from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.path.create import create_path_bytes
+from projectkoios.references.filesystem.path.read import (
+    read_path_bytes,
+    read_path_text,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.graph import load_candidate_graph
 from projectkoios.references.identity import IdentityProjection
 from projectkoios.references.ingestion_evidence import (
@@ -75,13 +84,6 @@ from projectkoios.references.io_limits import (
     bounded_utf8_size,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import (
-    PathLimitError,
-    RootStorageClass,
-    read_path_bytes,
-    read_path_text,
-    write_path_bytes,
-)
 from projectkoios.references.review import ReviewProjection
 from projectkoios.references.validation import validate_reference_objects
 
@@ -605,13 +607,12 @@ class ReferencesOperatorAdapter:
                 .render(request=CitationDraftRenderRequest(entries=entries))
                 .bibliography
             )
-            write_path_bytes(
+            create_path_bytes(
                 args.output,
                 bibliography,
                 label="rendered citation draft",
                 root_alias="rendered-citation-draft",
                 storage_class=args.output_storage_class,
-                replace=False,
             )
             print(
                 json.dumps(
@@ -958,13 +959,12 @@ class ReferencesOperatorAdapter:
                 imported.candidates,
                 tuple(args.search_root),
             )
-            write_path_bytes(
+            create_path_bytes(
                 args.output,
                 plan.to_json().encode("utf-8"),
                 label="asset discovery plan",
                 root_alias="asset-plan-output",
                 storage_class=args.output_storage_class,
-                replace=False,
             )
             print(f"wrote {len(plan.candidates)} candidates to {args.output}")
             return 0
@@ -1211,7 +1211,7 @@ class ReferencesOperatorAdapter:
                 storage_class=storage_class,
                 max_bytes=max_csv_bytes,
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise ReferenceIOLimitError(
                 resource=error.resource,
                 limit_name="max_csv_bytes",

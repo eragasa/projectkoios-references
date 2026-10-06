@@ -13,16 +13,13 @@ from projectkoios.references import (
     AcquisitionManifest,
     AssetDiscoveryPlan,
     AssetDiscoveryPlanner,
-    AuthorizedRoot,
     CitationGraphLimitError,
     GraphImportLimits,
-    PathLimitError,
     ProducerIdentity,
     ReconciliationPackageLimitError,
     ReconciliationPackageManifest,
     ReferenceCandidate,
     ReferenceIOLimitError,
-    RootStorageClass,
     SearchRoot,
     create_acquisition_manifest,
     materialize_asset,
@@ -40,6 +37,11 @@ from projectkoios.references.enrichment import (
     ProviderResponseError,
     TransportRequest,
     TransportResponse,
+)
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from test_asset_authorization_helpers import authorize_asset
 
@@ -118,14 +120,14 @@ def test__authorized_root__streams_digest_and_bounds_directory_before_sort(
     assert observation.byte_size == len(content)
     assert observation.prefix == b"%PDF-"
 
-    with pytest.raises(PathLimitError) as failure:
+    with pytest.raises(FilesystemLimitError) as failure:
         root.observe_file("large.pdf", max_bytes=len(content) - 1)
     assert failure.value.coverage_status == "incomplete"
     assert failure.value.observed == len(content)
 
     for name in ("a.txt", "b.txt", "c.txt"):
         (tmp_path / name).write_text(name, encoding="utf-8")
-    with pytest.raises(PathLimitError) as scan_failure:
+    with pytest.raises(FilesystemLimitError) as scan_failure:
         root.iter_files(
             suffix=".txt",
             recursive=False,

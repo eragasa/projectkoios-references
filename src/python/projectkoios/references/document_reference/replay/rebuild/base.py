@@ -7,9 +7,7 @@ from ...base import (
 )
 
 
-class AbstractRebuildReplayDataObject(
-    AbstractDocumentReferenceDataObject, ABC
-):
+class AbstractRebuildReplayDataObject(AbstractDocumentReferenceDataObject, ABC):
     """Identify data objects for independent rebuild contracts."""
 
     __slots__ = ()

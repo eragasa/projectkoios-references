@@ -13,6 +13,9 @@ from projectkoios.references.collections.reconciliation.evidence import (
 from projectkoios.references.collections.reconciliation.loading import (
     ManagedPdf,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.ingestion_evidence import (
     REFERENCE_EVIDENCE_CONTRACT_STATUS,
     REFERENCE_EVIDENCE_MAX_BYTES,
@@ -26,7 +29,6 @@ from projectkoios.references.ingestion_evidence import (
 from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput as _ReferenceEvidenceInput,
 )
-from projectkoios.references.path_safety import RootStorageClass
 
 from scripts.koios_ref import main
 

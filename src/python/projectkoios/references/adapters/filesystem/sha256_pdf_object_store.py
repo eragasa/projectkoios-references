@@ -18,12 +18,14 @@ from projectkoios.references.document_reference.documents.stored_pdf import (
 from projectkoios.references.document_reference.errors import (
     DocumentReferenceStoreError,
 )
-from projectkoios.references.path_safety.errors import (
-    PathLimitError,
-    PathSafetyError,
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
 )
-from projectkoios.references.path_safety.preflight import RootStorageClass
-from projectkoios.references.path_safety.root import AuthorizedRoot
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 
 @final
@@ -65,18 +67,18 @@ class Sha256PdfObjectStore:
                 "declared PDF byte size is outside the configured cap"
             )
         try:
-            publication = self._root.write_stream_addressed(
+            publication = self._root.publish_addressed_stream(
                 stream,
                 suffix=".pdf",
                 max_bytes=self._max_pdf_bytes,
                 required_prefix=b"%PDF-",
                 expected_size=declared_byte_size,
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise PdfUploadTooLarge(
                 "PDF upload exceeds the configured byte cap"
             ) from error
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise DocumentContentConflict(
                 "the SHA-addressed PDF object could not be verified"
             ) from error

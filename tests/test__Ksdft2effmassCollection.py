@@ -8,10 +8,12 @@ from projectkoios.references import (
     CoverageObservation,
     CoverageState,
     LegacySeedMapping,
-    RootStorageClass,
 )
 from projectkoios.references import (
     load_bibliography as _load_bibliography,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 
 

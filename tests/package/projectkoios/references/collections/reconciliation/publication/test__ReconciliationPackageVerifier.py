@@ -42,6 +42,9 @@ from projectkoios.references.coverage import (
     CoverageState,
     ReferenceCoverage,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
@@ -54,7 +57,6 @@ from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput as _ReferenceEvidenceInput,
 )
 from projectkoios.references.io_limits import ReferenceIOLimitError
-from projectkoios.references.path_safety import RootStorageClass
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,
     FrozenCounts,

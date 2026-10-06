@@ -2,7 +2,7 @@
 
 `Sha256PdfObjectStore` owns bounded PDF-byte receipt beneath one explicit
 `AuthorizedRoot`. It delegates descriptor-confined no-replace publication to
-`AuthorizedRoot.write_stream_addressed`, requires `%PDF-`, and returns only
+`AuthorizedRoot.publish_addressed_stream`, requires `%PDF-`, and returns only
 digest, byte size, and create/deduplicate disposition to the owning operation.
 
 It never returns a path through the Web-facing result and never binds a citekey.

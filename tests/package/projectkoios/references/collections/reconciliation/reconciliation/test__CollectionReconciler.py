@@ -36,6 +36,9 @@ from projectkoios.references.collections.reconciliation.reconciliation import (
     CollectionReconciler,
     CollectionReconciliationRequest,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
@@ -47,7 +50,6 @@ from projectkoios.references.ingestion_evidence import (
     load_ingestion_reference_evidence,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import RootStorageClass
 from projectkoios.references.review import (
     HumanReviewDecision,
     HumanReviewDimension,

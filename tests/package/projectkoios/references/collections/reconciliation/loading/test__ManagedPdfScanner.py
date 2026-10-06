@@ -10,7 +10,9 @@ from projectkoios.references.collections.reconciliation.loading import (
     ManagedPdfScanner,
     ManagedPdfScanRequest,
 )
-from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 
 def test__ManagedPdfScanner__rejects_non_pdf_bytes(tmp_path: Path) -> None:

@@ -7,14 +7,14 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Self, cast
 
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+    validate_root_alias,
+)
 from projectkoios.references.io_limits import (
     RECONCILIATION_IO_LIMITS,
     validate_json_text_nesting,
-)
-from projectkoios.references.path_safety import (
-    validate_citekey,
-    validate_relative_path,
-    validate_root_alias,
 )
 
 _MAX_COVERAGE_REFERENCES = 10_000

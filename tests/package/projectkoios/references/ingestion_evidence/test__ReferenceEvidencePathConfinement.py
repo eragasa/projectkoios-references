@@ -4,12 +4,12 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from projectkoios.references import (
-    PathSafetyError,
-    RootStorageClass,
-)
+from projectkoios.references.citation.key.error import CitationKeyError
 from projectkoios.references.collections.reconciliation.loading import (
     ManagedPdf,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from projectkoios.references.ingestion_evidence import (
     IngestionEvidenceVerificationError,
@@ -35,7 +35,7 @@ def test__reference_evidence_input__rejects_traversal_and_symlink_file(
     external = outside / "evidence.json"
     external.write_bytes(fixture.read_bytes())
 
-    with pytest.raises(PathSafetyError, match="citekey"):
+    with pytest.raises(CitationKeyError, match="citekey"):
         ReferenceEvidenceInput("../outside", external)
 
     link = tmp_path / "evidence.json"

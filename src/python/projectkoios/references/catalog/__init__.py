@@ -6,17 +6,19 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from projectkoios.references.filesystem.root.error import CloudRootMutationError
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.graph import CitationGraph
 from projectkoios.references.identity import (
     ReferenceCandidate,
     SourceBibliographyObservation,
 )
 from projectkoios.references.models import AbstractRecord, SourceAssetRecord
-from projectkoios.references.path_safety import (
-    CloudPlaceholderProbe,
-    CloudRootMutationError,
-    RootStorageClass,
-)
 from projectkoios.references.review import (
     HumanReviewDecision,
     ReviewProjection,

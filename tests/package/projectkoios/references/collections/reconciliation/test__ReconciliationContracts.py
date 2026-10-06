@@ -55,7 +55,9 @@ from projectkoios.references.collections.reconciliation.reconciliation import (
     CollectionReconciliationRequest,
     CollectionReconciliationResult,
 )
-from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 _MODELS = (
     CollectionManifest,

@@ -145,33 +145,48 @@ MIGRATED_MODULES = {
         "UnknownDocument",
         "UnknownReference",
     },
-    "path_safety": {
+    "filesystem": {
         "AddressedFilePublication",
+        "AnonymousFilePublisher",
         "AuthorizedRoot",
         "AuthorizedRootIdentity",
-        "AuthorizedRootObservation",
-        "AuthorizedRootPublication",
-        "AuthorizedRootScanning",
         "CloudPlaceholderProbe",
         "CloudRootMutationError",
-        "DescriptorFilesystem",
+        "DirectoryPublisher",
         "FileObservation",
         "FilesystemBoundaryError",
+        "FilesystemDescriptorError",
         "FilesystemInventory",
         "FilesystemInventoryIssue",
         "FilesystemIssueKind",
-        "MacOSFileProviderPlaceholderProbe",
-        "PathLimitError",
-        "PathSafetyError",
+        "FilesystemLimitError",
+        "FilesystemObservationError",
+        "FilesystemOperationError",
+        "FilesystemPathError",
+        "FilesystemPublicationError",
+        "FilesystemScanningError",
+        "InventoryScanner",
         "PlaceholderObservation",
         "PlaceholderPreflightError",
-        "PlaceholderProbeIdentity",
+        "PlaceholderProbe",
         "PlaceholderProbeSupport",
         "PlaceholderStatus",
-        "PortablePathValidator",
+        "PublishedFileVerifier",
+        "RootBoundPlaceholderProbeFactory",
+        "RootDescriptor",
+        "RootObservation",
         "RootPreflightEvidence",
+        "RootPublication",
+        "RootScanning",
         "RootStorageClass",
+        "StrictFileScanner",
         "UnsupportedCloudPlaceholderProbe",
+        "VerifiedFileCopier",
+    },
+    "citation/key": {"CitationKeyError"},
+    "adapters/filesystem/linux": set(),
+    "adapters/filesystem/macos": {
+        "MacOSFileProviderPlaceholderProbe",
     },
 }
 MIGRATED_FILE_MODULES = {
@@ -359,6 +374,21 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     assert not (source_root / "citation_document" / "target.py").exists()
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
+    assert not (source_root / "path_safety").exists()
+    for hierarchy in (
+        source_root / "citation" / "key",
+        source_root / "filesystem",
+        source_root / "adapters" / "filesystem" / "linux",
+        source_root / "adapters" / "filesystem" / "macos",
+    ):
+        for initializer in hierarchy.rglob("__init__.py"):
+            tree = ast.parse(initializer.read_text(encoding="utf-8"))
+            assert all(
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+                for node in tree.body
+            ), initializer
     public_classes_by_module = {
         **MIGRATED_MODULES,
         **MIGRATED_FILE_MODULES,
@@ -375,7 +405,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 198
+    assert len(actual) == 219
 
     mermaid_documents = {
         directory / name
@@ -386,7 +416,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 30
+    assert len(mermaid_documents) == 36
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
@@ -410,7 +440,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "198 pages; 255 remain unmigrated" in navigator
+    assert "219 pages; 306 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -422,7 +452,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 453
+    assert expected_total == 525
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

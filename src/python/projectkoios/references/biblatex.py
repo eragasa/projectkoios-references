@@ -6,6 +6,20 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.path.read import read_path_bytes
+from projectkoios.references.filesystem.root.preflight.action import (
+    authorize_root_preflight,
+)
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
@@ -18,14 +32,6 @@ from projectkoios.references.io_limits import (
     bounded_utf8_size,
 )
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import (
-    CloudPlaceholderProbe,
-    PathLimitError,
-    RootPreflightEvidence,
-    RootStorageClass,
-    authorize_root_preflight,
-    read_path_bytes,
-)
 
 
 class BibLaTeXUnavailableError(RuntimeError):
@@ -134,7 +140,7 @@ def load_bibliography(
             placeholder_probe=placeholder_probe,
             max_bytes=max_bytes,
         )
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise ReferenceIOLimitError(
             resource=error.resource,
             limit_name="max_bibliography_bytes",

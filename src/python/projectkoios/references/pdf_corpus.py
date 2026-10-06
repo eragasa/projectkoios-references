@@ -10,31 +10,55 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Self
 
+from projectkoios.references.filesystem.descriptor.error import (
+    FilesystemBoundaryError,
+)
+from projectkoios.references.filesystem.inventory.issue import (
+    FilesystemInventoryIssue,
+)
+from projectkoios.references.filesystem.inventory.status import (
+    FilesystemIssueKind,
+)
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+    validate_root_alias,
+)
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.action import (
+    authorize_root_preflight,
+)
+from projectkoios.references.filesystem.root.preflight.error import (
+    PlaceholderPreflightError,
+)
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.observation import (
+    PlaceholderObservation,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    RootBoundPlaceholderProbeFactory,
+    RootPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.filesystem.root.preflight.support import (
+    PlaceholderProbeSupport,
+)
 from projectkoios.references.io_limits import (
     PDF_CORPUS_DISCOVERY_IO_LIMITS,
     ReferenceIOLimitError,
     ReferenceIOLimits,
     bounded_utf8_size,
     validate_json_text_nesting,
-)
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    FilesystemBoundaryError,
-    FilesystemInventoryIssue,
-    FilesystemIssueKind,
-    MacOSFileProviderPlaceholderProbe,
-    PathLimitError,
-    PathSafetyError,
-    PlaceholderObservation,
-    PlaceholderPreflightError,
-    PlaceholderProbeSupport,
-    PlaceholderStatus,
-    RootPreflightEvidence,
-    RootStorageClass,
-    authorize_root_preflight,
-    validate_relative_path,
-    validate_root_alias,
 )
 
 PDF_CORPUS_DISCOVERY_SCHEMA_VERSION = 1
@@ -66,7 +90,7 @@ class PdfCorpusRoot:
     alias: str
     path: Path
     storage_class: RootStorageClass
-    placeholder_probe: CloudPlaceholderProbe | None = None
+    placeholder_probe: RootPlaceholderProbe | None = None
 
     def __post_init__(self) -> None:
         validate_root_alias(self.alias, field="PDF corpus root alias")
@@ -81,10 +105,10 @@ class PdfCorpusRoot:
             raise ValueError("local PDF corpus roots must not supply a probe")
         if isinstance(
             self.placeholder_probe,
-            MacOSFileProviderPlaceholderProbe,
+            RootBoundPlaceholderProbeFactory,
         ) and not self.placeholder_probe.matches_root_path(self.path):
             raise ValueError(
-                "macOS File Provider probe is bound to a different root"
+                "root-bound placeholder probe names a different root"
             )
 
 
@@ -721,7 +745,7 @@ def discover_pdf_corpus(
                 )
             )
             continue
-        except PathSafetyError:
+        except FilesystemOperationError:
             skipped.append(
                 _root_skip(root, evidence, PdfSkipReason.UNSAFE_ROOT)
             )
@@ -811,7 +835,7 @@ def discover_pdf_corpus(
                 )
             )
             continue
-        except PathSafetyError:
+        except FilesystemOperationError:
             skipped.append(
                 _simple_skip(
                     evidence,
@@ -853,7 +877,7 @@ def discover_pdf_corpus(
         except PlaceholderPreflightError as error:
             skipped.append(_placeholder_skip(error.observation))
             continue
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             if error.observed > max_file_bytes:
                 skipped.append(
                     PdfSkippedObservation(
@@ -908,7 +932,7 @@ def discover_pdf_corpus(
                 )
             )
             continue
-        except PathSafetyError:
+        except FilesystemOperationError:
             skipped.append(
                 _simple_skip(
                     evidence,
@@ -1067,7 +1091,7 @@ def rebind_pdf_source(
             max_bytes=observation_limit,
             prefix_bytes=5,
         )
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         if error.observed > max_file_bytes:
             limit_name = "max_file_bytes"
             limit = max_file_bytes
@@ -1234,7 +1258,7 @@ def _bind_root(
                 PdfSkipReason.ACCESS_CONTROLLED,
             ),
         )
-    except PathSafetyError:
+    except FilesystemOperationError:
         return (
             evidence,
             None,

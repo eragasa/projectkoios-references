@@ -10,21 +10,29 @@ from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Self
 
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.path.read import read_path_bytes
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+)
+from projectkoios.references.filesystem.root.preflight.action import (
+    authorize_root_preflight,
+)
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.io_limits import (
     bounded_csv_field_size,
     bounded_utf8_size,
 )
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import (
-    CloudPlaceholderProbe,
-    PathLimitError,
-    RootPreflightEvidence,
-    RootStorageClass,
-    authorize_root_preflight,
-    read_path_bytes,
-    validate_citekey,
-    validate_relative_path,
-)
 
 _GRAPH_SCHEMA_VERSION = 1
 _GRAPH_BATCH_SCHEMA_VERSION = 3
@@ -972,7 +980,7 @@ def load_candidate_graph(
                 placeholder_probe=placeholder_probe,
                 max_bytes=active_limits.max_file_bytes,
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise CitationGraphLimitError(
                 resource=label,
                 limit_name="max_file_bytes",

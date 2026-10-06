@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from projectkoios.references import RootStorageClass
 from projectkoios.references.assets import (
     AssetCandidateDisposition,
     AssetDiscoveryPlan,
@@ -21,6 +20,9 @@ from projectkoios.references.catalog import (
     CatalogConflictError,
     CatalogSchemaError,
     ReferenceCatalog,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from projectkoios.references.identity import (
     ActorAuthorityScope,

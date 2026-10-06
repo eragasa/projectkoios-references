@@ -1,0 +1,1 @@
+"""Strict bounded filesystem listing."""

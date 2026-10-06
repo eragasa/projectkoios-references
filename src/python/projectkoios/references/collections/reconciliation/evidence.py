@@ -16,13 +16,13 @@ from projectkoios.references.coverage import (
     CoverageObservation,
     ReferenceCoverage,
 )
+from projectkoios.references.filesystem.root.preflight.observation import (
+    PlaceholderObservation,
+)
 from projectkoios.references.io_limits import (
     ReferenceIOLimits,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import (
-    PlaceholderObservation,
-)
 from projectkoios.references.reconciliation_package import (
     ContentEvidence,
     canonical_json_bytes,

@@ -6,6 +6,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.collections.reconciliation.evidence import (
     ProcessingEvidence,
 )
@@ -13,14 +14,21 @@ from projectkoios.references.collections.reconciliation.loading import (
     EvidenceMapping,
     ManagedPdf,
 )
-from projectkoios.references.path_safety import (
-    CloudPlaceholderProbe,
-    PathSafetyError,
-    RootPreflightEvidence,
-    RootStorageClass,
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.read import read_path_bytes
+from projectkoios.references.filesystem.root.preflight.action import (
     authorize_root_preflight,
-    read_path_bytes,
-    validate_citekey,
+)
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from projectkoios.references.reconciliation_package import (
     ContentEvidence,
@@ -315,7 +323,7 @@ def load_ingestion_reference_evidence(
                 placeholder_probe=binding.placeholder_probe,
                 max_bytes=REFERENCE_EVIDENCE_MAX_BYTES,
             )
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise IngestionEvidenceVerificationError(str(error)) from error
         record = parse_reference_evidence(content)
         if record.record_id in record_ids:

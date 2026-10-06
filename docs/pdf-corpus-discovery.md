@@ -21,10 +21,14 @@ Callers construct one `PdfCorpusRoot` for each authorized root:
 ```python
 from pathlib import Path
 
-from projectkoios.references import (
+from projectkoios.references.adapters.filesystem.macos.file.provider.placeholder.probe import (
     MacOSFileProviderPlaceholderProbe,
-    PdfCorpusRoot,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
     RootStorageClass,
+)
+from projectkoios.references.pdf_corpus import (
+    PdfCorpusRoot,
     discover_pdf_corpus,
 )
 

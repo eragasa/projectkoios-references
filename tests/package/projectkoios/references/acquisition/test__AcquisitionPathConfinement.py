@@ -3,13 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from projectkoios.references import (
-    PathSafetyError,
-    RootStorageClass,
-)
 from projectkoios.references.acquisition import create_acquisition_manifest
 from projectkoios.references.assets import (
     SearchRoot,
+)
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
@@ -49,7 +51,7 @@ def test__acquisition__rejects_symlinked_source_component(
         },
     )
 
-    with pytest.raises(PathSafetyError):
+    with pytest.raises(FilesystemOperationError):
         create_acquisition_manifest(
             source_id="fixture",
             rows=rows,

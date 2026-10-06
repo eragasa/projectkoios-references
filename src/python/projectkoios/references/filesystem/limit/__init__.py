@@ -1,0 +1,1 @@
+"""Bounded filesystem operation failures."""

@@ -13,6 +13,9 @@ from projectkoios.references.catalog import (
 from projectkoios.references.catalog import (
     ReferenceCatalog as _ReferenceCatalog,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.graph import (
     CitationCandidate,
     CitationEdge,
@@ -25,7 +28,6 @@ from projectkoios.references.identity import (
     SourceBibliographyObservation,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import RootStorageClass
 
 
 def ReferenceCatalog(path: Path) -> _ReferenceCatalog:

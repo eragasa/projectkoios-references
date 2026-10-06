@@ -13,20 +13,28 @@ from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+)
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.io_limits import (
     RECONCILIATION_IO_LIMITS,
     ReferenceIOLimitError,
     ReferenceIOLimits,
-)
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    PathLimitError,
-    PathSafetyError,
-    RootPreflightEvidence,
-    RootStorageClass,
-    validate_citekey,
-    validate_relative_path,
 )
 from projectkoios.references.reconciliation_package import (
     ContentEvidence,
@@ -581,7 +589,7 @@ def build_citation_closure(
             validate_citekey(key, field="bibliography citekey")
             for key in bibliography_keys
         }
-    except PathSafetyError as error:
+    except FilesystemOperationError as error:
         raise ValueError(str(error)) from error
     if len(bibliography) != len(bibliography_keys):
         raise ValueError("bibliography citekeys must be unique")
@@ -594,7 +602,7 @@ def build_citation_closure(
             storage_class=storage_class,
             placeholder_probe=placeholder_probe,
         )
-    except PathSafetyError:
+    except FilesystemOperationError:
         raise
 
     if mode is CitationScanMode.ALL_FILES_OBSERVATION:
@@ -611,7 +619,7 @@ def build_citation_closure(
                     128,
                 ),
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise _limit_error(error, limits) from error
         if not initial_paths:
             raise _incomplete(
@@ -664,9 +672,13 @@ def build_citation_closure(
             )
         try:
             content = root.read_bytes(path, max_bytes=max_file_bytes)
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise _limit_error(error, limits) from error
-        except (FileNotFoundError, PermissionError, PathSafetyError) as error:
+        except (
+            FileNotFoundError,
+            PermissionError,
+            FilesystemOperationError,
+        ) as error:
             raise _incomplete(
                 "source-unavailable",
                 f"citation source is unavailable: {relative}",
@@ -1419,7 +1431,7 @@ def _parse_keys(
                 )
             try:
                 keys.append(validate_citekey(key, field="citation key"))
-            except PathSafetyError as error:
+            except FilesystemOperationError as error:
                 raise _ParseFailure(
                     "invalid-citekey",
                     "citation key is outside the supported portable syntax",
@@ -1605,7 +1617,7 @@ def _resolve_source_target(
         return validate_relative_path(
             combined, field="include target"
         ).as_posix()
-    except PathSafetyError as error:
+    except FilesystemOperationError as error:
         raise _ParseFailure(
             "unsafe-include-target",
             "include target is not a portable relative path",
@@ -1663,7 +1675,7 @@ def _required_limit(value: int | None, name: str) -> int:
 
 
 def _limit_error(
-    error: PathLimitError, limits: ReferenceIOLimits
+    error: FilesystemLimitError, limits: ReferenceIOLimits
 ) -> ReferenceIOLimitError:
     return ReferenceIOLimitError(
         resource=error.resource,
