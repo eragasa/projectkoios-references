@@ -16,7 +16,7 @@ from projectkoios.references.bibliography import (
 from projectkoios.references.bibliography.resolution import (
     candidate_identity_ids_by_key,
 )
-from projectkoios.references.citation_identity import (
+from projectkoios.references.citation.identity import (
     CitationIdentityProjectionItem,
     CitationIdentityProjectionStatus,
 )

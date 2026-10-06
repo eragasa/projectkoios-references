@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import final
 
 from projectkoios.base import DataObjectModel
-from projectkoios.references.citation_closure import CitationClosure
+from projectkoios.references.citation.closure import CitationClosure
 from projectkoios.references.coverage import AmbiguityEvaluation, CoverageState
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,

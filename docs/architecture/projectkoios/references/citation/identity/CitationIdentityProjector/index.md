@@ -13,4 +13,4 @@ The performer is stateless and has no filesystem, database, network, workflow,
 publication, or target-edit effects.
 
 Evidence: [module implementation](../implementation.md) and
-[`test__CitationIdentityProjection.py`](../../../../../../tests/test__CitationIdentityProjection.py).
+[`test__CitationIdentityProjection.py`](../../../../../../../tests/test__CitationIdentityProjection.py).

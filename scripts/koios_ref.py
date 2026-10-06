@@ -31,11 +31,11 @@ from projectkoios.references.biblatex import (
     load_bibliography,
 )
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CitationScanMode,
     build_citation_closure,
 )
-from projectkoios.references.citation_draft import (
+from projectkoios.references.citation.draft import (
     CITATION_DRAFT_MAX_BYTES,
     CitationDraftParser,
     CitationDraftParseRequest,

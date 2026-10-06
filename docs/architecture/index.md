@@ -15,7 +15,7 @@ The packaged `scripts` package remains outside the migrated slice.
 
 - [`projectkoios.references.citations`](projectkoios/references/citations/index.md)
 - [`projectkoios.references.bibliography`](projectkoios/references/bibliography/index.md)
-- [`projectkoios.references.citation_identity`](projectkoios/references/citation_identity/index.md)
+- [`projectkoios.references.citation.identity`](projectkoios/references/citation/identity/index.md)
 - [`projectkoios.references.citation.document`](projectkoios/references/citation/document/index.md)
 - [`projectkoios.references.catalog`](projectkoios/references/catalog/index.md)
 - [`projectkoios.references.collections.reconciliation`](projectkoios/references/collections/reconciliation/index.md)
@@ -27,8 +27,8 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_schema`](projectkoios/references/adapters/sql/sqlite/document_reference_schema/index.md)
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_store`](projectkoios/references/adapters/sql/sqlite/document_reference_store/index.md)
 
-The current source tree requires 453 component-architecture pages under the
-established convention. These slices supply 198 pages; 255 remain unmigrated.
+The current source tree requires 447 component-architecture pages under the
+established convention. These slices supply 198 pages; 249 remain unmigrated.
 That count is coverage evidence, not a request for a bulk retrofit.
 
 ## Remaining unmigrated modules
@@ -36,8 +36,7 @@ That count is coverage evidence, not a request for a bulk retrofit.
 - `projectkoios.references.acquisition`
 - `projectkoios.references.assets`
 - `projectkoios.references.biblatex`
-- `projectkoios.references.citation_closure`
-- `projectkoios.references.citation_draft`
+- `projectkoios.references.citation`
 - `projectkoios.references.coverage`
 - `projectkoios.references.enrichment`
 - `projectkoios.references.graph`

@@ -25,7 +25,7 @@ from projectkoios.references.assets import (
     SearchRoot,
 )
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CitationCoverageIncomplete,
     build_citation_closure,
 )
@@ -425,7 +425,7 @@ def test__cloud_manuscript_verification__never_invokes_git(
         raise AssertionError("cloud-backed source verification invoked Git")
 
     monkeypatch.setattr(
-        "projectkoios.references.citation_closure.subprocess.run",
+        "projectkoios.references.citation.closure.subprocess.run",
         forbidden_run,
     )
     with pytest.raises(

@@ -24,8 +24,8 @@ root-facade count includes constants, records, exceptions, and functions.
 | `assets` | 11 | 3 | 12 | 13 | `test__AssetDiscovery.py` | OUT_OF_SCOPE |
 | `biblatex` | 3 | 2 | 4 | 2 | `test__BibLaTeXImport.py` | OUT_OF_SCOPE |
 | `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | OUT_OF_SCOPE |
-| `citation_closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | OUT_OF_SCOPE |
-| `citation_draft` | 8 | 2 deprecated forwards | 0 | 0 | `test__CitationDraft.py` | IMPLEMENTED |
+| `citation.closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | OUT_OF_SCOPE |
+| `citation.draft` | 8 | 0 | 0 | 0 | `test__CitationDraft.py` | IMPLEMENTED |
 | `collections.reconciliation` | 36 | 0 | 23 | 0 | mirrored `tests/package/projectkoios/references/collections/reconciliation/` | IMPLEMENTED |
 | `coverage` | 7 public + 1 focused private collaborator | 0 | 0 | 7 | `test__CoverageObservation.py` | IMPLEMENTED |
 | `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | OUT_OF_SCOPE |
@@ -79,10 +79,10 @@ render-limit outcomes retain `CitationDraftError`.
 
 The module has no private module-level helper functions. Entry invariants belong
 to `CitationDraftEntry`; parse helpers belong to `CitationDraftParser`; render
-helpers belong to `CitationDraftRenderer`. The old module functions
-`parse_citation_drafts` and `render_bibtex` remain warning-emitting deprecated
-forwarders only. The canonical types remain a module API and were deliberately
-not added to the root facade.
+helpers belong to `CitationDraftRenderer`. The superseded function entry points `parse_citation_drafts` and
+`render_bibtex` are removed rather than retained as compatibility forwards. The
+canonical types remain a direct owner-module API and are deliberately not added
+to the root facade.
 
 ## Other object and action boundaries
 
@@ -136,7 +136,7 @@ package exists. The milestone does not consume the later policy-only commit
 `__all__`. Imported names and `__all__` agree exactly, with no missing or
 duplicate exports. These feature modules remain module-only surfaces:
 
-- `citation_draft`
+- `citation.draft`
 - `enrichment`
 - `validation`
 
@@ -150,8 +150,8 @@ duplicate package CLI implementation.
 
 Narrowing the 216-name root facade remains a public breaking removal and is not
 part of this milestone. Existing semantic performer names and methods remain
-non-deprecated. Only the two genuinely superseded citation-draft function entry
-points are deprecated.
+non-deprecated. Superseded citation-draft function entry points are removed;
+no compatibility forward remains.
 
 ## Reproduction, safety, and reuse limits
 

@@ -18,4 +18,4 @@ infer authority from a prefix or turn a candidate ID into an accepted-reference
 ID.
 
 Evidence: [module implementation](../implementation.md) and
-[`test__CitationIdentityProjection.py`](../../../../../../tests/test__CitationIdentityProjection.py).
+[`test__CitationIdentityProjection.py`](../../../../../../../tests/test__CitationIdentityProjection.py).

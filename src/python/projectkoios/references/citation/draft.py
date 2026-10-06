@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import warnings
 from dataclasses import asdict, dataclass, field
 from urllib.parse import urlparse
 
@@ -382,17 +381,6 @@ class CitationDraftParser(
         raise CitationDraftError(f"unsupported JSON constant: {value}")
 
 
-def parse_citation_drafts(content: bytes) -> tuple[CitationDraftEntry, ...]:
-    """Deprecated compatibility entry point for citation-draft parsing."""
-    warnings.warn(
-        "parse_citation_drafts is deprecated; use CitationDraftParser",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    request = CitationDraftParseRequest(content=content)
-    return CitationDraftParser().parse(request=request).entries
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CitationDraftRenderRequest(DataObjectActionRequest):
     """Request deterministic BibTeX rendering of proposed entries."""
@@ -559,14 +547,3 @@ class CitationDraftRenderer(
             .replace("#", r"\#")
             .replace("_", r"\_")
         )
-
-
-def render_bibtex(entries: tuple[CitationDraftEntry, ...]) -> bytes:
-    """Deprecated compatibility entry point for citation-draft rendering."""
-    warnings.warn(
-        "render_bibtex is deprecated; use CitationDraftRenderer",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    request = CitationDraftRenderRequest(entries=entries)
-    return CitationDraftRenderer().render(request=request).bibliography

@@ -50,7 +50,7 @@ from projectkoios.references.citation.document.projection import (
 from projectkoios.references.citation.document.statuses import (
     CitationDocumentAvailabilityStatus,
 )
-from projectkoios.references.citation_identity import (
+from projectkoios.references.citation.identity import (
     CitationIdentityProjectionStatus,
 )
 from projectkoios.references.citations import (

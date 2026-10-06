@@ -1,4 +1,4 @@
-# `projectkoios.references.citation_identity`
+# `projectkoios.references.citation.identity`
 
 This module projects replay-derived identity state into a bounded,
 citation-facing result while preserving the caller's identity correlation and
@@ -27,14 +27,14 @@ ID remains a candidate even when it participates in an accepted reference.
 The projection does not decide local-use authorization, scientific support,
 target-bibliography presence, citation acceptance, or whether prose should cite
 a work. Identity authority remains documented in
-[Reference identity and authority](../../../../reference-identity.md); proposed
+[Reference identity and authority](../../../../../reference-identity.md); proposed
 contract status remains in the
-[reference evidence contract](../../../../contracts/reference-evidence.md).
+[reference evidence contract](../../../../../contracts/reference-evidence.md).
 
 ## Detail
 
 - [Schematic](schematic.md)
 - [Implementation](implementation.md)
-- source: [`citation_identity.py`](../../../../../src/python/projectkoios/references/citation_identity.py)
-- tests: [`test__CitationIdentityProjection.py`](../../../../../tests/test__CitationIdentityProjection.py)
-- [Package index](../index.md)
+- source: [`citation/identity.py`](../../../../../../src/python/projectkoios/references/citation/identity.py)
+- tests: [`test__CitationIdentityProjection.py`](../../../../../../tests/test__CitationIdentityProjection.py)
+- [Package index](../../index.md)

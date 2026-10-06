@@ -16,4 +16,4 @@ Field combinations are status-closed:
 persistence or interchange schema.
 
 Evidence: [module implementation](../implementation.md) and
-[`test__CitationIdentityProjection.py`](../../../../../../tests/test__CitationIdentityProjection.py).
+[`test__CitationIdentityProjection.py`](../../../../../../../tests/test__CitationIdentityProjection.py).

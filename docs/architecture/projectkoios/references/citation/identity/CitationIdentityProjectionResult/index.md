@@ -12,4 +12,4 @@ The result is a deterministic in-memory action result, not a serialization
 contract, database record, target-bibliography assertion, or citation decision.
 
 Evidence: [module implementation](../implementation.md) and
-[`test__CitationIdentityProjection.py`](../../../../../../tests/test__CitationIdentityProjection.py).
+[`test__CitationIdentityProjection.py`](../../../../../../../tests/test__CitationIdentityProjection.py).
