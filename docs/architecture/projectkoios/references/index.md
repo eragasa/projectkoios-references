@@ -7,6 +7,8 @@ manuscript use, rights clearance, or publication acceptance.
 
 ## Documented modules
 
+- [`asset_application`](asset_application/index.md) — runtime-neutral,
+  indivisible authorized asset application and optional catalog recording.
 - [`citations`](citations/index.md) — canonical target citation inventory.
 - [`bibliography`](bibliography/index.md) — exact bibliography evidence binding
   and membership state.

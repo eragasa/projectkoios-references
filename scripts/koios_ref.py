@@ -8,7 +8,6 @@ import hashlib
 import io
 import json
 import sys
-from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict
 from pathlib import Path
 
@@ -18,13 +17,15 @@ from projectkoios.references.acquisition import (
     publish_acquisition_manifest,
     verify_acquisition_manifest,
 )
+from projectkoios.references.asset_application import (
+    AssetApplicationError,
+    AssetApplicationOperation,
+    AssetApplicationOperationRequest,
+)
 from projectkoios.references.assets import (
     AssetDiscoveryPlan,
     AssetDiscoveryPlanner,
-    AssetMaterializationResult,
-    CanonicalAssetAuthorization,
     SearchRoot,
-    materialize_asset_with_result,
 )
 from projectkoios.references.biblatex import (
     biblatex_parser_identity,
@@ -59,7 +60,6 @@ from projectkoios.references.collections.reconciliation.reconciliation import (
 from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
 from projectkoios.references.graph import load_candidate_graph
-from projectkoios.references.identity import IdentityProjection
 from projectkoios.references.ingestion_evidence import (
     ReferenceEvidenceInput,
     load_ingestion_reference_evidence,
@@ -969,104 +969,36 @@ class ReferencesOperatorAdapter:
             print(f"wrote {len(plan.candidates)} candidates to {args.output}")
             return 0
         if args.command == "assets-apply":
-            if (args.catalog is None) != (args.catalog_storage_class is None):
-                raise SystemExit(
-                    "--catalog and --catalog-storage-class must be supplied "
-                    "together"
-                )
-            plan = AssetDiscoveryPlan.from_json(
-                read_path_text(
-                    args.plan,
-                    label="asset discovery plan",
-                    root_alias="asset-plan-input",
-                    storage_class=args.plan_storage_class,
-                    max_bytes=ReferencesOperatorAdapter.require_limit(
-                        ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
-                        "max_json_bytes",
+            try:
+                request = AssetApplicationOperationRequest(
+                    plan=args.plan,
+                    plan_storage_class=args.plan_storage_class,
+                    authorization=args.authorization,
+                    authorization_storage_class=(
+                        args.authorization_storage_class
                     ),
-                )
-            )
-            authorization = CanonicalAssetAuthorization.from_json(
-                read_path_text(
-                    args.authorization,
-                    label="canonical asset authorization",
-                    root_alias="asset-authorization-input",
-                    storage_class=args.authorization_storage_class,
-                    max_bytes=ReferencesOperatorAdapter.require_limit(
-                        ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
-                        "max_json_bytes",
+                    identity_projection=args.identity_projection,
+                    identity_projection_storage_class=(
+                        args.identity_projection_storage_class
                     ),
+                    citekey=args.citekey,
+                    candidate_path=args.candidate_path,
+                    search_roots=tuple(args.search_root),
+                    destination=args.destination,
+                    destination_storage_class=(args.destination_storage_class),
+                    rights_status=args.rights_status,
+                    catalog=args.catalog,
+                    catalog_storage_class=args.catalog_storage_class,
                 )
-            )
-            identity_projection = IdentityProjection.from_json(
-                read_path_text(
-                    args.identity_projection,
-                    label="identity projection",
-                    root_alias="identity-projection-input",
-                    storage_class=args.identity_projection_storage_class,
-                    max_bytes=ReferencesOperatorAdapter.require_limit(
-                        ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
-                        "max_json_bytes",
-                    ),
+            except (TypeError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            try:
+                application_result = AssetApplicationOperation().action(
+                    request=request
                 )
-            )
-            matches = [
-                item
-                for item in plan.candidates
-                if item.observation_id
-                == authorization.selected_asset_observation_id
-                and item.proposed_citekey == args.citekey
-                and (
-                    args.candidate_path is None
-                    or item.relative_path == args.candidate_path
-                )
-            ]
-            if len(matches) != 1:
-                raise SystemExit(
-                    "authorization must select exactly one matching asset"
-                )
-            candidate = matches[0]
-            expected_root_preflight = next(
-                item
-                for item in plan.root_preflights
-                if item.root_alias == candidate.root_alias
-            )
-            catalog_record = SourceAssetRecord(
-                candidate_id=candidate.candidate_id,
-                proposed_citekey=candidate.proposed_citekey,
-                identity_status=candidate.identity_status,
-                citekey_status=candidate.citekey_status,
-                sha256=candidate.sha256,
-                byte_size=candidate.byte_size,
-                root_alias="materialized-assets",
-                relative_path=f"{authorization.canonical_citekey}.pdf",
-                rights_status=args.rights_status,
-                asset_status="authorized-canonical-local-copy",
-            )
-            recording: AbstractContextManager[None] = nullcontext()
-            if args.catalog is not None:
-                catalog = ReferenceCatalog(
-                    args.catalog, storage_class=args.catalog_storage_class
-                )
-                catalog.initialize()
-                recording = catalog.source_asset_recording_transaction(
-                    catalog_record
-                )
-            materialization_result: AssetMaterializationResult | None = None
-            with recording:
-                materialization_result = materialize_asset_with_result(
-                    candidate,
-                    authorization=authorization,
-                    plan=plan,
-                    identity_projection=identity_projection,
-                    expected_root_preflight=expected_root_preflight,
-                    roots=tuple(args.search_root),
-                    destination_directory=args.destination,
-                    destination_storage_class=args.destination_storage_class,
-                )
-            if materialization_result is None:  # pragma: no cover
-                raise RuntimeError("asset materialization produced no result")
-            print(materialization_result.path)
+            except AssetApplicationError as error:
+                raise SystemExit(str(error)) from error
+            print(application_result.materialization.path)
             return 0
         if args.command == "assets-record-plan":
             plan = AssetDiscoveryPlan.from_json(

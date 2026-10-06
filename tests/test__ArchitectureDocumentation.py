@@ -7,6 +7,12 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[1]
 ARCHITECTURE = REPOSITORY / "docs" / "architecture"
 MIGRATED_MODULES = {
+    "asset_application": {
+        "AssetApplicationError",
+        "AssetApplicationOperation",
+        "AssetApplicationOperationRequest",
+        "AssetApplicationOperationResult",
+    },
     "bibliography": {
         "CitationBibliographyMembershipStatus",
         "CitationBibliographyObservationBinding",
@@ -375,7 +381,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 198
+    assert len(actual) == 205
 
     mermaid_documents = {
         directory / name
@@ -386,7 +392,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 30
+    assert len(mermaid_documents) == 32
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
@@ -410,7 +416,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "198 pages; 255 remain unmigrated" in navigator
+    assert "205 pages; 255 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -422,7 +428,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 453
+    assert expected_total == 460
 
 
 def test__citation_package_dependencies_are_one_way() -> None:
