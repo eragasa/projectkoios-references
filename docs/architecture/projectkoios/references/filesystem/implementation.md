@@ -24,7 +24,7 @@ are opened. Publication is local-only, fsyncs staged bytes, and binds no-replace
 publication to descriptors. The byte API is create-only; replacement, unsafe
 rename, and unverifiable destructive rollback are absent from the capability.
 
-Explicit-path read, observe, and write functions are adapters that authorize
+Explicit-path read, observe, and create functions are adapters that authorize
 the parent root and immediately perform the descriptor-confined operation.
 The metadata-only `assert_safe_explicit_path` function was deleted.
 
