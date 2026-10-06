@@ -12,66 +12,66 @@ from typing import final
 from projectkoios.references.adapters.sql.sqlite import (
     document_reference_schema,
 )
-from projectkoios.references.document_reference.base import (
+from projectkoios.references.document.reference.base import (
     AbstractDocumentReferenceDataObject,
 )
-from projectkoios.references.document_reference.bibliography.metadata.errors import (  # noqa: E501
+from projectkoios.references.document.reference.bibliography.metadata.error import (  # noqa: E501
     BibliographyMetadataError,
 )
-from projectkoios.references.document_reference.bibliography.metadata.reader import (  # noqa: E501
+from projectkoios.references.document.reference.bibliography.metadata.reader import (  # noqa: E501
     BibliographyMetadataReader,
 )
-from projectkoios.references.document_reference.bibliography.record import (
+from projectkoios.references.document.reference.bibliography.record import (
     ReferenceRecord,
 )
-from projectkoios.references.document_reference.bindings.binding import (
+from projectkoios.references.document.reference.bindings.binding import (
     ReferenceDocumentBinding,
 )
-from projectkoios.references.document_reference.bindings.disposition import (
+from projectkoios.references.document.reference.bindings.disposition import (
     BindingDisposition,
 )
-from projectkoios.references.document_reference.bindings.errors import (
+from projectkoios.references.document.reference.bindings.error import (
     ReferenceDocumentBindingConflict,
 )
-from projectkoios.references.document_reference.bindings.result import (
+from projectkoios.references.document.reference.bindings.result import (
     BindPdfToReferenceResult,
 )
-from projectkoios.references.document_reference.bindings.selection import (
+from projectkoios.references.document.reference.bindings.selection import (
     ReferenceDocumentBindingSelection,
 )
-from projectkoios.references.document_reference.collections.collection import (
+from projectkoios.references.document.reference.collections.collection import (
     ReferenceCollection,
 )
-from projectkoios.references.document_reference.collections.errors import (
+from projectkoios.references.document.reference.collections.errors import (
     UnknownCollection,
     UnknownReference,
 )
-from projectkoios.references.document_reference.collections.membership import (
+from projectkoios.references.document.reference.collections.membership import (
     ReferenceCollectionMembership,
 )
-from projectkoios.references.document_reference.collections.missing.item import (  # noqa: E501
+from projectkoios.references.document.reference.collections.missing.item import (  # noqa: E501
     MissingPdfReference,
 )
-from projectkoios.references.document_reference.collections.missing.result import (  # noqa: E501
+from projectkoios.references.document.reference.collections.missing.result import (  # noqa: E501
     ListMissingPdfReferencesResult,
 )
-from projectkoios.references.document_reference.collections.pdf_requirement import (  # noqa: E501
+from projectkoios.references.document.reference.collections.pdf.requirement import (  # noqa: E501
     PdfRequirement,
 )
-from projectkoios.references.document_reference.constants import (
+from projectkoios.references.document.reference.constants import (
     MAX_COLLECTION_MEMBERS,
 )
-from projectkoios.references.document_reference.documents.errors import (
+from projectkoios.references.document.reference.documents.errors import (
     DocumentContentConflict,
     UnknownDocument,
 )
-from projectkoios.references.document_reference.documents.receipt.effect import (  # noqa: E501
-    ReceiptRecordEffect,
-)
-from projectkoios.references.document_reference.documents.stored_pdf import (
+from projectkoios.references.document.reference.documents.pdf.stored import (
     StoredPdfObject,
 )
-from projectkoios.references.document_reference.errors import (
+from projectkoios.references.document.reference.documents.receipt.effect import (  # noqa: E501
+    ReceiptRecordEffect,
+)
+from projectkoios.references.document.reference.errors import (
     DocumentReferenceStoreError,
 )
 from projectkoios.references.path_safety.preflight import RootStorageClass

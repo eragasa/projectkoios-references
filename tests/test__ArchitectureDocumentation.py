@@ -95,7 +95,7 @@ MIGRATED_MODULES = {
         "ReferenceStateReplayRequest",
         "ReferenceStateReplayResult",
     },
-    "document_reference": {
+    "document/reference": {
         "AbstractDocumentReferenceDataObject",
         "AbstractRebuildReplayDataObject",
         "AbstractSameStoreReplayDataObject",
@@ -325,9 +325,23 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
     assert not (source_root / "catalog.py").exists()
     assert not (source_root / "document_reference.py").exists()
-    document_reference = source_root / "document_reference"
+    assert not (source_root / "document_reference").exists()
+    document = source_root / "document"
+    document_reference = document / "reference"
     assert document_reference.is_dir()
-    for initializer in document_reference.rglob("__init__.py"):
+    for obsolete in (
+        "bibliography/metadata/errors.py",
+        "bindings/errors.py",
+        "bindings/verified_local",
+        "collections/pdf_requirement.py",
+        "documents/stored_pdf.py",
+        "replay/same_store",
+    ):
+        assert not (document_reference / obsolete).exists()
+    for initializer in (
+        document / "__init__.py",
+        *document_reference.rglob("__init__.py"),
+    ):
         tree = ast.parse(initializer.read_text(encoding="utf-8"))
         assert all(
             isinstance(node, ast.Expr)
@@ -341,11 +355,11 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             for node in tree.body
         ), source
-        if source.name in {"__init__.py", "errors.py"}:
+        if source.name in {"__init__.py", "error.py", "errors.py"}:
             continue
         assert len(_public_classes(source)) <= 1, source
     assert (
-        REPOSITORY / "tests/package/projectkoios/references/document_reference/"
+        REPOSITORY / "tests/package/projectkoios/references/document/reference/"
         "test__DocumentReferenceOperations.py"
     ).is_file()
     assert (source_root / "catalog" / "__init__.py").is_file()
@@ -410,7 +424,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "198 pages; 255 remain unmigrated" in navigator
+    assert "198 pages; 261 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -422,7 +436,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 453
+    assert expected_total == 459
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

@@ -1,1 +1,0 @@
-"""Document/reference capability namespace."""

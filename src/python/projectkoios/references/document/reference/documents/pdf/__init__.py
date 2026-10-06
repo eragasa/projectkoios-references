@@ -1,0 +1,1 @@
+"""Stored PDF document records."""
