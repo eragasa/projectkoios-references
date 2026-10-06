@@ -184,6 +184,20 @@ MIGRATED_MODULES = {
         "VerifiedFileCopier",
     },
     "citation/key": {"CitationKeyError"},
+    "ingestion/evidence": {
+        "IngestionEvidenceError",
+        "IngestionEvidenceLimitError",
+        "IngestionEvidenceParseError",
+        "IngestionEvidenceVerificationError",
+        "ReferenceEvidenceArtifact",
+        "ReferenceEvidenceAudit",
+        "ReferenceEvidenceExtraction",
+        "ReferenceEvidenceInput",
+        "ReferenceEvidenceLayerCount",
+        "ReferenceEvidenceRecord",
+        "ReferenceEvidenceSource",
+        "ReferenceEvidenceTranscript",
+    },
     "adapters/filesystem/linux": set(),
     "adapters/filesystem/macos": {
         "MacOSFileProviderPlaceholderProbe",
@@ -226,7 +240,6 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.enrichment",
     "projectkoios.references.graph",
     "projectkoios.references.identity",
-    "projectkoios.references.ingestion_evidence",
     "projectkoios.references.io_limits",
     "projectkoios.references.models",
     "projectkoios.references.naming",
@@ -375,11 +388,13 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
     assert not (source_root / "path_safety").exists()
+    assert not (source_root / "ingestion_evidence.py").exists()
     for hierarchy in (
         source_root / "citation" / "key",
         source_root / "filesystem",
         source_root / "adapters" / "filesystem" / "linux",
         source_root / "adapters" / "filesystem" / "macos",
+        source_root / "ingestion" / "evidence",
     ):
         for initializer in hierarchy.rglob("__init__.py"):
             tree = ast.parse(initializer.read_text(encoding="utf-8"))
@@ -405,7 +420,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 219
+    assert len(actual) == 234
 
     mermaid_documents = {
         directory / name
@@ -416,7 +431,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 36
+    assert len(mermaid_documents) == 38
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
@@ -440,7 +455,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "219 pages; 306 remain unmigrated" in navigator
+    assert "234 pages; 309 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -452,7 +467,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 525
+    assert expected_total == 543
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

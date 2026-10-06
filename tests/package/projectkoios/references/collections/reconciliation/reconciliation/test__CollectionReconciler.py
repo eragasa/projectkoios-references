@@ -43,10 +43,10 @@ from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
 )
-from projectkoios.references.ingestion_evidence import (
+from projectkoios.references.ingestion.evidence.input import (
     ReferenceEvidenceInput as _ReferenceEvidenceInput,
 )
-from projectkoios.references.ingestion_evidence import (
+from projectkoios.references.ingestion.evidence.loading.action import (
     load_ingestion_reference_evidence,
 )
 from projectkoios.references.models import SourceAssetRecord

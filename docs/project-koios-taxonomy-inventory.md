@@ -31,7 +31,7 @@ root-facade count includes constants, records, exceptions, and functions.
 | `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | OUT_OF_SCOPE |
 | `graph` | 7 | 1 | 21 | 8 | `test__CitationGraph.py`, `test__CitationGraphSeed.py` | OUT_OF_SCOPE |
 | `identity` | 17 | 1 | 28 | 13 | `test__ReferenceIdentity.py` | OUT_OF_SCOPE |
-| `ingestion_evidence` | 12 | 3 | 19 | 15 | `test__IngestionEvidence.py` | OUT_OF_SCOPE |
+| `ingestion.evidence` | 12 | 3 owner actions | semantic parsing, decoding, validation, and serialization collaborators | 0 | `test__IngestionEvidence.py`, mirrored `tests/package/projectkoios/references/ingestion/evidence/` | IMPLEMENTED |
 | `io_limits` | 2 | 3 | 0 | 12 | `test__IOBounds.py` | CURRENT |
 | `models` | 2 | 1 | 0 | 3 | exercised across catalog/state tests | OUT_OF_SCOPE |
 | `naming` | 1 | 0 | 0 | 1 | `test__ReferenceFilenames.py` | IMPLEMENTED |

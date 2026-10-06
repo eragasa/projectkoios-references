@@ -6,7 +6,7 @@ from pathlib import Path
 
 from projectkoios.references.filesystem.root.capability import AuthorizedRoot
 from projectkoios.references.filesystem.root.preflight.probe import (
-    CloudPlaceholderProbe,
+    RootPlaceholderProbe,
 )
 from projectkoios.references.filesystem.root.preflight.storage import (
     RootStorageClass,
@@ -21,7 +21,7 @@ def read_path_bytes(
     label: str,
     root_alias: str,
     storage_class: RootStorageClass,
-    placeholder_probe: CloudPlaceholderProbe | None = None,
+    placeholder_probe: RootPlaceholderProbe | None = None,
     max_bytes: int = _DEFAULT_READ_MAX_BYTES,
 ) -> bytes:
     """Read an explicitly classified file through its authorized parent."""
@@ -41,7 +41,7 @@ def read_path_text(
     label: str,
     root_alias: str,
     storage_class: RootStorageClass,
-    placeholder_probe: CloudPlaceholderProbe | None = None,
+    placeholder_probe: RootPlaceholderProbe | None = None,
     encoding: str = "utf-8",
     max_bytes: int = _DEFAULT_READ_MAX_BYTES,
 ) -> str:
