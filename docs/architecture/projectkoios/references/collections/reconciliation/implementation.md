@@ -11,6 +11,10 @@ free operational functions:
   and extra-PDF data objects.
 - `manifest.py` owns the collection manifest and exact output bundle.
 - `reconciliation.py` owns `CollectionReconciler` and its request/result pair.
+- `operation.py` owns the runtime-neutral complete operation request, actionizer,
+  and result. Its stable action identity is the explicit binding point for a
+  Workflow CPN transition; the module contains no Workflow dependency or CPN
+  marking state.
 - `publication.py` owns the publication data object plus publisher, parser,
   verifier, and replayer actionizers, each with a distinct request/result pair.
 - `errors.py` owns the shared fail-closed error boundary.
@@ -23,18 +27,20 @@ free operational functions:
 
 ```mermaid
 flowchart TD
-    I[Exact loading and scan requests] --> L[CollectionRowsLoader and ManagedPdfScanner]
+    T[CollectionReconciliationOperationRequest token color] --> A[Owner action identity]
+    A --> I[Exact loading and scan requests]
+    I --> L[CollectionRowsLoader and ManagedPdfScanner]
     L --> E[Immutable evidence data objects]
     E --> Q[CollectionReconciliationRequest]
     Q --> C[CollectionReconciler]
     C --> O[Exact ReconciliationOutputs]
-    O --> P[Publisher or replay request]
+    O --> P[ReconciliationPublicationRequest]
     P --> V{Canonical parse, hash, replay, and equality checks pass?}
     V -->|no| F[Fail closed without completed publication]
     V -->|yes| W[Write through authorized local root]
     W --> Z{Completed directory verifies in place?}
     Z -->|no| F
-    Z -->|yes| R[Immutable publication action result]
+    Z -->|yes| R[CollectionReconciliationOperationResult token color]
 ```
 
 All canonical requests, results, and data objects are immutable and reject
@@ -44,6 +50,16 @@ static/class-method utility containers. Stable IDs remain SHA-256 digests of
 the same canonical JSON payloads. Ordering, counts, nullable fields,
 classification precedence, resource bounds, and rendered bytes remain part of
 the contract.
+
+`koios-ref collection-reconcile` now performs only operator-input adaptation,
+constructs the complete operation request, invokes the owner action, and renders
+a privacy-reduced status report. It no longer owns evidence loading,
+reconciliation, or publication sequencing. An external runtime may treat the
+request and result as token colors and explicitly bind the stable action
+identity to one transition. Approval, retry, checkpoint, marking, and
+transition-occurrence state remain outside References. The owner operation is a
+single composite transition binding; its nested pure and effectful owner actions
+remain available independently without reflective topology inference.
 
 Publication retains the completion protocol: pre-existing incomplete or
 inconsistent output directories are rejected, files are checked against the

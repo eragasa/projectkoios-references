@@ -15,6 +15,9 @@ classDiagram
     class CollectionReconciliationRequest
     class CollectionReconciliationResult
     class CollectionReconciler
+    class CollectionReconciliationOperationRequest
+    class CollectionReconciliationOperationResult
+    class CollectionReconciliationOperation
     class ReconciliationPublicationRequest
     class ReconciliationPublicationResult
     class ReconciliationPublisher
@@ -37,6 +40,9 @@ classDiagram
     DataObjectActionRequest <|-- CollectionReconciliationRequest
     DataObjectActionResult <|-- CollectionReconciliationResult
     DataObjectActionizer <|-- CollectionReconciler
+    DataObjectActionRequest <|-- CollectionReconciliationOperationRequest
+    DataObjectActionResult <|-- CollectionReconciliationOperationResult
+    DataObjectActionizer <|-- CollectionReconciliationOperation
     DataObjectActionRequest <|-- ReconciliationPublicationRequest
     DataObjectActionResult <|-- ReconciliationPublicationResult
     DataObjectActionizer <|-- ReconciliationPublisher
@@ -52,10 +58,12 @@ classDiagram
 ```
 
 Each action family has one owner module and one public `action` entry point.
-Exact request/result types keep loading, scanning, reconciliation, publication,
-parsing, verification, and replay boundaries distinct. Immutable domain records
-remain `DataObjectModel` values, while private responsibility modules add no
-parallel public contracts.
+Exact request/result types keep loading, scanning, reconciliation, complete
+owner operation, publication, parsing, verification, and replay boundaries
+distinct. Immutable domain records remain `DataObjectModel` values, while
+private responsibility modules add no parallel public contracts. An external
+CPN definition may explicitly bind the operation action identity to a
+transition; no topology is reflectively inferred here.
 
 - [Module index](index.md)
 - [Implementation](implementation.md)

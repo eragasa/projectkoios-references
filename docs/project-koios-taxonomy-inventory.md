@@ -26,7 +26,7 @@ root-facade count includes constants, records, exceptions, and functions.
 | `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | OUT_OF_SCOPE |
 | `citation_closure` | 11 | 1 | 22 | 13 | `test__CitationClosure.py` | OUT_OF_SCOPE |
 | `citation_draft` | 8 | 2 deprecated forwards | 0 | 0 | `test__CitationDraft.py` | IMPLEMENTED |
-| `collections.reconciliation` | 36 | 0 | 23 | 0 | mirrored `tests/package/projectkoios/references/collections/reconciliation/` | IMPLEMENTED |
+| `collections.reconciliation` | 39 | 0 | 23 | 0 | mirrored `tests/package/projectkoios/references/collections/reconciliation/` | IMPLEMENTED |
 | `coverage` | 7 public + 1 focused private collaborator | 0 | 0 | 7 | `test__CoverageObservation.py` | IMPLEMENTED |
 | `enrichment` | 24 | 2 | 17 | 0 | `test__MetadataEnrichment.py` | OUT_OF_SCOPE |
 | `graph` | 7 | 1 | 21 | 8 | `test__CitationGraph.py`, `test__CitationGraphSeed.py` | OUT_OF_SCOPE |
@@ -143,7 +143,10 @@ duplicate exports. These feature modules remain module-only surfaces:
 The former `projectkoios.references.cli` package surface no longer exists. The
 thin operator adapter is maintained in `scripts/koios_ref.py`; it contains no
 private module-level declarations and calls canonical package objects,
-including the citation-draft parser and renderer. Packaging includes the
+including the citation-draft parser and renderer. Its `collection-reconcile`
+branch adapts arguments into the runtime-neutral complete owner operation and
+contains no domain evidence-loading or publication implementation. Packaging
+includes the
 `scripts` package and wires the installed `koios-ref` entry point directly to
 `scripts.koios_ref:main`. Tests import that adapter directly. There is no
 duplicate package CLI implementation.

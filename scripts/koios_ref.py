@@ -26,15 +26,9 @@ from projectkoios.references.assets import (
     SearchRoot,
     materialize_asset_with_result,
 )
-from projectkoios.references.biblatex import (
-    biblatex_parser_identity,
-    load_bibliography,
-)
+from projectkoios.references.biblatex import load_bibliography
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.citation_closure import (
-    CitationScanMode,
-    build_citation_closure,
-)
+from projectkoios.references.citation_closure import CitationScanMode
 from projectkoios.references.citation_draft import (
     CITATION_DRAFT_MAX_BYTES,
     CitationDraftParser,
@@ -42,33 +36,17 @@ from projectkoios.references.citation_draft import (
     CitationDraftRenderer,
     CitationDraftRenderRequest,
 )
-from projectkoios.references.collections.reconciliation.loading import (
-    CollectionRowsLoader,
-    CollectionRowsLoadRequest,
-    ManagedPdfScanner,
-    ManagedPdfScanRequest,
+from projectkoios.references.collections.reconciliation.operation import (
+    CollectionReconciliationOperation,
+    CollectionReconciliationOperationRequest,
 )
-from projectkoios.references.collections.reconciliation.publication import (
-    ReconciliationPublicationRequest,
-    ReconciliationPublisher,
-)
-from projectkoios.references.collections.reconciliation.reconciliation import (
-    CollectionReconciler,
-    CollectionReconciliationRequest,
-)
-from projectkoios.references.coverage import CoverageObservation
 from projectkoios.references.enrichment import CrossrefClient
 from projectkoios.references.graph import load_candidate_graph
 from projectkoios.references.identity import IdentityProjection
-from projectkoios.references.ingestion_evidence import (
-    ReferenceEvidenceInput,
-    load_ingestion_reference_evidence,
-)
+from projectkoios.references.ingestion_evidence import ReferenceEvidenceInput
 from projectkoios.references.io_limits import (
     ACQUISITION_IO_LIMITS,
     ASSET_DISCOVERY_IO_LIMITS,
-    RECONCILIATION_IO_LIMITS,
-    REVIEW_IO_LIMITS,
     ReferenceIOLimitError,
     ReferenceIOLimits,
     bounded_csv_field_size,
@@ -82,7 +60,6 @@ from projectkoios.references.path_safety import (
     read_path_text,
     write_path_bytes,
 )
-from projectkoios.references.review import ReviewProjection
 from projectkoios.references.validation import validate_reference_objects
 
 
@@ -140,20 +117,6 @@ class ReferencesOperatorAdapter:
                 "keyed storage class must be KEY=local or KEY=cloud-backed"
             )
         return key, ReferencesOperatorAdapter.parse_storage_class(raw_class)
-
-    @staticmethod
-    def validate_paired_storage_class(
-        path: Path | None,
-        storage_class: RootStorageClass | None,
-        *,
-        label: str,
-    ) -> RootStorageClass | None:
-        if (path is None) != (storage_class is None):
-            raise SystemExit(
-                f"{label} path and --{label}-storage-class must be supplied "
-                "together"
-            )
-        return storage_class
 
     @staticmethod
     def reject_duplicate_storage_options(arguments: list[str]) -> None:
@@ -519,64 +482,6 @@ class ReferencesOperatorAdapter:
                 ReferencesOperatorAdapter.validate_root_declarations(
                     getattr(args, attribute)
                 )
-        if args.command == "collection-reconcile":
-            ReferencesOperatorAdapter.validate_paired_storage_class(
-                args.source_discovery,
-                args.source_discovery_storage_class,
-                label="source-discovery",
-            )
-            ReferencesOperatorAdapter.validate_paired_storage_class(
-                args.coverage_observation,
-                args.coverage_observation_storage_class,
-                label="coverage-observation",
-            )
-            ReferencesOperatorAdapter.validate_paired_storage_class(
-                args.acquisition_manifest,
-                args.acquisition_manifest_storage_class,
-                label="acquisition-manifest",
-            )
-            ReferencesOperatorAdapter.validate_paired_storage_class(
-                args.review_projection,
-                args.review_projection_storage_class,
-                label="review-projection",
-            )
-            ReferencesOperatorAdapter.validate_paired_storage_class(
-                args.catalog,
-                args.catalog_storage_class,
-                label="catalog",
-            )
-            ReferencesOperatorAdapter.validate_paired_storage_class(
-                args.asset_plan,
-                args.asset_plan_storage_class,
-                label="asset-plan",
-            )
-            manuscript_values = (
-                args.manuscript_root,
-                args.manuscript_storage_class,
-                args.manuscript_mode,
-            )
-            if any(value is not None for value in manuscript_values) and any(
-                value is None for value in manuscript_values
-            ):
-                raise SystemExit(
-                    "--manuscript-root, --manuscript-storage-class, and "
-                    "--manuscript-mode must be supplied together"
-                )
-            if args.manuscript_mode is CitationScanMode.BUILD_GRAPH:
-                if args.manuscript_entrypoint is None:
-                    raise SystemExit(
-                        "build-graph manuscript mode requires "
-                        "--manuscript-entrypoint"
-                    )
-            elif args.manuscript_entrypoint is not None:
-                raise SystemExit(
-                    "--manuscript-entrypoint is permitted only in build-graph "
-                    "manuscript mode"
-                )
-            ReferencesOperatorAdapter.bind_reference_evidence(
-                args.reference_evidence,
-                args.reference_evidence_storage_class,
-            )
         if args.command == "enrich-crossref" and (
             (args.cache is None) != (args.cache_storage_class is None)
         ):
@@ -689,252 +594,57 @@ class ReferencesOperatorAdapter:
             print(json.dumps(catalog.counts(), indent=2))
             return 0
         if args.command == "collection-reconcile":
-            imported = load_bibliography(
-                args.bibliography,
-                source_id=args.collection_id,
-                storage_class=args.bibliography_storage_class,
-                source_revision=args.source_revision,
+            evidence = ReferencesOperatorAdapter.bind_reference_evidence(
+                args.reference_evidence,
+                args.reference_evidence_storage_class,
             )
-            bibliography_bytes = imported.bibliography_bytes
-            source_discovery_storage = (
-                ReferencesOperatorAdapter.validate_paired_storage_class(
-                    args.source_discovery,
-                    args.source_discovery_storage_class,
-                    label="source-discovery",
-                )
-            )
-            coverage_storage = (
-                ReferencesOperatorAdapter.validate_paired_storage_class(
-                    args.coverage_observation,
-                    args.coverage_observation_storage_class,
-                    label="coverage-observation",
-                )
-            )
-            acquisition_storage = (
-                ReferencesOperatorAdapter.validate_paired_storage_class(
-                    args.acquisition_manifest,
-                    args.acquisition_manifest_storage_class,
-                    label="acquisition-manifest",
-                )
-            )
-            review_storage = (
-                ReferencesOperatorAdapter.validate_paired_storage_class(
-                    args.review_projection,
-                    args.review_projection_storage_class,
-                    label="review-projection",
-                )
-            )
-            catalog_storage = (
-                ReferencesOperatorAdapter.validate_paired_storage_class(
-                    args.catalog,
-                    args.catalog_storage_class,
-                    label="catalog",
-                )
-            )
-            asset_plan_storage = (
-                ReferencesOperatorAdapter.validate_paired_storage_class(
-                    args.asset_plan,
-                    args.asset_plan_storage_class,
-                    label="asset-plan",
-                )
-            )
-            if (
-                args.manuscript_root is not None
-                and args.manuscript_storage_class is None
-            ):
-                raise SystemExit(
-                    "--manuscript-storage-class is required with "
-                    "--manuscript-root"
-                )
-            citation_closure = (
-                build_citation_closure(
-                    args.manuscript_root,
-                    storage_class=args.manuscript_storage_class,
-                    mode=args.manuscript_mode,
-                    entrypoint=args.manuscript_entrypoint,
-                    bibliography_keys=tuple(
-                        sorted(
-                            record.proposed_citekey
-                            for record in imported.candidates
-                        )
+            try:
+                request = CollectionReconciliationOperationRequest(
+                    bibliography=args.bibliography,
+                    bibliography_storage_class=(
+                        args.bibliography_storage_class
                     ),
+                    corpus=args.corpus,
+                    corpus_storage_class=args.corpus_storage_class,
+                    pdfs=args.pdfs,
+                    pdf_storage_class=args.pdf_storage_class,
+                    output_directory=args.output,
+                    output_storage_class=args.output_storage_class,
+                    collection_id=args.collection_id,
                     source_revision=args.source_revision,
-                )
-                if args.manuscript_root is not None
-                else None
-            )
-            managed_pdfs = (
-                ManagedPdfScanner()
-                .action(
-                    request=ManagedPdfScanRequest(
-                        directory=args.pdfs,
-                        storage_class=args.pdf_storage_class,
-                        source_discovery=args.source_discovery,
-                        source_discovery_storage_class=(
-                            source_discovery_storage
-                            if args.source_discovery is not None
-                            else None
-                        ),
-                    )
-                )
-                .scan
-            )
-            processing_evidence = (
-                load_ingestion_reference_evidence(
-                    ReferencesOperatorAdapter.bind_reference_evidence(
-                        args.reference_evidence,
-                        args.reference_evidence_storage_class,
+                    source_discovery=args.source_discovery,
+                    source_discovery_storage_class=(
+                        args.source_discovery_storage_class
                     ),
-                    managed_pdfs=managed_pdfs,
-                )
-                if args.reference_evidence
-                else None
-            )
-            coverage_observation_bytes = (
-                read_path_bytes(
-                    args.coverage_observation,
-                    label="coverage observation",
-                    root_alias="coverage-observation",
-                    storage_class=coverage_storage,
-                    max_bytes=ReferencesOperatorAdapter.require_limit(
-                        RECONCILIATION_IO_LIMITS.max_json_bytes,
-                        "max_json_bytes",
+                    coverage_observation=args.coverage_observation,
+                    coverage_observation_storage_class=(
+                        args.coverage_observation_storage_class
                     ),
+                    acquisition_manifest=args.acquisition_manifest,
+                    acquisition_manifest_storage_class=(
+                        args.acquisition_manifest_storage_class
+                    ),
+                    review_projection=args.review_projection,
+                    review_projection_storage_class=(
+                        args.review_projection_storage_class
+                    ),
+                    catalog=args.catalog,
+                    catalog_storage_class=args.catalog_storage_class,
+                    asset_plan=args.asset_plan,
+                    asset_plan_storage_class=args.asset_plan_storage_class,
+                    manuscript_root=args.manuscript_root,
+                    manuscript_storage_class=args.manuscript_storage_class,
+                    manuscript_mode=args.manuscript_mode,
+                    manuscript_entrypoint=args.manuscript_entrypoint,
+                    reference_evidence=evidence,
                 )
-                if args.coverage_observation is not None
-                and coverage_storage is not None
-                else None
+            except (TypeError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            operation_result = CollectionReconciliationOperation().action(
+                request=request
             )
-            coverage_observation = (
-                CoverageObservation.from_json(
-                    coverage_observation_bytes.decode("utf-8")
-                )
-                if coverage_observation_bytes is not None
-                else None
-            )
-            acquisition_manifest = (
-                AcquisitionManifest.from_json(
-                    read_path_text(
-                        args.acquisition_manifest,
-                        label="acquisition manifest",
-                        root_alias="acquisition-manifest",
-                        storage_class=acquisition_storage,
-                        max_bytes=ReferencesOperatorAdapter.require_limit(
-                            ACQUISITION_IO_LIMITS.max_json_bytes,
-                            "max_json_bytes",
-                        ),
-                    )
-                )
-                if args.acquisition_manifest is not None
-                and acquisition_storage is not None
-                else None
-            )
-            acquisition_evidence = (
-                {
-                    item.proposed_citekey: item
-                    for item in acquisition_manifest.projections()
-                }
-                if acquisition_manifest is not None
-                else None
-            )
-            review_projection = (
-                ReviewProjection.from_json(
-                    read_path_text(
-                        args.review_projection,
-                        label="review projection",
-                        root_alias="review-projection",
-                        storage_class=review_storage,
-                        max_bytes=ReferencesOperatorAdapter.require_limit(
-                            REVIEW_IO_LIMITS.max_json_bytes,
-                            "max_json_bytes",
-                        ),
-                    )
-                )
-                if args.review_projection is not None
-                and review_storage is not None
-                else None
-            )
-            catalog_assets = None
-            if args.catalog is not None and catalog_storage is not None:
-                grouped_assets: dict[str, list[SourceAssetRecord]] = {}
-                for asset in ReferenceCatalog(
-                    args.catalog,
-                    storage_class=catalog_storage,
-                ).read_source_assets(
-                    max_records=ReferencesOperatorAdapter.require_limit(
-                        RECONCILIATION_IO_LIMITS.max_candidates,
-                        "max_candidates",
-                    )
-                ):
-                    grouped_assets.setdefault(
-                        asset.proposed_citekey,
-                        [],
-                    ).append(asset)
-                catalog_assets = {
-                    citekey: tuple(sorted(values, key=lambda item: item.sha256))
-                    for citekey, values in sorted(grouped_assets.items())
-                }
-            asset_plan = (
-                AssetDiscoveryPlan.from_json(
-                    read_path_text(
-                        args.asset_plan,
-                        label="asset discovery plan",
-                        root_alias="asset-plan-input",
-                        storage_class=asset_plan_storage,
-                        max_bytes=ReferencesOperatorAdapter.require_limit(
-                            ASSET_DISCOVERY_IO_LIMITS.max_json_bytes,
-                            "max_json_bytes",
-                        ),
-                    )
-                )
-                if args.asset_plan is not None
-                and asset_plan_storage is not None
-                else None
-            )
-            collection_rows = (
-                CollectionRowsLoader()
-                .action(
-                    request=CollectionRowsLoadRequest(
-                        path=args.corpus,
-                        storage_class=args.corpus_storage_class,
-                    )
-                )
-                .rows
-            )
-            outputs = (
-                CollectionReconciler()
-                .action(
-                    request=CollectionReconciliationRequest(
-                        records=imported.candidates,
-                        bibliography_bytes=bibliography_bytes,
-                        collection_id=args.collection_id,
-                        source_revision=args.source_revision,
-                        collection_rows=collection_rows,
-                        managed_pdfs=managed_pdfs,
-                        citation_closure=citation_closure,
-                        coverage_observation=coverage_observation,
-                        coverage_observation_bytes=coverage_observation_bytes,
-                        processing_evidence=processing_evidence,
-                        acquisition_evidence=acquisition_evidence,
-                        review_projection=review_projection,
-                        catalog_assets=catalog_assets,
-                        asset_plan=asset_plan,
-                        bibliography_parser=biblatex_parser_identity(),
-                    )
-                )
-                .outputs
-            )
-            publication = (
-                ReconciliationPublisher()
-                .action(
-                    request=ReconciliationPublicationRequest(
-                        outputs=outputs,
-                        output_directory=args.output,
-                        output_storage_class=args.output_storage_class,
-                    )
-                )
-                .publication
-            )
+            publication = operation_result.publication.publication
+            outputs = operation_result.reconciliation.outputs
             print(
                 json.dumps(
                     {

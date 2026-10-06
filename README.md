@@ -143,8 +143,13 @@ review scalars remain quarantined without authority upgrade; no operator catalog
 is migrated by these commands. See
 [Reference working catalog](docs/reference-catalog.md).
 
-`collection-reconcile` creates an immutable, replayable schema-5 projection
-package containing
+`collection-reconcile` is a thin operator adapter over the runtime-neutral
+`CollectionReconciliationOperationRequest -> CollectionReconciliationOperation
+-> CollectionReconciliationOperationResult` owner action. The stable action
+identity is available for explicit Workflow CPN transition binding; References
+contains no Workflow dependency, inferred topology, scheduler, marking, retry,
+or checkpoint state. The action creates an immutable, replayable schema-5
+projection package containing
 `package-manifest.json`, `collection-manifest.json`, `citation-closure.json`,
 `coverage-observation.json`, `reference-state-projections.json`,
 `missing-pdfs.csv`, `ambiguous-pdfs.csv`, and `extra-pdfs.csv`. The package
