@@ -30,9 +30,10 @@ first-match identity selection, and treats `not-observed` as the only safe
 missing-document state. A neutral link means only that an exact descriptor is
 attached to an exact resolved identity.
 
-Moved citation and bibliography attributes remain temporarily available from
-this facade as deprecated identity-preserving aliases. New code imports them
-from their canonical packages.
+Citation inventory and bibliography attributes are available only from their
+canonical `citations` and `bibliography` packages. `citation_document` exports
+only the projection and linkage contracts that it owns; it provides no moved
+aliases or dynamic compatibility attributes.
 
 See the [citation document control contracts](../../../../contracts/citation-document.md).
 

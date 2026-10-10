@@ -18,8 +18,8 @@ locators remain bounded normalized relative POSIX paths.
 ## Boundary
 
 `citation_document` depends on these records; this package never imports
-`citation_document`. Deprecated attributes on the old facade resolve to these
-exact class objects and do not create wrappers or parallel identities.
+`citation_document`. These records are exported only by their canonical
+`citations` package and are not mirrored through the consumer package.
 
 ## Detail
 

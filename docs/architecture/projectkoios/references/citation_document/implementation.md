@@ -99,10 +99,10 @@ normalized relative POSIX source paths without filesystem mutation policy; its
 SHA-256 is
 `d0019af4bcd5d3331c5ffc499bb95838215f09cc7d54b61d45b72456ed3db70d`.
 
-The facade retains deprecated attributes for moved citation and bibliography
-names. Each resolves to the exact canonical object and emits at most one
-`DeprecationWarning` per name in one process; no wrapper, subclass, alternate
-payload, or duplicate identity is introduced.
+The package initializer exports only citation-document projection and linkage
+contracts owned by this package. Citation inventory and bibliography names must
+be imported from `citations` and `bibliography`; no warning proxy, dynamic
+attribute, wrapper, alternate payload, or duplicate identity remains.
 
 Evidence:
 
@@ -113,7 +113,7 @@ Evidence:
 - linkage: [`linkage.py`](../../../../../src/python/projectkoios/references/citation_document/linkage.py)
 - focused tests: [`test__CitationDocumentProjection.py`](../../../../../tests/test__CitationDocumentProjection.py)
 - live adapter test: [`test__CitationDocumentTargetAdapter.py`](../../../../../tests/test__CitationDocumentTargetAdapter.py)
-- compatibility test: [`test__CitationCompatibilityFacade.py`](../../../../../tests/test__CitationCompatibilityFacade.py)
+- package boundary test: [`test__CitationDocumentPackage.py`](../../../../../tests/test__CitationDocumentPackage.py)
 - owner fixture: [`ksdft-3ec21b4-compact-result.json`](../../../../../tests/fixtures/citation_document/ksdft-3ec21b4-compact-result.json)
 - contract: [`citation-document.md`](../../../../contracts/citation-document.md)
 

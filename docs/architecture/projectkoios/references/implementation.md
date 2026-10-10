@@ -28,12 +28,12 @@ sequenceDiagram
     Note over D,C: no rights, use, review, ingestion, or publication claim
 ```
 
-The References root initializer is unchanged by these slices. Consumers import
+The References root initializer is unchanged by this slice. Consumers import
 citation inventory and bibliography binding from their canonical focused
 package facades, identity from its owner, and document control from
-`citation_document`. Moved names on the latter are bounded deprecated
-identity-preserving attributes; there is no root-facade expansion or duplicate
-implementation.
+`citation_document`. The document-control package no longer mirrors moved
+citation or bibliography names; there is no warning proxy, root-facade
+expansion, or duplicate implementation.
 
 Evidence:
 
