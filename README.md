@@ -131,9 +131,13 @@ The library-only candidate-bibliography exporter accepts explicit, exact source
 observations and produces a deterministic lexical union of their unmodified
 verbatim BibTeX entries. Its result retains collection/source/observation
 provenance, a fixed `proposed-noncanonical-private-drafting` status, and exact
-output byte identity. It performs no filesystem or database I/O, and it cannot
-accept identity, authorize publication, or use PDFs as bibliography authority.
-See [Candidate-bibliography export](docs/candidate-bibliography-export.md).
+output byte identity. A separate pure renderer reparses those observations into
+closed normalized fields, fails on unsupported or untrusted TeX constructs, and
+produces a deterministic TeX-escaped candidate projection bound to the exact
+export and observation identities. Neither projection performs filesystem or
+database I/O, accepts identity, authorizes publication, or uses PDFs as
+bibliography authority. See
+[Candidate-bibliography export](docs/candidate-bibliography-export.md).
 
 The public Python review API keeps processor outcomes, reading, claim-support
 checks, and review-collection inclusion in separate immutable records. Complete

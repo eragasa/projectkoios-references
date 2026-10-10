@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,10 @@ from projectkoios.references.candidate_bibliography import (
     CandidateBibliographyExportRequest,
     CandidateBibliographyExportResult,
     CandidateBibliographyExportStatus,
+    CandidateBibliographyRenderer,
+    CandidateBibliographyRenderError,
+    CandidateBibliographyRenderRequest,
+    CandidateBibliographyRenderResult,
     CandidateBibliographySourceDeclaration,
 )
 from projectkoios.references.identity import (
@@ -256,3 +262,134 @@ def test__candidate_bibliography_export__result_replays_request() -> None:
             citekeys=result.citekeys,
             bibliography=result.bibliography + b"% changed\n",
         )
+
+
+def _render(
+    filename: str,
+    *,
+    collection_id: str = "render-course",
+) -> CandidateBibliographyRenderResult:
+    source = CandidateBibliographyExportRequest(
+        sources=(_declaration(filename, collection_id=collection_id),)
+    )
+    return CandidateBibliographyRenderer().render(
+        request=CandidateBibliographyRenderRequest(source=source)
+    )
+
+
+def test__candidate_render__escapes_tex_deterministically() -> None:
+    result = _render("render-specials.bib")
+    repeated = _render("render-specials.bib")
+    expected = (_FIXTURES / "expected-render-specials.bib").read_bytes()
+    exact = CandidateBibliographyExporter().export(
+        request=result.request.source
+    )
+
+    assert result.bibliography == expected
+    assert repeated.bibliography == result.bibliography
+    assert repeated.result_id == result.result_id
+    assert result.source_export_result_id == exact.result_id
+    assert result.source_bibliography_sha256 == exact.bibliography_sha256
+    assert result.source_bibliography_byte_size == len(exact.bibliography)
+    assert result.provenance == exact.provenance
+    assert result.status is (
+        CandidateBibliographyExportStatus.PROPOSED_NONCANONICAL
+    )
+    assert b"Examples & Partners" in exact.bibliography
+    assert b"Examples \\& Partners" in result.bibliography
+    assert result.entries[0].normalized_fields == (
+        ("author", "Example, Alice"),
+        ("publisher", "Examples & Partners"),
+        (
+            "title",
+            "Research & Development at 50%: sample #1_case costs $5 ^ ~",
+        ),
+        ("year", "2026"),
+    )
+
+
+def test__candidate_bibliography_render__is_source_order_independent() -> None:
+    source = _request()
+    forward = CandidateBibliographyRenderer().render(
+        request=CandidateBibliographyRenderRequest(source=source)
+    )
+    reverse = CandidateBibliographyRenderer().render(
+        request=CandidateBibliographyRenderRequest(
+            source=CandidateBibliographyExportRequest(
+                sources=tuple(reversed(source.sources))
+            )
+        )
+    )
+
+    assert reverse.request.request_id == forward.request.request_id
+    assert reverse.entries == forward.entries
+    assert reverse.bibliography == forward.bibliography
+    assert reverse.result_id == forward.result_id
+
+
+@pytest.mark.parametrize(
+    ("filename", "message"),
+    (
+        ("render-unsafe-braces.bib", "braces or backslash"),
+        ("render-unsafe-backslash.bib", "braces or backslash"),
+        ("render-unknown-field.bib", "unsupported BibTeX field"),
+    ),
+)
+def test__candidate_bibliography_render__fails_closed(
+    filename: str,
+    message: str,
+) -> None:
+    with pytest.raises(CandidateBibliographyRenderError, match=message):
+        _render(filename)
+
+
+def test__candidate_bibliography_render__result_replays_request() -> None:
+    result = _render("render-specials.bib")
+
+    with pytest.raises(
+        CandidateBibliographyRenderError,
+        match="bibliography does not match",
+    ):
+        CandidateBibliographyRenderResult(
+            request=result.request,
+            provenance=result.provenance,
+            entries=result.entries,
+            bibliography=result.bibliography + b"% changed\n",
+        )
+
+
+def test__candidate_bibliography_render__builds_with_bibtex_and_pdflatex(
+    tmp_path: Path,
+) -> None:
+    bibtex = shutil.which("bibtex")
+    pdflatex = shutil.which("pdflatex")
+    if bibtex is None or pdflatex is None:
+        pytest.skip("bibtex and pdflatex are not both available")
+    result = _render("render-specials.bib")
+    (tmp_path / "references.bib").write_bytes(result.bibliography)
+    (tmp_path / "main.tex").write_text(
+        """\\documentclass{article}
+\\begin{document}
+\\nocite{*}
+\\bibliographystyle{plain}
+\\bibliography{references}
+\\end{document}
+""",
+        encoding="utf-8",
+    )
+    commands = (
+        (pdflatex, "-interaction=nonstopmode", "-halt-on-error", "main.tex"),
+        (bibtex, "main"),
+        (pdflatex, "-interaction=nonstopmode", "-halt-on-error", "main.tex"),
+        (pdflatex, "-interaction=nonstopmode", "-halt-on-error", "main.tex"),
+    )
+    for command in commands:
+        subprocess.run(
+            command,
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+    assert (tmp_path / "main.pdf").is_file()
+    assert b"Examples \\& Partners" in (tmp_path / "main.bbl").read_bytes()
