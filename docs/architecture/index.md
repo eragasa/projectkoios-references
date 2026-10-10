@@ -27,8 +27,8 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_schema`](projectkoios/references/adapters/sql/sqlite/document_reference_schema/index.md)
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_store`](projectkoios/references/adapters/sql/sqlite/document_reference_store/index.md)
 
-The current source tree requires 453 component-architecture pages under the
-established convention. These slices supply 198 pages; 255 remain unmigrated.
+The current source tree requires 463 component-architecture pages under the
+established convention. These slices supply 198 pages; 265 remain unmigrated.
 That count is coverage evidence, not a request for a bulk retrofit.
 
 ## Remaining unmigrated modules
@@ -36,6 +36,7 @@ That count is coverage evidence, not a request for a bulk retrofit.
 - `projectkoios.references.acquisition`
 - `projectkoios.references.assets`
 - `projectkoios.references.biblatex`
+- `projectkoios.references.candidate_bibliography`
 - `projectkoios.references.citation_closure`
 - `projectkoios.references.citation_draft`
 - `projectkoios.references.coverage`

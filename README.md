@@ -25,7 +25,8 @@ the [source-backed citation graph](docs/citation-graph.md), the
 [actor-provenanced review-state model](docs/review-state.md), the
 [field-level state projection model](docs/reference-state-projections.md), the
 [reference working catalog](docs/reference-catalog.md), the
-[bounded reference-I/O policy](docs/reference-io-bounds.md),
+[bounded reference-I/O policy](docs/reference-io-bounds.md), the
+[candidate-bibliography export contract](docs/candidate-bibliography-export.md),
 [cloud-placeholder safety](docs/cloud-placeholder-safety.md),
 [generic PDF corpus discovery](docs/pdf-corpus-discovery.md),
 [reference asset heuristics and canonical
@@ -125,6 +126,14 @@ access. Metadata checks
 and later byte opens are not atomic, so detected state changes fail closed and
 residual TOCTOU risk remains documented. There is no corpus-discovery CLI. See
 [Generic PDF corpus discovery](docs/pdf-corpus-discovery.md).
+
+The library-only candidate-bibliography exporter accepts explicit, exact source
+observations and produces a deterministic lexical union of their unmodified
+verbatim BibTeX entries. Its result retains collection/source/observation
+provenance, a fixed `proposed-noncanonical-private-drafting` status, and exact
+output byte identity. It performs no filesystem or database I/O, and it cannot
+accept identity, authorize publication, or use PDFs as bibliography authority.
+See [Candidate-bibliography export](docs/candidate-bibliography-export.md).
 
 The public Python review API keeps processor outcomes, reading, claim-support
 checks, and review-collection inclusion in separate immutable records. Complete
