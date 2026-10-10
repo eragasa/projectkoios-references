@@ -2,10 +2,12 @@
 
 ## Status and authority boundary
 
-This is the bounded owner-internal model implemented for `REF-REVIEW-01`. It
-replaces the public mutable `ReviewStatus` / `ReviewMembership` scalar API. It
-does not accept a reference, a scientific claim, a manuscript citation, a
-rights decision, or a publication action.
+This bounded owner-internal model replaces the public mutable `ReviewStatus` /
+`ReviewMembership` scalar API. Generic reading and inclusion records do not
+accept a reference, scientific claim, manuscript citation, rights decision, or
+publication action. References-owned identity and canonical-asset authority
+use two additional closed dimensions, actor scopes, and sequential replay
+rules described below.
 
 The current References architecture and policy boundary governs this model.
 Review records are immutable, content-addressed history. The SQLite catalog is
@@ -26,7 +28,11 @@ checks only; none means read, relevant, supported, canonical, or accepted.
 - `claim-support-check` records only that the owning scientific application
   checked claim support; it does not encode or accept a support disposition;
 - `review-collection-inclusion` records included, excluded, or unresolved
-  membership in a references-owned review collection.
+  membership in a references-owned review collection;
+- `reference-identity` records `accept-existing`, `accept-new`, `merge`,
+  `reject`, or course-contextual `defer` under the identity-curator scope;
+- `canonical-asset` separately records `authorize`, `reject`, or `defer` under
+  the canonical-asset-curator scope after identity acceptance.
 
 Each record requires a subject content identity, an explicit context, a stable
 producing-implementation name and version, actor ID, actor kind, authority
@@ -37,11 +43,14 @@ bound into the record identity. Actor-verification evidence must be among the
 decision evidence.
 
 Technical records require a `processor` actor with `technical-processor`
-scope. Human decisions require a `person` actor. Reading and review-collection
-inclusion require the corresponding references-owned scope and authority
-domain. Claim-support checks require a `scientific-claim-reviewer` scope in a
-domain other than `projectkoios-references`; replay records the declared
-federated authority but does not designate or authenticate that authority.
+scope. Human decisions require a `person` actor. Reading, review-collection
+inclusion, reference identity, and canonical-asset decisions require their
+corresponding References-owned scope and authority domain. Claim-support checks
+require a `scientific-claim-reviewer` scope in a domain other than
+`projectkoios-references`; replay records the declared federated authority but
+does not designate or authenticate that authority. Identity acceptance never
+implies canonical-asset authorization, and asset authorization never implies
+rights clearance.
 
 ## Deliberately separate boundaries
 
@@ -49,7 +58,9 @@ The review model cannot represent the following as review statuses:
 
 | Boundary | Owning record or authority |
 |---|---|
-| Canonical reference acceptance, merge, split, alias, or rename | `IdentityDecision` and `replay_identity_decisions`; designated human reference curator |
+| Course candidate acceptance or merge | `reference-identity` decision and schema-5 authority replay; designated References identity curator |
+| Other identity split, alias, or rename workflows | `IdentityDecision` and `replay_identity_decisions`; designated human reference curator |
+| Canonical source-asset linkage | later `canonical-asset` decision; designated References asset curator |
 | Scientific relevance or scientific acceptance | Owning research repository or scientific application and its designated human authority |
 | Manuscript inclusion, citation, quotation, or reliance | Manuscript-owning repository and designated human author |
 | Rights clearance for an action | Repository performing the action and designated human rights authority |
@@ -113,9 +124,13 @@ Published catalog schema 4 added canonical-JSON-backed technical and human
 review tables. Current schema 5 preserves those tables unchanged and adds only
 the disposable field-level state-projection cache.
 `ReferenceCatalog.import_review_records` replays the existing and proposed
-records before inserting them in one immediate transaction. Exact replay is
-idempotent. Invalid, stale, concurrent, or partially valid batches roll back
-without a last-writer update.
+records before inserting them in one immediate transaction. The course
+authority appender additionally performs CAS checks over the exact decision
+head, state-projection set, and asset-plan set. It inserts missing exact
+candidate observations, the candidate, one decision, and its derived state
+projection atomically. Exact replay is idempotent. Invalid, stale, concurrent,
+or partially valid batches roll back without a last-writer update. See
+[Course reference authority review](course-reference-authority.md).
 
 Schema 3 is recognized only by its exact predecessor fingerprint
 `catalog-schema:sha256:d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa`.

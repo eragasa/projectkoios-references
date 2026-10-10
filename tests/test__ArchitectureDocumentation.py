@@ -208,6 +208,7 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.candidate_bibliography",
     "projectkoios.references.citation_closure",
     "projectkoios.references.citation_draft",
+    "projectkoios.references.course_reference_authority",
     "projectkoios.references.coverage",
     "projectkoios.references.enrichment",
     "projectkoios.references.graph",
@@ -411,7 +412,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "198 pages; 270 remain unmigrated" in navigator
+    assert "198 pages; 300 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -423,7 +424,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 468
+    assert expected_total == 498
 
 
 def test__citation_package_dependencies_are_one_way() -> None:

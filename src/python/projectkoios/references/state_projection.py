@@ -112,6 +112,7 @@ class StateResolution(StrEnum):
 class StateDimension(StrEnum):
     CANDIDATE_IDENTITY = "candidate-identity"
     CANONICAL_IDENTITY_DECISION = "canonical-identity-decision"
+    CANONICAL_ASSET_DECISION = "canonical-asset-decision"
     BIBLIOGRAPHIC_METADATA = "bibliographic-metadata"
     COLLECTION_OBSERVATION = "collection-observation"
     READING_DECISION = "reading-decision"
@@ -157,7 +158,7 @@ STATE_FIELD_RULES: Mapping[str, StateFieldRule] = MappingProxyType(
         "identity_status": StateFieldRule(
             StateDimension.CANDIDATE_IDENTITY,
             "projectkoios-references",
-            _OBSERVATION_OR_PROPOSAL,
+            _OBSERVATION_OR_PROPOSAL + _DECISION,
         ),
         "proposed_citekey": StateFieldRule(
             StateDimension.CANDIDATE_IDENTITY,
@@ -168,6 +169,41 @@ STATE_FIELD_RULES: Mapping[str, StateFieldRule] = MappingProxyType(
             StateDimension.CANDIDATE_IDENTITY,
             "projectkoios-references",
             _OBSERVATION_OR_PROPOSAL,
+        ),
+        "bibliographic_work_id": StateFieldRule(
+            StateDimension.CANONICAL_IDENTITY_DECISION,
+            "projectkoios-references",
+            _DECISION,
+        ),
+        "active_citekey": StateFieldRule(
+            StateDimension.CANONICAL_IDENTITY_DECISION,
+            "projectkoios-references",
+            _DECISION,
+        ),
+        "alias_citekeys": StateFieldRule(
+            StateDimension.CANONICAL_IDENTITY_DECISION,
+            "projectkoios-references",
+            _DECISION,
+        ),
+        "identity_decision_id": StateFieldRule(
+            StateDimension.CANONICAL_IDENTITY_DECISION,
+            "projectkoios-references",
+            _DECISION,
+        ),
+        "source_asset_id": StateFieldRule(
+            StateDimension.CANONICAL_ASSET_DECISION,
+            "projectkoios-references",
+            _DECISION,
+        ),
+        "canonical_asset_decision_id": StateFieldRule(
+            StateDimension.CANONICAL_ASSET_DECISION,
+            "projectkoios-references",
+            _DECISION,
+        ),
+        "authority_binding_id": StateFieldRule(
+            StateDimension.CANONICAL_ASSET_DECISION,
+            "projectkoios-references",
+            _DECISION,
         ),
         "entry_type": StateFieldRule(
             StateDimension.BIBLIOGRAPHIC_METADATA,
@@ -339,7 +375,7 @@ STATE_FIELD_RULES: Mapping[str, StateFieldRule] = MappingProxyType(
 
 _EXACT_FIELD_VALUES: Mapping[str, frozenset[str]] = MappingProxyType(
     {
-        "identity_status": frozenset({"unaccepted-candidate"}),
+        "identity_status": frozenset({"unaccepted-candidate", "accepted"}),
         "citekey_status": frozenset({"proposed-noncanonical"}),
         "asset_ambiguity_status": ASSET_AMBIGUITY_STATUSES,
         "reading_decision": frozenset({"not-established", "read"}),
@@ -352,6 +388,7 @@ _EXACT_FIELD_VALUES: Mapping[str, frozenset[str]] = MappingProxyType(
 _STRING_FIELDS = frozenset(
     {
         "proposed_citekey",
+        "active_citekey",
         "entry_type",
         "title",
         "year",
@@ -378,14 +415,36 @@ _STRING_FIELDS = frozenset(
 _STRING_ARRAY_FIELDS = frozenset(
     {
         "authors",
+        "alias_citekeys",
         "source_bibliographies",
         "asset_competing_observation_ids",
         "asset_alternate_version_observation_ids",
     }
 )
+_HUMAN_DECISION_SCOPE_BY_FIELD: Mapping[str, str] = MappingProxyType(
+    {
+        "identity_status": "reference-identity-curator",
+        "bibliographic_work_id": "reference-identity-curator",
+        "active_citekey": "reference-identity-curator",
+        "alias_citekeys": "reference-identity-curator",
+        "identity_decision_id": "reference-identity-curator",
+        "source_asset_id": "canonical-asset-curator",
+        "canonical_asset_decision_id": "canonical-asset-curator",
+        "authority_binding_id": "canonical-asset-curator",
+        "reading_decision": "reference-reader",
+        "claim_support_check": "scientific-claim-reviewer",
+        "collection_inclusion": "review-collection-curator",
+    }
+)
+
 _SPECIAL_FIELDS = frozenset(
     {
         "candidate_id",
+        "bibliographic_work_id",
+        "identity_decision_id",
+        "source_asset_id",
+        "canonical_asset_decision_id",
+        "authority_binding_id",
         "asset_sha256",
         "asset_byte_size",
         "asset_heuristic_observations",
@@ -449,6 +508,11 @@ class StateClaim(DataObjectModel):
                 )
             _bounded(self.actor_id, field="decision actor_id")
             _bounded(self.authority_scope, field="decision authority_scope")
+            expected_scope = _HUMAN_DECISION_SCOPE_BY_FIELD.get(self.field)
+            if expected_scope is None or self.authority_scope != expected_scope:
+                raise StateProjectionError(
+                    f"{self.field} requires {expected_scope} authority scope"
+                )
             _content_id(
                 self.actor_verification_record_id,
                 field="decision actor verification",
@@ -1280,6 +1344,11 @@ def review_state_claims(
             or decision.context_id != context_id
         ):
             continue
+        if decision.dimension in {
+            HumanReviewDimension.REFERENCE_IDENTITY,
+            HumanReviewDimension.CANONICAL_ASSET,
+        }:
+            continue
         field, owner = {
             HumanReviewDimension.READING: (
                 "reading_decision",
@@ -1851,10 +1920,10 @@ def _validate_state_value(field: str, value: object) -> None:
     if field in _STRING_FIELDS:
         text = _bounded(value, field=f"{field} value")
         if (
-            field == "proposed_citekey"
+            field in {"proposed_citekey", "active_citekey"}
             and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:+-]*", text) is None
         ):
-            raise StateProjectionError("proposed_citekey value is invalid")
+            raise StateProjectionError(f"{field} value is invalid")
         if field in {"asset_root_alias", "asset_relative_path"}:
             _safe_locator(text)
         return
@@ -1869,12 +1938,18 @@ def _validate_state_value(field: str, value: object) -> None:
             "asset_competing_observation_ids",
             "asset_alternate_version_observation_ids",
         }
-        if field in asset_observation_fields and value != sorted(set(value)):
+        ordered_unique_fields = asset_observation_fields | {"alias_citekeys"}
+        if field in ordered_unique_fields and value != sorted(set(value)):
             raise StateProjectionError(
                 f"{field} value must be sorted and unique"
             )
         for item in value:
             _bounded(item, field=f"{field} item")
+            if (
+                field == "alias_citekeys"
+                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:+-]*", item) is None
+            ):
+                raise StateProjectionError("alias_citekeys item is invalid")
             if field in asset_observation_fields and (
                 re.fullmatch(
                     r"asset-heuristic-observation:sha256:[0-9a-f]{64}",
@@ -1886,8 +1961,15 @@ def _validate_state_value(field: str, value: object) -> None:
                     f"{field} item must be an asset observation identity"
                 )
         return
-    if field == "candidate_id":
-        _content_id(value, field="candidate_id value")
+    if field in {
+        "candidate_id",
+        "bibliographic_work_id",
+        "identity_decision_id",
+        "source_asset_id",
+        "canonical_asset_decision_id",
+        "authority_binding_id",
+    }:
+        _content_id(value, field=f"{field} value")
         return
     if field == "asset_sha256":
         if (

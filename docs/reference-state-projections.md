@@ -35,6 +35,10 @@ inputs. Editing a view does not mutate an input.
 authority owner, and permitted record kind. The matrix covers:
 
 - candidate identity and proposed naming as non-authoritative proposals;
+- accepted bibliographic-work identity, active/alias citekeys, and the exact
+  controlling identity decision;
+- separately authorized canonical source-asset linkage and its exact decision
+  and authority-binding identities;
 - bibliographic metadata and collection-row observations;
 - actor-provenanced reading, claim-check, and collection decisions;
 - asset discovery and byte identity;
@@ -42,10 +46,12 @@ authority owner, and permitted record kind. The matrix covers:
 - ingestion, transcript, producer-contract, and audit observations;
 - citation and technical-review outcomes.
 
-Protected canonical-identity, scientific-support, rights-decision,
-manuscript-use, publication, and contract-acceptance fields are not accepted by
-the generic claim surface at all. Their absence from this references-owned
-matrix is not acceptance. Acquisition contract status is separately named
+Accepted identity and canonical-asset fields accept only typed human-decision
+claims created by the course-authority replay path; generic review projection
+cannot populate them. Scientific-support, rights-decision, manuscript-use,
+publication, and contract-acceptance fields are not accepted by the generic
+claim surface at all. Their absence from this references-owned matrix is not
+acceptance. Acquisition contract status is separately named
 `acquisition_contract_status`; the value
 `proposed` cannot become contract acceptance. Acquisition-manifest
 `manuscript_status=not-assessed` is a guardrail, not an owning-manuscript
@@ -61,9 +67,10 @@ identity set. It sorts inputs, fields, values, record kinds, and locators before
 computing a content-derived projection identity. It rejects unsupported fields, field-invalid values, wrong authority owners,
 disallowed record kinds, undeclared inputs, malformed content identities,
 noncanonical JSON, and incomplete field coverage. Generic claim construction
-cannot admit human decisions: only the typed review adapter can translate a
-validated `HumanReviewDecision` with actor, authority-scope, and verification
-provenance.
+cannot admit human decisions. The generic review adapter handles its original
+reading, claim-check, and collection dimensions; the course-authority replay
+path separately admits only validated identity and asset decisions with actor,
+authority-scope, and verification provenance.
 
 For one field:
 

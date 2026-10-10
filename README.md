@@ -23,6 +23,7 @@ the basename of both the reference note and local PDF. See
 the [source-backed citation graph](docs/citation-graph.md), the
 [bounded citation-key closure](docs/citation-closure.md), the
 [actor-provenanced review-state model](docs/review-state.md), the
+[course reference authority review](docs/course-reference-authority.md), the
 [field-level state projection model](docs/reference-state-projections.md), the
 [reference working catalog](docs/reference-catalog.md), the
 [bounded reference-I/O policy](docs/reference-io-bounds.md), the
@@ -140,11 +141,18 @@ bibliography authority. See
 [Candidate-bibliography export](docs/candidate-bibliography-export.md).
 
 The public Python review API keeps processor outcomes, reading, claim-support
-checks, and review-collection inclusion in separate immutable records. Complete
-replay retains corrected and superseded history and rejects stale concurrent
-branches. It cannot represent canonical promotion, scientific acceptance,
-manuscript use, rights clearance, or publication as a review status. See
-[Actor-provenanced reference review state](docs/review-state.md).
+checks, review-collection inclusion, reference identity, and canonical-asset
+authorization in separate immutable records. Complete replay retains corrected
+and superseded history and rejects stale concurrent branches. Identity and
+asset authority use distinct curator scopes and decision streams; neither can
+represent scientific acceptance, manuscript use, rights clearance, or
+publication as a generic review status. The course authority projector verifies
+the exact Courses locator tuple, omits private paths and bytes from its queue,
+and exposes
+only schema-5 accepted targets. Atomic CAS append and replay then produce a
+reviewed course tuple or complete Search authority without upgrading legacy
+rows. See [Actor-provenanced reference review state](docs/review-state.md) and
+[Course reference authority review](docs/course-reference-authority.md).
 
 The working catalog supports owner-internal schema version 5 with a deterministic
 schema fingerprint and complete observation/candidate/review/state-projection

@@ -43,6 +43,8 @@ class ReviewAuthorityScope(StrEnum):
     TECHNICAL_PROCESSOR = "technical-processor"
     REFERENCE_READER = "reference-reader"
     REVIEW_COLLECTION_CURATOR = "review-collection-curator"
+    REFERENCE_IDENTITY_CURATOR = "reference-identity-curator"
+    CANONICAL_ASSET_CURATOR = "canonical-asset-curator"
     SCIENTIFIC_CLAIM_REVIEWER = "scientific-claim-reviewer"
 
 
@@ -132,6 +134,8 @@ class HumanReviewDimension(StrEnum):
     READING = "reading"
     CLAIM_SUPPORT_CHECK = "claim-support-check"
     REVIEW_COLLECTION_INCLUSION = "review-collection-inclusion"
+    REFERENCE_IDENTITY = "reference-identity"
+    CANONICAL_ASSET = "canonical-asset"
 
 
 class ReadingDecision(StrEnum):
@@ -150,6 +154,24 @@ class ReviewInclusionDecision(StrEnum):
     UNRESOLVED = "unresolved"
 
 
+class ReferenceIdentityDecision(StrEnum):
+    """Closed curator decisions for candidate bibliographic identity."""
+
+    ACCEPT_EXISTING = "accept-existing"
+    ACCEPT_NEW = "accept-new"
+    MERGE = "merge"
+    REJECT = "reject"
+    DEFER = "defer"
+
+
+class CanonicalAssetDecision(StrEnum):
+    """Closed post-identity decisions for canonical source assets."""
+
+    AUTHORIZE = "authorize"
+    REJECT = "reject"
+    DEFER = "defer"
+
+
 _DECISIONS_BY_DIMENSION = {
     HumanReviewDimension.READING: frozenset(
         item.value for item in ReadingDecision
@@ -160,6 +182,12 @@ _DECISIONS_BY_DIMENSION = {
     HumanReviewDimension.REVIEW_COLLECTION_INCLUSION: frozenset(
         item.value for item in ReviewInclusionDecision
     ),
+    HumanReviewDimension.REFERENCE_IDENTITY: frozenset(
+        item.value for item in ReferenceIdentityDecision
+    ),
+    HumanReviewDimension.CANONICAL_ASSET: frozenset(
+        item.value for item in CanonicalAssetDecision
+    ),
 }
 _SCOPE_BY_DIMENSION = {
     HumanReviewDimension.READING: ReviewAuthorityScope.REFERENCE_READER,
@@ -168,6 +196,12 @@ _SCOPE_BY_DIMENSION = {
     ),
     HumanReviewDimension.REVIEW_COLLECTION_INCLUSION: (
         ReviewAuthorityScope.REVIEW_COLLECTION_CURATOR
+    ),
+    HumanReviewDimension.REFERENCE_IDENTITY: (
+        ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR
+    ),
+    HumanReviewDimension.CANONICAL_ASSET: (
+        ReviewAuthorityScope.CANONICAL_ASSET_CURATOR
     ),
 }
 
@@ -438,6 +472,8 @@ class HumanReviewDecision:
         reference_owned = self.dimension in {
             HumanReviewDimension.READING,
             HumanReviewDimension.REVIEW_COLLECTION_INCLUSION,
+            HumanReviewDimension.REFERENCE_IDENTITY,
+            HumanReviewDimension.CANONICAL_ASSET,
         }
         if reference_owned and self.actor.authority_domain != _REFERENCE_DOMAIN:
             raise ReviewRecordError(
@@ -485,7 +521,9 @@ class HumanReviewDecision:
         dimension: HumanReviewDimension,
         decision: ReadingDecision
         | ClaimSupportCheckDecision
-        | ReviewInclusionDecision,
+        | ReviewInclusionDecision
+        | ReferenceIdentityDecision
+        | CanonicalAssetDecision,
         producer: ProducerIdentity,
         transition_kind: ReviewTransitionKind,
         actor: ReviewActorProvenance,
