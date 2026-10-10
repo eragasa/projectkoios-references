@@ -79,10 +79,10 @@ render-limit outcomes retain `CitationDraftError`.
 
 The module has no private module-level helper functions. Entry invariants belong
 to `CitationDraftEntry`; parse helpers belong to `CitationDraftParser`; render
-helpers belong to `CitationDraftRenderer`. The old module functions
-`parse_citation_drafts` and `render_bibtex` remain warning-emitting deprecated
-forwarders only. The canonical types remain a module API and were deliberately
-not added to the root facade.
+helpers belong to `CitationDraftRenderer`. The old `parse_citation_drafts` and
+`render_bibtex` function entry points have been removed rather than retained as
+compatibility aliases. The canonical types remain a module API and were
+deliberately not added to the root facade.
 
 ## Other object and action boundaries
 

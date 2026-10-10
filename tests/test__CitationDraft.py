@@ -20,8 +20,6 @@ from projectkoios.references.citation_draft import (
     CitationDraftRenderer,
     CitationDraftRenderRequest,
     CitationDraftRenderResult,
-    parse_citation_drafts,
-    render_bibtex,
 )
 
 from scripts.koios_ref import main
@@ -139,14 +137,11 @@ def test__citation_draft_parser__rejects_duplicate_members_and_authority() -> (
         _parse(_payload(entry))
 
 
-def test__legacy_entry_points__warn_and_forward() -> None:
-    with pytest.warns(DeprecationWarning, match="CitationDraftParser"):
-        entries = parse_citation_drafts(_payload())
-    with pytest.warns(DeprecationWarning, match="CitationDraftRenderer"):
-        bibliography = render_bibtex(entries)
+def test__citation_draft__has_no_legacy_function_entry_points() -> None:
+    from projectkoios.references import citation_draft
 
-    assert entries == _parse(_payload()).entries
-    assert bibliography == _render(entries).bibliography
+    assert not hasattr(citation_draft, "parse_citation_drafts")
+    assert not hasattr(citation_draft, "render_bibtex")
 
 
 def test__bib_render_cli__publishes_without_overwrite(
