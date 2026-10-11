@@ -1771,6 +1771,7 @@ class AppendReferenceIdentityDecisionRequest(DataObjectActionRequest):
     actor: ReviewActorProvenance
     rationale: str
     decided_at: str
+    idempotency_evidence_ids: tuple[str, ...] = ()
     request_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -1780,6 +1781,10 @@ class AppendReferenceIdentityDecisionRequest(DataObjectActionRequest):
             raise TypeError("actor must be ReviewActorProvenance")
         _bounded(self.rationale, field="rationale")
         _bounded(self.decided_at, field="decided_at")
+        _content_ids(
+            self.idempotency_evidence_ids,
+            field="idempotency_evidence_ids",
+        )
         object.__setattr__(
             self,
             "request_id",
@@ -1788,6 +1793,7 @@ class AppendReferenceIdentityDecisionRequest(DataObjectActionRequest):
                 {
                     "actor": self.actor,
                     "decided_at": self.decided_at,
+                    "idempotency_evidence_ids": (self.idempotency_evidence_ids),
                     "preview_id": self.preview.preview_id,
                     "rationale": self.rationale,
                 },
@@ -1803,6 +1809,7 @@ class AppendCanonicalAssetDecisionRequest(DataObjectActionRequest):
     actor: ReviewActorProvenance
     rationale: str
     decided_at: str
+    idempotency_evidence_ids: tuple[str, ...] = ()
     request_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -1812,6 +1819,10 @@ class AppendCanonicalAssetDecisionRequest(DataObjectActionRequest):
             raise TypeError("actor must be ReviewActorProvenance")
         _bounded(self.rationale, field="rationale")
         _bounded(self.decided_at, field="decided_at")
+        _content_ids(
+            self.idempotency_evidence_ids,
+            field="idempotency_evidence_ids",
+        )
         object.__setattr__(
             self,
             "request_id",
@@ -1820,6 +1831,7 @@ class AppendCanonicalAssetDecisionRequest(DataObjectActionRequest):
                 {
                     "actor": self.actor,
                     "decided_at": self.decided_at,
+                    "idempotency_evidence_ids": (self.idempotency_evidence_ids),
                     "preview_id": self.preview.preview_id,
                     "rationale": self.rationale,
                 },
@@ -1942,6 +1954,8 @@ class ReferenceAuthorityDecisionAppender:
             queue.queue_id,
             queue.review_projection_id,
             preview.preview_id,
+            request.request_id,
+            *request.idempotency_evidence_ids,
             item.item_revision_id,
             item.selection.scope_id,
             item.selection.selection_id,
@@ -2042,6 +2056,8 @@ class ReferenceAuthorityDecisionAppender:
             queue.queue_id,
             queue.review_projection_id,
             plan.plan_id,
+            request.request_id,
+            *request.idempotency_evidence_ids,
             preview.preview_id,
             item.item_revision_id,
             item.selection.scope_id,
@@ -2138,6 +2154,7 @@ class CourseReferenceAuthorityFailureReason(StrEnum):
     REVISION_STALE = "revision-stale"
     TARGET_STALE = "target-stale"
     CONCURRENT_DECISION = "concurrent-decision"
+    IDEMPOTENCY_CONFLICT = "idempotency-conflict"
     INVALID_DISPOSITION = "invalid-disposition"
     OWNER_MALFORMED = "owner-malformed"
     OWNER_UNAVAILABLE = "owner-unavailable"
@@ -2524,6 +2541,370 @@ class CourseReferenceAuthorityService:
                 "asset preview is not available",
             ) from error
 
+    def put_identity_decision(
+        self,
+        *,
+        scope: CourseReferenceResolutionScopeEvidence,
+        selections: tuple[CourseReferenceSelectionEvidence, ...],
+        selection_id: str,
+        disposition: ReferenceIdentityDecision,
+        target_state_projection_id: str | None,
+        canonical_citekey: str | None,
+        alias_citekeys: tuple[str, ...],
+        selected_record_match_ids: tuple[str, ...],
+        expected_current_decision_id: str | None,
+        expected_queue_id: str,
+        expected_item_revision_id: str,
+        actor: ReviewActorProvenance,
+        rationale: str,
+        decided_at: str,
+        idempotency_key: str,
+    ) -> ReferenceAuthorityDecisionReceipt:
+        """Create or replay one stateless idempotent identity PUT."""
+        try:
+            idempotency_scope_id = _idempotency_scope_id(
+                key=idempotency_key,
+                operation="reference-identity",
+                scope=scope,
+                selection_id=selection_id,
+                actor=actor,
+            )
+            idempotency_request_id = _idempotency_request_id(
+                scope_id=idempotency_scope_id,
+                payload={
+                    "alias_citekeys": alias_citekeys,
+                    "canonical_citekey": canonical_citekey,
+                    "decided_at": decided_at,
+                    "disposition": disposition,
+                    "expected_current_decision_id": (
+                        expected_current_decision_id
+                    ),
+                    "expected_item_revision_id": expected_item_revision_id,
+                    "expected_queue_id": expected_queue_id,
+                    "rationale": rationale,
+                    "selected_record_match_ids": selected_record_match_ids,
+                    "target_state_projection_id": (target_state_projection_id),
+                    "actor": actor,
+                },
+            )
+            queue, _ = self._load(scope=scope, selections=selections)
+            item = queue.item(selection_id)
+            candidate = _ready_candidate(item)
+            existing = self._idempotent_result(
+                idempotency_scope_id=idempotency_scope_id,
+                idempotency_request_id=idempotency_request_id,
+                dimension=HumanReviewDimension.REFERENCE_IDENTITY,
+                subject_id=candidate.candidate_id,
+            )
+            if existing is not None:
+                result, preview_id = existing
+                return self._receipt(
+                    result=result,
+                    scope=scope,
+                    selections=selections,
+                    selection_id=selection_id,
+                    preview_id=preview_id,
+                )
+            _require_put_revisions(
+                queue=queue,
+                item=item,
+                expected_queue_id=expected_queue_id,
+                expected_item_revision_id=expected_item_revision_id,
+            )
+            preview = self.preview_identity(
+                scope=scope,
+                selections=selections,
+                selection_id=selection_id,
+                disposition=disposition,
+                target_state_projection_id=target_state_projection_id,
+                canonical_citekey=canonical_citekey,
+                alias_citekeys=alias_citekeys,
+                selected_record_match_ids=selected_record_match_ids,
+                expected_current_decision_id=expected_current_decision_id,
+            )
+            if (
+                preview.queue.queue_id != expected_queue_id
+                or preview.queue.item(selection_id).item_revision_id
+                != expected_item_revision_id
+            ):
+                raise CourseReferenceAuthorityServiceError(
+                    CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                    "identity PUT revision is stale",
+                )
+            try:
+                return self._append_identity(
+                    preview=preview,
+                    actor=actor,
+                    rationale=rationale,
+                    decided_at=decided_at,
+                    idempotency_evidence_ids=tuple(
+                        sorted(
+                            {
+                                idempotency_scope_id,
+                                idempotency_request_id,
+                            }
+                        )
+                    ),
+                )
+            except CourseReferenceAuthorityServiceError:
+                raise
+            except Exception as error:
+                failure = _service_operation_error(
+                    error,
+                    operation="identity decision PUT",
+                )
+                if failure.reason is not (
+                    CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION
+                ):
+                    raise failure from error
+                raced = self._idempotent_result(
+                    idempotency_scope_id=idempotency_scope_id,
+                    idempotency_request_id=idempotency_request_id,
+                    dimension=HumanReviewDimension.REFERENCE_IDENTITY,
+                    subject_id=candidate.candidate_id,
+                )
+                if raced is None:
+                    raise failure from error
+                result, preview_id = raced
+                return self._receipt(
+                    result=result,
+                    scope=scope,
+                    selections=selections,
+                    selection_id=selection_id,
+                    preview_id=preview_id,
+                )
+        except CourseReferenceAuthorityServiceError:
+            raise
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                "identity PUT evidence is stale",
+            ) from error
+        except Exception as error:
+            raise _service_operation_error(
+                error,
+                operation="identity decision PUT",
+            ) from error
+
+    def put_asset_decision(
+        self,
+        *,
+        scope: CourseReferenceResolutionScopeEvidence,
+        selections: tuple[CourseReferenceSelectionEvidence, ...],
+        selection_id: str,
+        disposition: CanonicalAssetDecision,
+        competitor_dispositions: tuple[
+            CanonicalAssetCompetitorDisposition, ...
+        ],
+        expected_current_decision_id: str | None,
+        expected_queue_id: str,
+        expected_item_revision_id: str,
+        expected_identity_state_projection_id: str,
+        expected_plan_id: str | None,
+        actor: ReviewActorProvenance,
+        rationale: str,
+        decided_at: str,
+        idempotency_key: str,
+    ) -> ReferenceAuthorityDecisionReceipt:
+        """Create or replay one stateless idempotent asset PUT."""
+        try:
+            idempotency_scope_id = _idempotency_scope_id(
+                key=idempotency_key,
+                operation="canonical-asset",
+                scope=scope,
+                selection_id=selection_id,
+                actor=actor,
+            )
+            idempotency_request_id = _idempotency_request_id(
+                scope_id=idempotency_scope_id,
+                payload={
+                    "actor": actor,
+                    "competitor_dispositions": competitor_dispositions,
+                    "decided_at": decided_at,
+                    "disposition": disposition,
+                    "expected_current_decision_id": (
+                        expected_current_decision_id
+                    ),
+                    "expected_identity_state_projection_id": (
+                        expected_identity_state_projection_id
+                    ),
+                    "expected_item_revision_id": expected_item_revision_id,
+                    "expected_plan_id": expected_plan_id,
+                    "expected_queue_id": expected_queue_id,
+                    "rationale": rationale,
+                },
+            )
+            queue, _ = self._load(scope=scope, selections=selections)
+            item = queue.item(selection_id)
+            candidate = _ready_candidate(item)
+            existing = self._idempotent_result(
+                idempotency_scope_id=idempotency_scope_id,
+                idempotency_request_id=idempotency_request_id,
+                dimension=HumanReviewDimension.CANONICAL_ASSET,
+                subject_id=candidate.candidate_id,
+            )
+            if existing is not None:
+                result, preview_id = existing
+                return self._receipt(
+                    result=result,
+                    scope=scope,
+                    selections=selections,
+                    selection_id=selection_id,
+                    preview_id=preview_id,
+                )
+            _require_put_revisions(
+                queue=queue,
+                item=item,
+                expected_queue_id=expected_queue_id,
+                expected_item_revision_id=expected_item_revision_id,
+            )
+            if (
+                item.active_authority is None
+                or item.active_authority.state_projection_id
+                != expected_identity_state_projection_id
+            ):
+                raise CourseReferenceAuthorityServiceError(
+                    CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                    "asset PUT identity projection is stale",
+                )
+            preview = self.preview_asset(
+                scope=scope,
+                selections=selections,
+                selection_id=selection_id,
+                disposition=disposition,
+                competitor_dispositions=competitor_dispositions,
+                expected_current_decision_id=expected_current_decision_id,
+            )
+            preview_item = preview.plan.queue.item(selection_id)
+            if (
+                preview.plan.queue.queue_id != expected_queue_id
+                or preview_item.item_revision_id != expected_item_revision_id
+                or (
+                    expected_plan_id is not None
+                    and preview.plan.plan_id != expected_plan_id
+                )
+            ):
+                raise CourseReferenceAuthorityServiceError(
+                    CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                    "asset PUT plan revision is stale",
+                )
+            try:
+                return self._append_asset(
+                    preview=preview,
+                    actor=actor,
+                    rationale=rationale,
+                    decided_at=decided_at,
+                    idempotency_evidence_ids=tuple(
+                        sorted(
+                            {
+                                idempotency_scope_id,
+                                idempotency_request_id,
+                            }
+                        )
+                    ),
+                )
+            except CourseReferenceAuthorityServiceError:
+                raise
+            except Exception as error:
+                failure = _service_operation_error(
+                    error,
+                    operation="canonical asset decision PUT",
+                )
+                if failure.reason is not (
+                    CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION
+                ):
+                    raise failure from error
+                raced = self._idempotent_result(
+                    idempotency_scope_id=idempotency_scope_id,
+                    idempotency_request_id=idempotency_request_id,
+                    dimension=HumanReviewDimension.CANONICAL_ASSET,
+                    subject_id=candidate.candidate_id,
+                )
+                if raced is None:
+                    raise failure from error
+                result, preview_id = raced
+                return self._receipt(
+                    result=result,
+                    scope=scope,
+                    selections=selections,
+                    selection_id=selection_id,
+                    preview_id=preview_id,
+                )
+        except CourseReferenceAuthorityServiceError:
+            raise
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                "asset PUT evidence is stale",
+            ) from error
+        except Exception as error:
+            raise _service_operation_error(
+                error,
+                operation="canonical asset decision PUT",
+            ) from error
+
+    def _idempotent_result(
+        self,
+        *,
+        idempotency_scope_id: str,
+        idempotency_request_id: str,
+        dimension: HumanReviewDimension,
+        subject_id: str,
+    ) -> tuple[ReferenceAuthorityDecisionResult, str] | None:
+        review = self._catalog.read_review_projection()
+        matches = tuple(
+            item
+            for item in review.human_decision_history
+            if idempotency_scope_id in item.evidence_ids
+        )
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.OWNER_MALFORMED,
+                "idempotency scope has multiple owner decisions",
+            )
+        decision = matches[0]
+        if (
+            idempotency_request_id not in decision.evidence_ids
+            or decision.dimension is not dimension
+            or decision.subject_id != subject_id
+        ):
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.IDEMPOTENCY_CONFLICT,
+                "idempotency key was reused with different decision inputs",
+            )
+        preview_prefix = (
+            "reference-identity-decision-preview:sha256:"
+            if dimension is HumanReviewDimension.REFERENCE_IDENTITY
+            else "canonical-asset-decision-preview:sha256:"
+        )
+        request_prefix = (
+            "append-reference-identity-decision-request:sha256:"
+            if dimension is HumanReviewDimension.REFERENCE_IDENTITY
+            else "append-canonical-asset-decision-request:sha256:"
+        )
+        preview_id = _single_evidence_with_prefix(
+            decision.evidence_ids,
+            preview_prefix,
+        )
+        request_id = _single_evidence_with_prefix(
+            decision.evidence_ids,
+            request_prefix,
+        )
+        projection = _decision_state_projection(
+            decision=decision,
+            state_projections=self._catalog.read_state_projections(),
+        )
+        return (
+            ReferenceAuthorityDecisionResult(
+                request_id=request_id,
+                decision=decision,
+                state_projection=projection,
+            ),
+            preview_id,
+        )
+
     def append_identity(
         self,
         *,
@@ -2539,6 +2920,7 @@ class CourseReferenceAuthorityService:
                 actor=actor,
                 rationale=rationale,
                 decided_at=decided_at,
+                idempotency_evidence_ids=(),
             )
         except CourseReferenceAuthorityServiceError:
             raise
@@ -2555,6 +2937,7 @@ class CourseReferenceAuthorityService:
         actor: ReviewActorProvenance,
         rationale: str,
         decided_at: str,
+        idempotency_evidence_ids: tuple[str, ...],
     ) -> ReferenceAuthorityDecisionReceipt:
         selections = tuple(item.selection for item in preview.queue.items)
         fresh_queue, evidence = self._load(
@@ -2589,6 +2972,7 @@ class CourseReferenceAuthorityService:
                     actor=actor,
                     rationale=rationale,
                     decided_at=decided_at,
+                    idempotency_evidence_ids=idempotency_evidence_ids,
                 )
             )
             return self._receipt(
@@ -2669,6 +3053,7 @@ class CourseReferenceAuthorityService:
                 actor=actor,
                 rationale=rationale,
                 decided_at=decided_at,
+                idempotency_evidence_ids=idempotency_evidence_ids,
             )
         )
         return self._receipt(
@@ -2694,6 +3079,7 @@ class CourseReferenceAuthorityService:
                 actor=actor,
                 rationale=rationale,
                 decided_at=decided_at,
+                idempotency_evidence_ids=(),
             )
         except CourseReferenceAuthorityServiceError:
             raise
@@ -2710,6 +3096,7 @@ class CourseReferenceAuthorityService:
         actor: ReviewActorProvenance,
         rationale: str,
         decided_at: str,
+        idempotency_evidence_ids: tuple[str, ...],
     ) -> ReferenceAuthorityDecisionReceipt:
         old_queue = preview.plan.queue
         selections = tuple(item.selection for item in old_queue.items)
@@ -2745,6 +3132,7 @@ class CourseReferenceAuthorityService:
                     actor=actor,
                     rationale=rationale,
                     decided_at=decided_at,
+                    idempotency_evidence_ids=idempotency_evidence_ids,
                 )
             )
             return self._receipt(
@@ -2811,6 +3199,7 @@ class CourseReferenceAuthorityService:
                 actor=actor,
                 rationale=rationale,
                 decided_at=decided_at,
+                idempotency_evidence_ids=idempotency_evidence_ids,
             )
         )
         return self._receipt(
@@ -3874,6 +4263,133 @@ def _content_ids(
         raise CourseReferenceAuthorityError(f"{field} must be unique")
     if not ordered and values != tuple(sorted(values)):
         raise CourseReferenceAuthorityError(f"{field} must use lexical order")
+
+
+def _idempotency_scope_id(
+    *,
+    key: str,
+    operation: str,
+    scope: CourseReferenceResolutionScopeEvidence,
+    selection_id: str,
+    actor: ReviewActorProvenance,
+) -> str:
+    if type(key) is not str or not key:
+        raise ValueError("idempotency_key must be nonempty")
+    try:
+        encoded = key.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as error:
+        raise ValueError("idempotency_key must be valid UTF-8") from error
+    if len(encoded) > 1_024:
+        raise ValueError("idempotency_key exceeds its byte limit")
+    if type(scope) is not CourseReferenceResolutionScopeEvidence:
+        raise TypeError("scope has an invalid type")
+    _content_id(selection_id, field="selection_id")
+    if type(actor) is not ReviewActorProvenance:
+        raise TypeError("actor has an invalid type")
+    return _stable_id(
+        "reference-authority-idempotency-scope",
+        {
+            "actor": actor,
+            "actor_verification_record_id": (actor.verification_record_id),
+            "course_id": scope.course_id,
+            "idempotency_key": key,
+            "operation": operation,
+            "scope_id": scope.scope_id,
+            "selection_id": selection_id,
+        },
+    )
+
+
+def _idempotency_request_id(
+    *,
+    scope_id: str,
+    payload: object,
+) -> str:
+    _content_id(scope_id, field="idempotency_scope_id")
+    return _stable_id(
+        "reference-authority-idempotency-request",
+        {
+            "idempotency_scope_id": scope_id,
+            "request": payload,
+        },
+    )
+
+
+def _require_put_revisions(
+    *,
+    queue: CourseReferenceAuthorityQueue,
+    item: CourseReferenceAuthorityQueueItem,
+    expected_queue_id: str,
+    expected_item_revision_id: str,
+) -> None:
+    if (
+        queue.queue_id != expected_queue_id
+        or item.item_revision_id != expected_item_revision_id
+    ):
+        raise CourseReferenceAuthorityServiceError(
+            CourseReferenceAuthorityFailureReason.REVISION_STALE,
+            "decision PUT queue or item revision is stale",
+        )
+
+
+def _single_evidence_with_prefix(
+    evidence_ids: tuple[str, ...],
+    prefix: str,
+) -> str:
+    matches = tuple(item for item in evidence_ids if item.startswith(prefix))
+    if len(matches) != 1:
+        raise CourseReferenceAuthorityServiceError(
+            CourseReferenceAuthorityFailureReason.OWNER_MALFORMED,
+            "idempotent decision lacks one exact owner receipt identity",
+        )
+    return matches[0]
+
+
+def _decision_state_projection(
+    *,
+    decision: HumanReviewDecision,
+    state_projections: tuple[ReferenceStateProjection, ...],
+) -> ReferenceStateProjection | None:
+    accepting_identity = (
+        decision.dimension is HumanReviewDimension.REFERENCE_IDENTITY
+        and decision.decision
+        in {
+            ReferenceIdentityDecision.ACCEPT_EXISTING.value,
+            ReferenceIdentityDecision.ACCEPT_NEW.value,
+            ReferenceIdentityDecision.MERGE.value,
+        }
+    )
+    authorizing_asset = (
+        decision.dimension is HumanReviewDimension.CANONICAL_ASSET
+        and decision.decision == CanonicalAssetDecision.AUTHORIZE.value
+    )
+    if not accepting_identity and not authorizing_asset:
+        return None
+    field_name = (
+        "identity_decision_id"
+        if accepting_identity
+        else "canonical_asset_decision_id"
+    )
+    matches = tuple(
+        item
+        for item in state_projections
+        if item.subject_id == decision.subject_id
+        and _single_projection_value(item, field_name) == decision.decision_id
+        and (
+            not accepting_identity
+            or _single_projection_value(
+                item,
+                "canonical_asset_decision_id",
+            )
+            is None
+        )
+    )
+    if len(matches) != 1:
+        raise CourseReferenceAuthorityServiceError(
+            CourseReferenceAuthorityFailureReason.OWNER_MALFORMED,
+            "idempotent decision lacks one exact state projection",
+        )
+    return matches[0]
 
 
 def _service_operation_error(

@@ -153,9 +153,11 @@ reobservation, and bounded document/Ingestion-linkage reloads from runtime
 configuration. It validates the complete opaque Courses scope, projects every selection in order
 (including typed unresolved items), resolves candidates only through explicit
 rendered-entry bindings, omits private paths and bytes, and exposes only
-schema-5 accepted targets. Owner previews bind action choices
-and complete runtime evidence; atomic CAS append followed by an owner reread
-produces a receipt. Search authority additionally requires typed `source_id`,
+schema-5 accepted targets. Owner previews bind action choices and complete
+runtime evidence; stateless identity/asset PUT operations persist only derived
+idempotency evidence, replay exact retries after service reopen, and reject
+differing key reuse. Atomic CAS append followed by an owner reread produces a
+receipt. Search authority additionally requires typed `source_id`,
 `document_id`, and `artifact_verification_result_id` linkage. See
 [Actor-provenanced reference review state](docs/review-state.md) and
 [Course reference authority review](docs/course-reference-authority.md).

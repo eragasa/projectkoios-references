@@ -5,6 +5,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 from projectkoios.references.biblatex import load_bibliography
@@ -1130,6 +1131,218 @@ def test__service_exact_retry_failure_does_not_leak(
     assert captured.value.reason is (
         CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION
     )
+
+
+def test__stateless_identity_put__retries_after_service_reopen(
+    tmp_path: Path,
+) -> None:
+    evidence = _evidence()
+    path = tmp_path / "stateless-identity.sqlite3"
+    catalog = _catalog(path)
+    provider = _Provider(evidence)
+    service = CourseReferenceAuthorityService(
+        catalog=catalog,
+        provider=provider,
+    )
+    queue = service.queue(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+    )
+    item = queue.items[0]
+    actor = _actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR)
+    arguments: dict[str, Any] = {
+        "scope": evidence.request.scope,
+        "selections": evidence.request.selections,
+        "selection_id": item.selection.selection_id,
+        "disposition": ReferenceIdentityDecision.ACCEPT_NEW,
+        "target_state_projection_id": None,
+        "canonical_citekey": evidence.candidates[0].proposed_citekey,
+        "alias_citekeys": (),
+        "selected_record_match_ids": (),
+        "expected_current_decision_id": None,
+        "expected_queue_id": queue.queue_id,
+        "expected_item_revision_id": item.item_revision_id,
+        "actor": actor,
+        "rationale": "Stateless identity PUT.",
+        "decided_at": "2026-09-20T12:00:00Z",
+        "idempotency_key": "http-put-identity-1",
+    }
+    first = service.put_identity_decision(**arguments)
+
+    reopened = CourseReferenceAuthorityService(
+        catalog=ReferenceCatalog(path, storage_class=RootStorageClass.LOCAL),
+        provider=_Provider(evidence),
+    )
+    retry = reopened.put_identity_decision(**arguments)
+    assert retry.decision_result == first.decision_result
+    assert retry.preview_id == first.preview_id
+    assert catalog.counts()["human_review_decisions"] == 1
+
+    conflicting = dict(arguments)
+    conflicting["rationale"] = "Different reuse must fail."
+    with pytest.raises(CourseReferenceAuthorityServiceError) as captured:
+        reopened.put_identity_decision(**conflicting)
+    assert captured.value.reason is (
+        CourseReferenceAuthorityFailureReason.IDEMPOTENCY_CONFLICT
+    )
+    assert catalog.counts()["human_review_decisions"] == 1
+
+
+def test__stateless_identity_put__recovers_exact_concurrent_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence = _evidence()
+    catalog = _catalog(tmp_path / "stateless-identity-race.sqlite3")
+    service = CourseReferenceAuthorityService(
+        catalog=catalog,
+        provider=_Provider(evidence),
+    )
+    queue = service.queue(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+    )
+    item = queue.items[0]
+    original = ReferenceAuthorityDecisionAppender.append_identity
+
+    def commit_then_report_conflict(
+        appender: ReferenceAuthorityDecisionAppender,
+        *,
+        request: AppendReferenceIdentityDecisionRequest,
+    ) -> None:
+        original(appender, request=request)
+        raise CatalogConflictError("simulated exact concurrent commit")
+
+    monkeypatch.setattr(
+        ReferenceAuthorityDecisionAppender,
+        "append_identity",
+        commit_then_report_conflict,
+    )
+    receipt = service.put_identity_decision(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+        selection_id=item.selection.selection_id,
+        disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+        target_state_projection_id=None,
+        canonical_citekey=evidence.candidates[0].proposed_citekey,
+        alias_citekeys=(),
+        selected_record_match_ids=(),
+        expected_current_decision_id=None,
+        expected_queue_id=queue.queue_id,
+        expected_item_revision_id=item.item_revision_id,
+        actor=_actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR),
+        rationale="Recover exact concurrent PUT.",
+        decided_at="2026-09-20T12:00:00Z",
+        idempotency_key="http-put-identity-race",
+    )
+    assert (
+        receipt.current_decision_id
+        == receipt.decision_result.decision.decision_id
+    )
+    assert catalog.counts()["human_review_decisions"] == 1
+
+
+def test__stateless_asset_put__retries_after_service_reopen(
+    tmp_path: Path,
+) -> None:
+    evidence = _evidence()
+    path = tmp_path / "stateless-asset.sqlite3"
+    catalog = _catalog(path)
+    provider = _Provider(evidence)
+    service = CourseReferenceAuthorityService(
+        catalog=catalog,
+        provider=provider,
+    )
+    identity_queue = service.queue(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+    )
+    identity_item = identity_queue.items[0]
+    service.put_identity_decision(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+        selection_id=identity_item.selection.selection_id,
+        disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+        target_state_projection_id=None,
+        canonical_citekey=evidence.candidates[0].proposed_citekey,
+        alias_citekeys=(),
+        selected_record_match_ids=(),
+        expected_current_decision_id=None,
+        expected_queue_id=identity_queue.queue_id,
+        expected_item_revision_id=identity_item.item_revision_id,
+        actor=_actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR),
+        rationale="Accept before stateless asset PUT.",
+        decided_at="2026-09-20T12:00:00Z",
+        idempotency_key="http-put-identity-for-asset",
+    )
+    candidate = evidence.candidates[0]
+    raw_asset = SourceAssetRecord(
+        candidate_id=candidate.candidate_id,
+        proposed_citekey=candidate.proposed_citekey,
+        identity_status=candidate.lifecycle_status,
+        citekey_status=candidate.citekey_status,
+        sha256="d" * 64,
+        byte_size=96,
+        root_alias="private-library",
+        relative_path="stateless.pdf",
+        rights_status="rights-not-assessed",
+        asset_status="observed-source-copy",
+    )
+    catalog.record_source_asset(raw_asset)
+    provider.assets = (_asset_evidence(raw_asset, runtime_token="stateless"),)
+    queue = service.queue(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+    )
+    item = queue.items[0]
+    assert item.active_authority is not None
+    actor = _actor(ReviewAuthorityScope.CANONICAL_ASSET_CURATOR)
+    dispositions = (
+        CanonicalAssetCompetitorDisposition(
+            asset_observation_id=provider.assets[0].asset_observation_id,
+            disposition=CanonicalAssetDecision.AUTHORIZE,
+            rationale="Select exact current competitor.",
+        ),
+    )
+    arguments: dict[str, Any] = {
+        "scope": evidence.request.scope,
+        "selections": evidence.request.selections,
+        "selection_id": item.selection.selection_id,
+        "disposition": CanonicalAssetDecision.AUTHORIZE,
+        "competitor_dispositions": dispositions,
+        "expected_current_decision_id": None,
+        "expected_queue_id": queue.queue_id,
+        "expected_item_revision_id": item.item_revision_id,
+        "expected_identity_state_projection_id": (
+            item.active_authority.state_projection_id
+        ),
+        "expected_plan_id": None,
+        "actor": actor,
+        "rationale": "Stateless asset PUT.",
+        "decided_at": "2026-09-20T12:01:00Z",
+        "idempotency_key": "http-put-asset-1",
+    }
+    first = service.put_asset_decision(**arguments)
+
+    reopened_provider = _Provider(evidence)
+    reopened_provider.assets = provider.assets
+    reopened = CourseReferenceAuthorityService(
+        catalog=ReferenceCatalog(path, storage_class=RootStorageClass.LOCAL),
+        provider=reopened_provider,
+    )
+    retry = reopened.put_asset_decision(**arguments)
+    assert retry.decision_result == first.decision_result
+    assert retry.preview_id == first.preview_id
+    assert catalog.counts()["human_review_decisions"] == 2
+
+    conflicting = dict(arguments)
+    conflicting["rationale"] = "Different asset reuse must fail."
+    with pytest.raises(CourseReferenceAuthorityServiceError) as captured:
+        reopened.put_asset_decision(**conflicting)
+    assert captured.value.reason is (
+        CourseReferenceAuthorityFailureReason.IDEMPOTENCY_CONFLICT
+    )
+    assert catalog.counts()["human_review_decisions"] == 2
 
 
 def test__service_receipt_validation_failure_does_not_leak(

@@ -113,6 +113,29 @@ approval, scientific claim support, or manuscript authority.
 Preview IDs are content-derived owner identities. They are append evidence, not
 client-generated hints.
 
+## Stateless HTTP PUT retry
+
+`CourseReferenceAuthorityService.put_identity_decision` and
+`put_asset_decision` are the stateless composition operations. API supplies the
+complete Courses scope/selections, decision inputs, old queue/item CAS values,
+asset identity/optional plan CAS values, actor evidence, and one bounded opaque
+idempotency key. API does not create, retain, or persist an owner preview.
+
+References derives two content IDs. The idempotency scope binds operation kind,
+course scope, selection, and complete actor verification. The exact request ID
+additionally binds every action input and caller-visible CAS value. Both IDs,
+the owner preview ID, the owner append-request ID, and (for assets) the complete
+plan ID are retained in append-only decision evidence; the raw idempotency key
+is not persisted.
+
+On retry, References checks idempotency history before applying the now-stale
+head/queue checks. Exact request reuse reconstructs the original decision result
+and projection from schema-5 history, rereads current owner state, and returns a
+fresh verified receipt. Reusing the scoped key with any different input fails
+with `IDEMPOTENCY_CONFLICT` and performs no mutation. This remains valid after
+service/catalog reopen and requires no API-side preview storage or authority
+inference.
+
 ## Typed Ingestion linkage and Search
 
 `IngestionArtifactAuthorityLink` is content identified and exposes exactly the
@@ -160,7 +183,8 @@ decision, projection, refreshed queue, and refreshed item. Service failures use
 the closed `CourseReferenceAuthorityFailureReason` enum (`COURSE_NOT_FOUND`,
 `ITEM_NOT_FOUND`, `EVIDENCE_STALE`, `REVISION_STALE`, `TARGET_STALE`,
 `CONCURRENT_DECISION`, `INVALID_DISPOSITION`, `OWNER_MALFORMED`, and
-`OWNER_UNAVAILABLE`). API maps the enum and never parses exception text.
+`OWNER_UNAVAILABLE`, and `IDEMPOTENCY_CONFLICT`). API maps the enum and never
+parses exception text.
 
 ## Private exact-scope smoke
 
