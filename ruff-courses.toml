@@ -1,0 +1,27 @@
+line-length = 80
+target-version = "py314"
+
+[lint]
+select = [
+    "ANN",
+    "ARG",
+    "B",
+    "C4",
+    "DTZ",
+    "E",
+    "F",
+    "I",
+    "ISC",
+    "PERF",
+    "PIE",
+    "PLE",
+    "PLW",
+    "RET",
+    "RUF",
+    "SIM",
+    "UP",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"

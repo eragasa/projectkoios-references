@@ -94,6 +94,20 @@ queryable only in their explicitly named quarantine table and receive no
 authority upgrade. See
 [Actor-provenanced reference review state](review-state.md).
 
+The course-authority append operation uses these unchanged schema-5 tables. It
+exact-inserts any missing source observation and candidate, validates the
+owner-generated preview ID and optional complete asset-plan ID, and checks the
+expected current decision head, queue/item revisions, full state-projection
+identity set, and candidate asset-observation set. The asset plan binds runtime
+availability/evidence, rights, every competitor, document evidence, and typed
+Ingestion linkage. One decision and optional replay projection are appended in
+the same immediate transaction. Exact retry is idempotent; stale evidence rolls
+back candidate intake as well as decision/projection insertion. The
+References-owned runtime service rereads schema-5 and owner evidence before
+returning a receipt. No parallel document-reference store or mutable
+current-authority row is written. See
+[Course reference authority review](course-reference-authority.md).
+
 ## Field-level state projection cache
 
 Schema 5 stores canonical `ReferenceStateProjection` JSON beside query columns

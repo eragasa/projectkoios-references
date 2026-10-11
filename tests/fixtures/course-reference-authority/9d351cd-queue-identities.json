@@ -1,0 +1,24 @@
+{
+  "asset_observation_ids": [],
+  "candidate_ids": [
+    "reference-candidate:sha256:8121cea2742e01c5d743c534403c5be681224699f2cadc9157e879e7c90cb698"
+  ],
+  "identity_preview_id": "reference-identity-decision-preview:sha256:36e42c2781bb71024c3ef6dc12fa9d87674a20183b3a786f4a4d04678cf09846",
+  "identity_preview_request_id": "reference-identity-decision-preview-request:sha256:0798be42dc16cb8391d04ccb4c42a21b76329d31df2494b649a95299753568fd",
+  "identity_preview_result_id": "reference-identity-decision-preview-result:sha256:f0ffc059ef05f335b9000d9a12ae0fbc7dfed940fb43eccc270ea512f9985b17",
+  "identity_put_request_id": "reference-authority-idempotency-request:sha256:d8d4799dbc61f00ad56c723cacbc7900b0930adedfbb25f191c3368651749dff",
+  "identity_put_scope_id": "reference-authority-idempotency-scope:sha256:e5cc12f31fc52ed28060820c93e5625f5bdb3f2444320fbaf38e20a2e441316c",
+  "item_revision_ids": [
+    "course-reference-authority-item-revision:sha256:a99fbd82d6bb9f6c802f180a13fcd6f672d3307dd6cf5c21e0c6fb604389ed87"
+  ],
+  "queue_id": "course-reference-authority-queue:sha256:2c420fe2d4bdb6f871b07a60703495e5396ec630a380058d5ac3ce0f69c62f60",
+  "queue_request_id": "course-reference-authority-queue-request:sha256:7709229c54f1350662a8c141f5dc39d4b07f8a3baac6fac8af6f41f4bd7fedb4",
+  "render_result_id": "candidate-bibliography-render-result:sha256:9934751f6b3184f7624d791f280f99f4178cd52c62cf18c8f2ffa50866c810e3",
+  "rendered_binding_ids": [
+    "rendered-entry-candidate-binding:sha256:d1ee5b8782287eb382df408437d1072a5deab677f1434e007181c89a1dfcc81a"
+  ],
+  "scope_id": "course-reference-resolution-scope:sha256:5f161c9149882e0e10124bc5dd5c11f0fbe8ec452edd52bcec76b01e9252cb33",
+  "selection_ids": [
+    "course-reference-selection:sha256:ee9119186b3f0cd95b1e9ac844efa516699f3c003e92549d963b627ff4c678f8"
+  ]
+}

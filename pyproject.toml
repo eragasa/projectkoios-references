@@ -50,6 +50,9 @@ select = ["E", "F", "I", "UP", "B"]
 mypy_path = "src/python"
 namespace_packages = true
 explicit_package_bases = true
+strict = true
+plugins = ["tools/course_architecture_mypy_plugin.py"]
+extra_checks = true
 
 [tool.ruff.format]
 quote-style = "double"

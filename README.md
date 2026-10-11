@@ -23,9 +23,11 @@ the basename of both the reference note and local PDF. See
 the [source-backed citation graph](docs/citation-graph.md), the
 [bounded citation-key closure](docs/citation-closure.md), the
 [actor-provenanced review-state model](docs/review-state.md), the
+[course reference authority review](docs/course-reference-authority.md), the
 [field-level state projection model](docs/reference-state-projections.md), the
 [reference working catalog](docs/reference-catalog.md), the
-[bounded reference-I/O policy](docs/reference-io-bounds.md),
+[bounded reference-I/O policy](docs/reference-io-bounds.md), the
+[candidate-bibliography export contract](docs/candidate-bibliography-export.md),
 [cloud-placeholder safety](docs/cloud-placeholder-safety.md),
 [generic PDF corpus discovery](docs/pdf-corpus-discovery.md),
 [reference asset heuristics and canonical
@@ -126,12 +128,41 @@ and later byte opens are not atomic, so detected state changes fail closed and
 residual TOCTOU risk remains documented. There is no corpus-discovery CLI. See
 [Generic PDF corpus discovery](docs/pdf-corpus-discovery.md).
 
+The library-only candidate-bibliography exporter accepts explicit, exact source
+observations and produces a deterministic lexical union of their unmodified
+verbatim BibTeX entries. Its result retains collection/source/observation
+provenance, a fixed `proposed-noncanonical-private-drafting` status, and exact
+output byte identity. A separate pure renderer reparses those observations into
+closed normalized fields, fails on unsupported or untrusted TeX constructs, and
+produces a deterministic TeX-escaped candidate projection bound to the exact
+export and observation identities. Neither projection performs filesystem or
+database I/O, accepts identity, authorizes publication, or uses PDFs as
+bibliography authority. See
+[Candidate-bibliography export](docs/candidate-bibliography-export.md).
+
 The public Python review API keeps processor outcomes, reading, claim-support
-checks, and review-collection inclusion in separate immutable records. Complete
-replay retains corrected and superseded history and rejects stale concurrent
-branches. It cannot represent canonical promotion, scientific acceptance,
-manuscript use, rights clearance, or publication as a review status. See
-[Actor-provenanced reference review state](docs/review-state.md).
+checks, review-collection inclusion, reference identity, and canonical-asset
+authorization in separate immutable records. Complete replay retains corrected
+and superseded history and rejects stale concurrent branches. Identity and
+asset authority use distinct curator scopes and decision streams; neither can
+represent scientific acceptance, manuscript use, rights clearance, or
+publication as a generic review status. The Courses authority boundary owns
+private bibliography parsing, schema-5 reads, descriptor-confined asset
+reobservation, and bounded document/Ingestion-linkage reloads from runtime
+configuration. It validates the complete opaque Courses scope, projects every
+selection in order (including typed unresolved items), resolves candidates only
+through explicit rendered-entry bindings, omits private paths and bytes, and
+exposes only schema-5 accepted targets. Five References-owned HTTP-safe
+transport actionizers return immutable JSON objects; API owns only trusted
+composition, routes, status mapping, CONTROL mounting, and OpenAPI. Owner previews bind action choices and complete
+runtime evidence; stateless identity/asset PUT operations require the exact
+owner-generated preview ID, persist only derived idempotency evidence, replay
+exact retries after service reopen, and reject differing key reuse. Atomic CAS
+append followed by an owner reread produces a
+receipt. Search authority additionally requires typed `source_id`,
+`document_id`, and `artifact_verification_result_id` linkage. See
+[Actor-provenanced reference review state](docs/review-state.md) and
+[Course reference authority review](docs/course-reference-authority.md).
 
 The working catalog supports owner-internal schema version 5 with a deterministic
 schema fingerprint and complete observation/candidate/review/state-projection

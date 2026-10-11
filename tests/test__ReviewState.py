@@ -122,6 +122,8 @@ def test__review_records__replace_scalar_without_crossing_boundaries() -> None:
         "reading",
         "claim-support-check",
         "review-collection-inclusion",
+        "reference-identity",
+        "canonical-asset",
     }
 
 

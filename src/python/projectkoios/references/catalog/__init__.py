@@ -1,3 +1,10 @@
+"""Schema-5 References catalog and append-only authority persistence.
+
+The catalog owns durable candidates, observations, reviews, projections, and
+atomic compare-and-swap appends. Course authority types are imported lazily at
+method boundaries to avoid making persistence the owner of course workflows.
+"""
+
 from __future__ import annotations
 
 import json
@@ -18,7 +25,10 @@ from projectkoios.references.path_safety import (
     RootStorageClass,
 )
 from projectkoios.references.review import (
+    CanonicalAssetDecision,
     HumanReviewDecision,
+    HumanReviewDimension,
+    ReferenceIdentityDecision,
     ReviewProjection,
     ReviewRecordError,
     TechnicalReviewRecord,
@@ -104,6 +114,22 @@ class ReferenceCatalog(_CatalogInternals):
         storage_class: RootStorageClass,
         placeholder_probe: CloudPlaceholderProbe | None = None,
     ) -> None:
+        """Initialize the schema-5 catalog capability.
+
+        Parameters
+        ----------
+        path
+            Typed catalog input governed by the method annotation.
+        storage_class
+            Typed catalog input governed by the method annotation.
+        placeholder_probe
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         if storage_class is RootStorageClass.CLOUD_BACKED:
             raise CloudRootMutationError(
                 "SQLite catalogs require an explicitly local staging path"
@@ -113,6 +139,13 @@ class ReferenceCatalog(_CatalogInternals):
         self.placeholder_probe = placeholder_probe
 
     def initialize(self) -> CatalogSchemaInfo:
+        """Initialize an empty catalog at the supported schema.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=True)
         connection = self._open(path)
         try:
@@ -138,6 +171,13 @@ class ReferenceCatalog(_CatalogInternals):
             connection.close()
 
     def schema_info(self) -> CatalogSchemaInfo:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return CatalogSchemaInfo(
@@ -146,6 +186,13 @@ class ReferenceCatalog(_CatalogInternals):
             )
 
     def migration_plan(self) -> CatalogMigrationPlan | None:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:
@@ -167,6 +214,18 @@ class ReferenceCatalog(_CatalogInternals):
         )
 
     def migrate(self, *, backup_confirmed: bool = False) -> CatalogSchemaInfo:
+        """Apply the explicitly authorized catalog migration plan.
+
+        Parameters
+        ----------
+        backup_confirmed
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:
@@ -280,11 +339,25 @@ class ReferenceCatalog(_CatalogInternals):
             self._validate_identity_rows(connection)
 
     def read_observations(self) -> tuple[SourceBibliographyObservation, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_observations(connection)
 
     def read_candidates(self) -> tuple[ReferenceCandidate, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             observations = {
@@ -391,9 +464,33 @@ class ReferenceCatalog(_CatalogInternals):
                 )
 
     def record_source_asset(self, asset: SourceAssetRecord) -> None:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        asset
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         self.record_source_assets((asset,))
 
     def record_source_assets(self, assets: Iterable[SourceAssetRecord]) -> None:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        assets
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         asset_values = tuple(assets)
         if any(
             not isinstance(item, SourceAssetRecord) for item in asset_values
@@ -427,6 +524,18 @@ class ReferenceCatalog(_CatalogInternals):
     def read_source_assets(
         self, *, max_records: int | None = None
     ) -> tuple[SourceAssetRecord, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        max_records
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         if max_records is not None and (
             type(max_records) is not int or max_records < 1
         ):
@@ -544,12 +653,342 @@ class ReferenceCatalog(_CatalogInternals):
                 )
             self._validate_review_rows(connection)
 
+    def append_course_authority_decision(
+        self,
+        *,
+        candidate: ReferenceCandidate,
+        observations: tuple[SourceBibliographyObservation, ...],
+        decision: HumanReviewDecision,
+        state_projection: ReferenceStateProjection | None,
+        expected_current_decision_id: str | None,
+        expected_queue_id: str,
+        expected_item_revision_id: str,
+        expected_preview_id: str,
+        expected_asset_plan_id: str | None,
+        expected_review_projection_id: str,
+        expected_state_projection_ids: tuple[str, ...],
+        expected_asset_observation_ids: tuple[str, ...],
+    ) -> None:
+        """Atomically append candidate evidence and one CAS-guarded decision."""
+        # Import the owner protocol only at the adapter boundary. This avoids
+        # a catalog-module cycle and keeps Courses orchestration out of storage.
+        from projectkoios.references.courses.authority.evidence import (
+            ReferenceAssetAuthorityEvidenceActionizer,
+            ReferenceAssetAuthorityEvidenceRequest,
+        )
+
+        if type(candidate) is not ReferenceCandidate:
+            raise TypeError("candidate must be a ReferenceCandidate")
+        if not isinstance(observations, tuple) or any(
+            type(item) is not SourceBibliographyObservation
+            for item in observations
+        ):
+            raise TypeError(
+                "observations must contain SourceBibliographyObservation values"
+            )
+        if tuple(sorted(item.observation_id for item in observations)) != (
+            candidate.source_observation_ids
+        ):
+            raise CatalogConflictError(
+                "candidate observations differ from the exact candidate"
+            )
+        if type(decision) is not HumanReviewDecision:
+            raise TypeError("decision must be a HumanReviewDecision")
+        if decision.subject_id != candidate.candidate_id:
+            raise CatalogConflictError(
+                "authority decision subject differs from its candidate"
+            )
+        if decision.dimension not in {
+            HumanReviewDimension.REFERENCE_IDENTITY,
+            HumanReviewDimension.CANONICAL_ASSET,
+        }:
+            raise CatalogConflictError(
+                "course authority append requires an authority dimension"
+            )
+        accepted_identity = decision.dimension is (
+            HumanReviewDimension.REFERENCE_IDENTITY
+        ) and decision.decision in {
+            item.value
+            for item in (
+                ReferenceIdentityDecision.ACCEPT_EXISTING,
+                ReferenceIdentityDecision.ACCEPT_NEW,
+                ReferenceIdentityDecision.MERGE,
+            )
+        }
+        authorized_asset = (
+            decision.dimension is HumanReviewDimension.CANONICAL_ASSET
+            and decision.decision == CanonicalAssetDecision.AUTHORIZE.value
+        )
+        if decision.dimension is HumanReviewDimension.REFERENCE_IDENTITY:
+            is_defer = (
+                decision.decision == ReferenceIdentityDecision.DEFER.value
+            )
+            if is_defer == (
+                decision.context_id == "projectkoios.references.identity"
+            ):
+                raise CatalogConflictError(
+                    "identity decision has an invalid authority context"
+                )
+        elif decision.context_id != ("projectkoios.references.canonical-asset"):
+            raise CatalogConflictError(
+                "asset decision has an invalid authority context"
+            )
+        if (state_projection is not None) != (
+            accepted_identity or authorized_asset
+        ):
+            raise CatalogConflictError(
+                "authority disposition and state projection differ"
+            )
+        if state_projection is not None and (
+            type(state_projection) is not ReferenceStateProjection
+            or state_projection.subject_id != candidate.candidate_id
+            or decision.decision_id
+            not in state_projection.authoritative_input_ids
+        ):
+            raise CatalogConflictError(
+                "authority state projection differs from its decision"
+            )
+        expected_cas_evidence = {
+            expected_queue_id,
+            expected_item_revision_id,
+            expected_preview_id,
+            expected_review_projection_id,
+        }
+        if expected_asset_plan_id is not None:
+            expected_cas_evidence.add(expected_asset_plan_id)
+        if not expected_cas_evidence.issubset(decision.evidence_ids):
+            raise CatalogConflictError(
+                "authority decision lacks its exact queue CAS evidence"
+            )
+        for values, label in (
+            (expected_state_projection_ids, "state projection IDs"),
+            (expected_asset_observation_ids, "asset observation IDs"),
+        ):
+            if values != tuple(sorted(set(values))):
+                raise CatalogConflictError(
+                    f"expected {label} must use unique lexical order"
+                )
+        with self._write_transaction() as connection:
+            for observation in observations:
+                self._insert_exact(
+                    connection,
+                    table="source_bibliography_observations",
+                    columns=_OBSERVATION_COLUMNS,
+                    values=_observation_values(observation),
+                    key_columns=("observation_id",),
+                    key_values=(observation.observation_id,),
+                    label=f"observation {observation.observation_id}",
+                    conflict_type=CandidateConflictError,
+                )
+            self._insert_exact(
+                connection,
+                table="reference_candidates",
+                columns=_CANDIDATE_COLUMNS,
+                values=_candidate_values(candidate),
+                key_columns=("candidate_id",),
+                key_values=(candidate.candidate_id,),
+                label=f"candidate {candidate.candidate_id}",
+                conflict_type=CandidateConflictError,
+            )
+            for observation_id in candidate.source_observation_ids:
+                self._insert_exact(
+                    connection,
+                    table="candidate_source_observations",
+                    columns=("candidate_id", "observation_id"),
+                    values=(candidate.candidate_id, observation_id),
+                    key_columns=("candidate_id", "observation_id"),
+                    key_values=(candidate.candidate_id, observation_id),
+                    label=(
+                        f"candidate observation {candidate.candidate_id} / "
+                        f"{observation_id}"
+                    ),
+                    conflict_type=CandidateConflictError,
+                )
+            existing_review = self._read_review_projection(connection)
+            existing_decision = next(
+                (
+                    item
+                    for item in existing_review.human_decision_history
+                    if item.decision_id == decision.decision_id
+                ),
+                None,
+            )
+            existing_projections = self._read_state_projections(
+                connection,
+                max_projections=_MAX_STATE_PROJECTIONS,
+                max_json_bytes=_MAX_STATE_PROJECTION_JSON_BYTES,
+            )
+            if existing_decision is not None:
+                if existing_decision != decision:
+                    raise CatalogConflictError(
+                        "authority decision identity conflicts"
+                    )
+                if state_projection is not None and state_projection not in (
+                    existing_projections
+                ):
+                    raise CatalogConflictError(
+                        "authority decision replay lacks its state projection"
+                    )
+                self._validate_identity_rows(connection)
+                self._validate_review_rows(connection)
+                self._validate_state_projection_rows(connection)
+                return
+            if decision.dimension is HumanReviewDimension.CANONICAL_ASSET:
+                current_decision_ids = set(
+                    existing_review.current_human_decision_ids
+                )
+                accepted_identity_ids = {
+                    item.decision_id
+                    for item in existing_review.human_decision_history
+                    if item.decision_id in current_decision_ids
+                    and item.dimension
+                    is HumanReviewDimension.REFERENCE_IDENTITY
+                    and item.decision
+                    in {
+                        ReferenceIdentityDecision.ACCEPT_EXISTING.value,
+                        ReferenceIdentityDecision.ACCEPT_NEW.value,
+                        ReferenceIdentityDecision.MERGE.value,
+                    }
+                }
+                accepted_evidence = False
+                for projection in existing_projections:
+                    if projection.projection_id not in decision.evidence_ids:
+                        continue
+                    identity_status = projection.field("identity_status")
+                    identity_decision = projection.field("identity_decision_id")
+                    if (
+                        len(identity_status.values) == 1
+                        and identity_status.values[0].value_json == '"accepted"'
+                        and len(identity_decision.values) == 1
+                        and identity_decision.values[0].value_json is not None
+                        and json.loads(identity_decision.values[0].value_json)
+                        in accepted_identity_ids
+                    ):
+                        accepted_evidence = True
+                        break
+                if not accepted_evidence:
+                    raise CatalogConflictError(
+                        "asset decision requires current accepted identity"
+                    )
+            if existing_review.projection_id != expected_review_projection_id:
+                raise CatalogConflictError(
+                    "authority review projection revision is stale"
+                )
+            actual_projection_ids = tuple(
+                sorted(item.projection_id for item in existing_projections)
+            )
+            if actual_projection_ids != expected_state_projection_ids:
+                raise CatalogConflictError(
+                    "authority state projection revision is stale"
+                )
+            asset_rows = connection.execute(
+                """
+                SELECT candidate_id, proposed_citekey, identity_status,
+                       citekey_status, sha256, byte_size, root_alias,
+                       relative_path, rights_status, asset_status
+                FROM candidate_source_assets
+                WHERE candidate_id = ? ORDER BY candidate_id, sha256
+                """,
+                (candidate.candidate_id,),
+            ).fetchall()
+            current_asset_ids = tuple(
+                sorted(
+                    ReferenceAssetAuthorityEvidenceActionizer()
+                    .action(
+                        request=ReferenceAssetAuthorityEvidenceRequest(
+                            asset=self._source_asset_from_row(
+                                tuple(row),
+                                label="candidate source asset",
+                            )
+                        )
+                    )
+                    .evidence.asset_observation_id
+                    for row in asset_rows
+                )
+            )
+            if current_asset_ids != expected_asset_observation_ids:
+                raise CatalogConflictError(
+                    "authority asset-plan revision is stale"
+                )
+            current_ids = set(existing_review.current_human_decision_ids)
+            current = tuple(
+                item
+                for item in existing_review.human_decision_history
+                if item.decision_id in current_ids
+                and item.subject_id == decision.subject_id
+                and item.context_id == decision.context_id
+                and item.dimension is decision.dimension
+            )
+            if len(current) > 1:
+                raise CatalogConflictError(
+                    "authority decision stream has multiple current heads"
+                )
+            actual_head = current[0].decision_id if current else None
+            if actual_head != expected_current_decision_id:
+                raise CatalogConflictError(
+                    "authority decision stream revision is stale"
+                )
+            try:
+                replayed = replay_review_records(
+                    existing_review.technical_history,
+                    existing_review.human_decision_history + (decision,),
+                )
+            except ReviewRecordError as error:
+                raise CatalogConflictError(
+                    f"authority decision conflicts: {error}"
+                ) from error
+            self._insert_exact(
+                connection,
+                table="human_review_decisions",
+                columns=_HUMAN_REVIEW_COLUMNS,
+                values=_human_review_values(decision),
+                key_columns=("decision_id",),
+                key_values=(decision.decision_id,),
+                label=f"human review {decision.decision_id}",
+            )
+            if state_projection is not None:
+                self._insert_exact(
+                    connection,
+                    table="reference_state_projections",
+                    columns=_STATE_PROJECTION_COLUMNS,
+                    values=_state_projection_values(state_projection),
+                    key_columns=("projection_id",),
+                    key_values=(state_projection.projection_id,),
+                    label=(
+                        "reference authority state projection "
+                        f"{state_projection.projection_id}"
+                    ),
+                )
+            if decision.decision_id not in (
+                replayed.current_human_decision_ids
+            ):
+                raise CatalogConflictError(
+                    "authority decision did not become the current stream head"
+                )
+            self._validate_identity_rows(connection)
+            self._validate_review_rows(connection)
+            self._validate_state_projection_rows(connection)
+
     def read_review_projection(self) -> ReviewProjection:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_review_projection(connection)
 
     def export_review_json(self) -> str:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         return self.read_review_projection().to_json()
 
     def import_state_projections(
@@ -651,6 +1090,13 @@ class ReferenceCatalog(_CatalogInternals):
     def read_state_projections(
         self,
     ) -> tuple[ReferenceStateProjection, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_state_projections(
@@ -660,6 +1106,13 @@ class ReferenceCatalog(_CatalogInternals):
             )
 
     def export_state_projections_json(self) -> str:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         projections = self.read_state_projections()
         input_ids = sorted(
             {
@@ -742,14 +1195,40 @@ class ReferenceCatalog(_CatalogInternals):
             self._validate_graph_rows(connection)
 
     def read_citation_graph(self) -> CitationGraph:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_citation_graph(connection)
 
     def export_citation_graph_json(self) -> str:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         return self.read_citation_graph().to_json()
 
     def add_abstract(self, abstract: AbstractRecord) -> None:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        abstract
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         columns = (
             "citekey",
             "provider",
@@ -784,6 +1263,13 @@ class ReferenceCatalog(_CatalogInternals):
             )
 
     def counts(self) -> dict[str, int]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         projections = (
             ("candidate_records", "reference_candidates"),
             ("bibliography_observations", "source_bibliography_observations"),
@@ -817,6 +1303,13 @@ class ReferenceCatalog(_CatalogInternals):
 
     @contextmanager
     def _read_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Open a bounded read-only catalog transaction.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:
@@ -831,6 +1324,13 @@ class ReferenceCatalog(_CatalogInternals):
 
     @contextmanager
     def _write_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Open an atomic write transaction with rollback.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:

@@ -1,5 +1,15 @@
+"""Stable top-level References package surface.
+
+The root package retains established non-course exports for compatibility.
+Course authority is intentionally imported from explicit
+``projectkoios.references.courses`` modules so this initializer does not become
+an authority re-export registry.
+"""
+
 from __future__ import annotations
 
+# Keep legacy convenience exports explicit. Course authority is intentionally
+# absent: callers must choose the authority or runtime owner module directly.
 from projectkoios.references.acquisition import (
     ACQUISITION_ARTIFACT_KIND,
     ACQUISITION_CONTRACT_ID,
@@ -38,6 +48,28 @@ from projectkoios.references.assets import (
 from projectkoios.references.biblatex import (
     BibliographyImport,
     load_bibliography,
+)
+from projectkoios.references.candidate_bibliography import (
+    CANDIDATE_BIBLIOGRAPHY_EXPORT_CONTRACT_ID,
+    CANDIDATE_BIBLIOGRAPHY_EXPORT_MAX_BYTES,
+    CANDIDATE_BIBLIOGRAPHY_EXPORT_MAX_COLLECTIONS,
+    CANDIDATE_BIBLIOGRAPHY_EXPORT_MAX_ENTRIES,
+    CANDIDATE_BIBLIOGRAPHY_EXPORT_SCHEMA_VERSION,
+    CANDIDATE_BIBLIOGRAPHY_RENDER_CONTRACT_ID,
+    CANDIDATE_BIBLIOGRAPHY_RENDERER_NAME,
+    CANDIDATE_BIBLIOGRAPHY_RENDERER_VERSION,
+    CandidateBibliographyExporter,
+    CandidateBibliographyExportError,
+    CandidateBibliographyExportProvenance,
+    CandidateBibliographyExportRequest,
+    CandidateBibliographyExportResult,
+    CandidateBibliographyExportStatus,
+    CandidateBibliographyRenderedEntry,
+    CandidateBibliographyRenderer,
+    CandidateBibliographyRenderError,
+    CandidateBibliographyRenderRequest,
+    CandidateBibliographyRenderResult,
+    CandidateBibliographySourceDeclaration,
 )
 from projectkoios.references.catalog import (
     CATALOG_SCHEMA_FINGERPRINT,
@@ -184,10 +216,12 @@ from projectkoios.references.reconciliation_package import (
     ReconciliationPackageManifest,
 )
 from projectkoios.references.review import (
+    CanonicalAssetDecision,
     ClaimSupportCheckDecision,
     HumanReviewDecision,
     HumanReviewDimension,
     ReadingDecision,
+    ReferenceIdentityDecision,
     ReviewActorKind,
     ReviewActorProvenance,
     ReviewAuthorityScope,
@@ -265,11 +299,32 @@ __all__ = [
     "AssetDiscoveryPlanner",
     "BibliographyImport",
     "BIBLIOGRAPHY_IO_LIMITS",
+    "CANDIDATE_BIBLIOGRAPHY_EXPORT_CONTRACT_ID",
+    "CANDIDATE_BIBLIOGRAPHY_EXPORT_MAX_BYTES",
+    "CANDIDATE_BIBLIOGRAPHY_EXPORT_MAX_COLLECTIONS",
+    "CANDIDATE_BIBLIOGRAPHY_EXPORT_MAX_ENTRIES",
+    "CANDIDATE_BIBLIOGRAPHY_EXPORT_SCHEMA_VERSION",
+    "CANDIDATE_BIBLIOGRAPHY_RENDER_CONTRACT_ID",
+    "CANDIDATE_BIBLIOGRAPHY_RENDERER_NAME",
+    "CANDIDATE_BIBLIOGRAPHY_RENDERER_VERSION",
     "CATALOG_SCHEMA_FINGERPRINT",
     "CATALOG_SCHEMA_VERSION",
     "SUPPORTED_CATALOG_SCHEMA_VERSIONS",
     "CanonicalAssetAuthorization",
     "CanonicalPlan",
+    "CandidateBibliographyExporter",
+    "CandidateBibliographyExportError",
+    "CandidateBibliographyExportProvenance",
+    "CandidateBibliographyExportRequest",
+    "CandidateBibliographyExportResult",
+    "CandidateBibliographyExportStatus",
+    "CandidateBibliographyRenderedEntry",
+    "CandidateBibliographyRenderer",
+    "CandidateBibliographyRenderError",
+    "CandidateBibliographyRenderRequest",
+    "CandidateBibliographyRenderResult",
+    "CandidateBibliographySourceDeclaration",
+    "CanonicalAssetDecision",
     "CatalogConflictError",
     "CatalogMigrationPlan",
     "CatalogMigrationRequired",
@@ -364,6 +419,7 @@ __all__ = [
     "RECONCILIATION_IO_LIMITS",
     "RECONCILIATION_PACKAGE_IO_LIMITS",
     "REVIEW_IO_LIMITS",
+    "ReferenceIdentityDecision",
     "ReviewActorKind",
     "ReviewActorProvenance",
     "ReviewAuthorityScope",
