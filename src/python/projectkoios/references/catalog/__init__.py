@@ -672,7 +672,7 @@ class ReferenceCatalog(_CatalogInternals):
         """Atomically append candidate evidence and one CAS-guarded decision."""
         # Import the owner protocol only at the adapter boundary. This avoids
         # a catalog-module cycle and keeps Courses orchestration out of storage.
-        from projectkoios.references.courses.authority import (
+        from projectkoios.references.courses.authority.evidence import (
             ReferenceAssetAuthorityEvidenceActionizer,
             ReferenceAssetAuthorityEvidenceRequest,
         )

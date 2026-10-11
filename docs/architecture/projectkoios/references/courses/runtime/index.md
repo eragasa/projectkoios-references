@@ -12,13 +12,13 @@ API supplies configuration capabilities only. Runtime paths and private bytes re
 
 - `projectkoios.references.courses.runtime`
 
-## Classes
+## Semantic modules
 
-- [CourseReferenceAuthorityBibliographySource](CourseReferenceAuthorityBibliographySource/index.md)
-- [CourseReferenceAuthorityAssetRoot](CourseReferenceAuthorityAssetRoot/index.md)
-- [CourseReferenceAuthorityRuntimeConfiguration](CourseReferenceAuthorityRuntimeConfiguration/index.md)
-- [FilesystemCourseReferenceAuthorityEvidenceProvider](FilesystemCourseReferenceAuthorityEvidenceProvider/index.md)
-- [FilesystemCourseReferenceAuthorityRuntime](FilesystemCourseReferenceAuthorityRuntime/index.md)
+- [configuration](configuration/index.md)
+- [facade](facade/index.md)
+- [filesystem](filesystem/index.md)
+
+Private underscore-prefixed modules contain only course-local deterministic implementation values and are not public owner boundaries.
 
 ## Architecture views
 

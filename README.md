@@ -146,14 +146,15 @@ authorization in separate immutable records. Complete replay retains corrected
 and superseded history and rejects stale concurrent branches. Identity and
 asset authority use distinct curator scopes and decision streams; neither can
 represent scientific acceptance, manuscript use, rights clearance, or
-publication as a generic review status. The course authority service is the
-API-facing owner seam: its concrete filesystem provider/service factory owns
+publication as a generic review status. The Courses authority boundary owns
 private bibliography parsing, schema-5 reads, descriptor-confined asset
 reobservation, and bounded document/Ingestion-linkage reloads from runtime
-configuration. It validates the complete opaque Courses scope, projects every selection in order
-(including typed unresolved items), resolves candidates only through explicit
-rendered-entry bindings, omits private paths and bytes, and exposes only
-schema-5 accepted targets. Owner previews bind action choices and complete
+configuration. It validates the complete opaque Courses scope, projects every
+selection in order (including typed unresolved items), resolves candidates only
+through explicit rendered-entry bindings, omits private paths and bytes, and
+exposes only schema-5 accepted targets. Five References-owned HTTP-safe
+transport actionizers return immutable JSON objects; API owns only trusted
+composition, routes, status mapping, CONTROL mounting, and OpenAPI. Owner previews bind action choices and complete
 runtime evidence; stateless identity/asset PUT operations require the exact
 owner-generated preview ID, persist only derived idempotency evidence, replay
 exact retries after service reopen, and reject differing key reuse. Atomic CAS

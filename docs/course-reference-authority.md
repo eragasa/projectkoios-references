@@ -23,27 +23,38 @@ References owns:
 - append-only human decisions and deterministic state replay;
 - the reviewed course tuple and Search authority projection.
 
-The public owner seam is the typed immutable action boundary under
-`projectkoios.references.courses`: every operation accepts one
-`DataObjectActionRequest`, is executed by one `DataObjectActionizer`, and
-returns one `DataObjectActionResult`. API passes the Courses scope and selection
-evidence without interpreting it. The owner-internal
-`CourseReferenceAuthorityService` and configured evidence provider load private
-render, candidate, observation, record-discrepancy, runtime-asset, document,
-and Ingestion evidence; API never receives those internal graphs. References
-owns schema-5 reads, queue projection, previews, append, and the post-append
-owner reread. API and Web may transport safe action results; they must not query
-the References catalog, parse private artifacts, recompute actions, or infer
-authority.
+The public owner seam is the typed immutable action boundary under exact
+`projectkoios.references.courses.authority` leaf modules: every owner operation
+accepts one `DataObjectActionRequest`, is executed by one
+`DataObjectActionizer`, and returns one `DataObjectActionResult`. API passes the
+Courses scope and selection evidence without interpreting it. The owner-internal
+load actions and configured evidence actionizer load private render, candidate,
+observation, record-discrepancy, runtime-asset, document, and Ingestion evidence;
+API never receives those internal graphs. References owns schema-5 reads, queue
+projection, previews, append, the post-append owner reread, and immutable
+HTTP-safe request/result DTOs plus five single-action transport adapters under
+`projectkoios.references.courses.transport`. API owns routes, trusted
+composition, status mapping, CONTROL mounting, and OpenAPI. It returns the
+References-generated JSON result without traversing the owner graph and must not
+query the References catalog, parse private artifacts, recompute actions, or
+infer authority.
 
-The concrete owner implementation is
-`FilesystemCourseReferenceAuthorityEvidenceProvider`. API supplies only a
-`CourseReferenceAuthorityRuntimeConfiguration`: expected course ID, existing
-schema-5 catalog path/storage class, and explicit private bibliography source
-configurations. `FilesystemCourseReferenceAuthorityRuntime` constructs the
-catalog reader and provider without creating or migrating a catalog, then
-exposes only queue, identity-preview, asset-preview, identity-PUT, and asset-PUT
-actionizers.
+The semantic owner modules are grouped by lifecycle rather than by class:
+`scope`, `evidence`, `queue`, `queue_operation`, `identity_preview`,
+`identity_put`, `asset_preview`, `asset_put`, `reviewed_projection`, and
+`search_projection`. Append/replay internals remain in `persistence`, `plans`,
+and `service`. Package initializers re-export nothing.
+
+The concrete owner implementation uses the private filesystem evidence provider
+in the exact `projectkoios.references.courses.runtime.filesystem` leaf. API
+supplies only a
+`CourseReferenceAuthorityRuntimeConfiguration` from `runtime.configuration`:
+expected course ID, existing schema-5 catalog path/storage class, and explicit
+private bibliography source configurations.
+`FilesystemCourseReferenceAuthorityRuntimeCreateActionizer` constructs the
+catalog and evidence capabilities without creating or migrating a catalog. Its
+immutable result exposes only the queue, identity-preview, asset-preview,
+identity-PUT, and asset-PUT transport actionizers.
 The provider rereads bounded bibliography files, verifies asserted SHA-256
 revisions, reconstructs exact observations/candidates/render output, creates
 rendered-entry bindings by observation identities rather than citekeys, merges
@@ -191,7 +202,8 @@ removes stale authority on replay without mutating history.
 
 ## Persistence, CAS, and receipts
 
-`ReferenceAuthorityDecisionAppender` creates typed `HumanReviewDecision`
+`ReferenceIdentityDecisionAppendActionizer` and
+`CanonicalAssetDecisionAppendActionizer` create typed `HumanReviewDecision`
 records and replay-derived `ReferenceStateProjection` values. Schema-5
 `ReferenceCatalog` implements its repository protocol with the existing source
 observation, candidate, source-asset, human-decision, and state-projection

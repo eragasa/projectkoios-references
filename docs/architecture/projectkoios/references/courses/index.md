@@ -2,7 +2,7 @@
 
 ## Ownership
 
-References owns course-scoped bibliographic identity review, canonical-asset review, schema-5 replay, and path-free authority projections. Courses owns scope and ordering; Ingestion owns typed document/artifact identities; Search owns retrieval admission; API owns transport.
+References owns course-scoped bibliographic identity review, canonical-asset review, schema-5 replay, path-free authority projections, and HTTP-safe transport DTOs/adapters. Courses owns scope and ordering; Ingestion owns typed document/artifact identities; Search owns retrieval admission; API owns routing, status mapping, trusted composition, and OpenAPI.
 
 ## Coordination
 
@@ -16,6 +16,7 @@ Courses supplies opaque scope evidence. References validates and returns immutab
 
 - [Authority](authority/index.md)
 - [Runtime](runtime/index.md)
+- [Transport](transport/index.md)
 
 ## Architecture views
 

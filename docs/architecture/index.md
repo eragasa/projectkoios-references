@@ -28,10 +28,10 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_schema`](projectkoios/references/adapters/sql/sqlite/document_reference_schema/index.md)
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_store`](projectkoios/references/adapters/sql/sqlite/document_reference_store/index.md)
 
-The current documented slices supply 482 component-architecture pages. The
-Courses slice uses the stronger four-view convention for every package,
-module, and class: overview, schematics, numerics, and scientific authority.
-That count is coverage evidence, not a request for unrelated bulk retrofit.
+The Courses slice uses the four-view convention for every package, cohesive
+public module, and public contract class: overview, schematics, numerics, and
+scientific authority. Coverage is derived from the source tree rather than a
+manually maintained page count.
 
 ## Remaining unmigrated modules
 
