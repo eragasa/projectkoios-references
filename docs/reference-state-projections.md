@@ -48,7 +48,13 @@ authority owner, and permitted record kind. The matrix covers:
 
 Accepted identity and canonical-asset fields accept only typed human-decision
 claims created by the course-authority replay path; generic review projection
-cannot populate them. Scientific-support, rights-decision, manuscript-use,
+cannot populate them. Canonical-asset replay retains the complete previewed
+evidence inventory as provenance, but Search join semantics come only from a
+separate content-identified `IngestionArtifactAuthorityLink` carrying the exact
+`source_id`, `document_id`, and `artifact_verification_result_id`. An authorized
+asset without matching current typed linkage remains review-visible but is not
+projected as Search authority. Scientific-support, rights-decision,
+manuscript-use,
 publication, and contract-acceptance fields are not accepted by the generic
 claim surface at all. Their absence from this references-owned matrix is not
 acceptance. Acquisition contract status is separately named

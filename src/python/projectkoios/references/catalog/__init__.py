@@ -557,6 +557,8 @@ class ReferenceCatalog(_CatalogInternals):
         expected_current_decision_id: str | None,
         expected_queue_id: str,
         expected_item_revision_id: str,
+        expected_preview_id: str,
+        expected_asset_plan_id: str | None,
         expected_review_projection_id: str,
         expected_state_projection_ids: tuple[str, ...],
         expected_asset_observation_ids: tuple[str, ...],
@@ -637,11 +639,15 @@ class ReferenceCatalog(_CatalogInternals):
             raise CatalogConflictError(
                 "authority state projection differs from its decision"
             )
-        if not {
+        expected_cas_evidence = {
             expected_queue_id,
             expected_item_revision_id,
+            expected_preview_id,
             expected_review_projection_id,
-        }.issubset(decision.evidence_ids):
+        }
+        if expected_asset_plan_id is not None:
+            expected_cas_evidence.add(expected_asset_plan_id)
+        if not expected_cas_evidence.issubset(decision.evidence_ids):
             raise CatalogConflictError(
                 "authority decision lacks its exact queue CAS evidence"
             )

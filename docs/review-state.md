@@ -124,13 +124,18 @@ Published catalog schema 4 added canonical-JSON-backed technical and human
 review tables. Current schema 5 preserves those tables unchanged and adds only
 the disposable field-level state-projection cache.
 `ReferenceCatalog.import_review_records` replays the existing and proposed
-records before inserting them in one immediate transaction. The course
-authority appender additionally performs CAS checks over the exact decision
-head, state-projection set, and asset-plan set. It inserts missing exact
-candidate observations, the candidate, one decision, and its derived state
-projection atomically. Exact replay is idempotent. Invalid, stale, concurrent,
-or partially valid batches roll back without a last-writer update. See
-[Course reference authority review](course-reference-authority.md).
+records before inserting them in one immediate transaction. Course identity and
+asset decisions require separate owner-generated previews. Identity previews
+bind the action-specific target, canonical citekey, aliases, selected record
+matches, queue/item revisions, and decision head. Asset previews bind a fresh
+post-identity plan plus one explicit disposition and rationale for every
+competitor. The course authority appender performs CAS over those preview and
+plan identities, the exact decision head, state-projection set, and asset set.
+It inserts missing exact candidate observations, the candidate, one decision,
+and its derived state projection atomically. Exact replay is idempotent.
+Invalid, stale, concurrent, or partially valid batches roll back without a
+last-writer update. The runtime service returns only an owner-reread receipt.
+See [Course reference authority review](course-reference-authority.md).
 
 Schema 3 is recognized only by its exact predecessor fingerprint
 `catalog-schema:sha256:d2970cd39caff4971407ea11b9ab4ea630d53c0b11e1b0dd58a65f045c0bffaa`.

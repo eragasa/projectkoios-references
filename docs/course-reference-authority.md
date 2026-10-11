@@ -1,129 +1,147 @@
 # Course reference authority review
 
-`projectkoios.references.course-reference-authority@0.1.0` is the References-owned
-review and replay contract used to resolve a Courses-owned reference selection.
-It does not make Courses, API, Web, Search, a bibliography file, or a legacy
-catalog row an authority for bibliographic identity.
+`projectkoios.references.course-reference-authority@0.1.0` is the
+References-owned review, append, reread, and replay contract for a Courses-owned
+reference scope. It does not make Courses, API, Web, Search, a bibliography
+file, or a legacy catalog row authoritative for bibliographic identity.
 
 ## Owner boundary
 
-Courses supplies an ordered `CourseReferenceLocatorBinding` tuple and immutable
-course selections. `CourseReferenceSelectionEvidence` preserves each scope,
-selection, locator-binding, ordinal, display citekey, display status, and opaque
-References locator. References verifies the locator-binding identity defined by
-the Courses 1.0 contract. The display citekey remains only an observed or
-proposed navigation value.
+Courses supplies an opaque `CourseReferenceResolutionScopeEvidence` plus the
+complete ordered `CourseReferenceSelectionEvidence` tuple. References preserves
+and validates, but does not mint or recompute, the Courses-owned scope ID,
+manifest ID and digest, inventory ID, total, ordered selection IDs, selection
+IDs, ordinals, origins, roles, locator-binding IDs, and opaque References
+locators. A display citekey remains a consistency guard only.
 
 References owns:
 
 - exact source observations and normalized candidates;
+- rendered-entry-to-candidate identity bindings;
 - accepted bibliographic-work identity and active citekey;
-- canonical source-asset linkage;
+- canonical source-asset and typed Ingestion linkage;
 - append-only human decisions and deterministic state replay;
 - the reviewed course tuple and Search authority projection.
 
-API and Web may transport these objects and their CAS values. They must not
-recompute allowed actions, choose identity targets, or infer authority. Search
-consumes only complete replay-current authority bindings.
+`CourseReferenceAuthorityService` is the API-facing owner seam. API passes the
+Courses scope and selection evidence without interpreting it. A configured
+References evidence provider loads owner-private render, candidate,
+observation, record-discrepancy, runtime-asset, document, and Ingestion
+evidence. The service owns schema-5 reads, queue projection, previews, append,
+and the post-append owner reread. API and Web may transport returned objects;
+they must not query the References catalog, parse private artifacts, recompute
+actions, or infer authority.
 
-## Queue
+## Complete left-projected queue
 
-`CourseReferenceAuthorityProjector` produces an explicitly labeled `CONTROL`
-queue and resolves every opaque locator to exactly one rendered entry and
-candidate. It fails closed on missing locators, display-key
-mismatch, ambiguous candidates, invalid Courses bindings, or ambiguous active
-schema-5 projections. The queue preserves Courses order and contains:
+`CourseReferenceAuthorityProjector` produces a `CONTROL` queue containing
+exactly one item for every Courses selection in Courses order. The request must
+match the scope's exact total and ordered selection-ID envelope. A missing
+locator, rendered entry, rendered-entry binding, or candidate does not remove a
+Courses item and does not fail the complete queue. Instead that item receives a
+closed `CourseReferenceItemResolution` and no mutation actions.
 
-- exact observed-entry identities, byte sizes, and source/revision/digest
+Candidate resolution never joins on a citekey. A content-identified
+`RenderedEntryCandidateBinding` binds the opaque locator and rendered-entry ID
+to one candidate ID and the exact source-observation inventory. Only after that
+identity lookup does References compare the Courses display citekey, rendered
+citekey, and candidate proposed citekey as guards.
+
+Resolved queue items contain:
+
+- exact observed-entry identities, sizes, and source/revision/digest
   provenance, with source paths and verbatim bytes omitted;
-- the separate TeX-safe rendered candidate identity, byte digest/size, and
+- the separate TeX-safe rendered candidate identity, digest, size, and
   normalized fields, with rendered bytes omitted;
 - typed exact-key/byte and conflict relations to non-authoritative record
   observations;
-- current schema-5 human-decision heads and accepted state projections;
-- path-free asset digest, size, rights/status, runtime, document-binding, and
-  ingestion evidence;
+- current schema-5 decision heads and accepted state projections;
+- path-free asset digest, size, rights/status, runtime, document-binding,
+  flattened provenance, and typed Ingestion linkage evidence;
 - owner-computed allowed identity and asset actions;
 - content-derived queue and item revision identities.
 
 Reference-record observations never enable `ACCEPT_EXISTING` or `MERGE`. Those
-actions may target only replay-current accepted schema-5 state projections. With
-no such projections, both actions are unavailable.
+actions may target only replay-current accepted schema-5 state projections.
+The queue contains no filesystem root, source path, catalog location, asset
+relative path, bibliography bytes, record bytes, free-text decision rationale,
+or complete historical evidence inventory.
 
-The queue object contains no filesystem root, source path, catalog location,
-asset relative path, verbatim/rendered entry bytes, discrepancy-record bytes,
-free-text decision rationale, or complete decision evidence list. The input
-request may contain owner-private exact source provenance; it is deliberately
-not embedded in the queue output.
+Queue projection and service actions reconstruct the request and Courses
+locator-binding values. Force-mutated or stale request, scope, selection,
+render, binding, runtime, review-head, or projection evidence fails closed.
 
-## Sequential decisions
+## Explicit previews and sequential decisions
 
-Identity decisions use the closed set:
+Identity decisions use the closed set `ACCEPT_EXISTING`, `ACCEPT_NEW`, `MERGE`,
+`REJECT`, and `DEFER`. An owner-generated `ReferenceIdentityDecisionPreview`
+binds the exact queue and item revisions, disposition, active target when
+required, canonical citekey, ordered aliases, selected record-match IDs, and
+expected decision-stream head. `DEFER` is recorded only in the course context
+and never changes global identity authority.
 
-- `ACCEPT_EXISTING`
-- `ACCEPT_NEW`
-- `MERGE`
-- `REJECT`
-- `DEFER`
+Canonical-asset review is a distinct later stage. It is unavailable until
+identity is accepted. A fresh `CanonicalAssetEvidencePlan` binds the current
+identity projection and every current competitor, including rights, runtime
+availability/evidence, document evidence, flattened provenance, and typed
+Ingestion links. `CanonicalAssetDecisionPreview` requires exactly one explicit
+disposition and nonempty rationale for every competitor. `AUTHORIZE` requires
+one selected, runtime-available asset. It does not grant rights, publication
+approval, scientific claim support, or manuscript authority.
 
-The first four are global References identity decisions. `DEFER` is recorded in
-the course context and never changes global identity authority. Accepting a new
-candidate produces a content-derived bibliographic-work identity. Accepting an
-existing work or merging requires an explicit active schema-5 target. A merge
-retains a distinct proposed key as an alias; it does not silently overwrite an
-existing record.
+Preview IDs are content-derived owner identities. They are append evidence, not
+client-generated hints.
 
-Canonical-asset decisions are a distinct later stream with `AUTHORIZE`,
-`REJECT`, and `DEFER`. They are unavailable until identity is accepted.
-`AUTHORIZE` requires an exact asset observation with fresh `available` runtime
-evidence. Asset authorization establishes the selected source linkage only. It
-does not grant rights, publication approval, scientific claim support, or
-manuscript authority.
+## Typed Ingestion linkage and Search
 
-## Persistence and concurrency
+`IngestionArtifactAuthorityLink` is content identified and exposes exactly the
+join fields required to compare References C with Ingestion A/B:
 
-`ReferenceAuthorityDecisionAppender` creates typed `HumanReviewDecision`
-records and replay-derived `ReferenceStateProjection` values. Its repository
-protocol is implemented by schema-5 `ReferenceCatalog` using the existing:
+- `source_id`;
+- `document_id`;
+- `artifact_verification_result_id`.
 
-- `source_bibliography_observations` and `reference_candidates` intake tables;
-- `human_review_decisions` append-only history;
-- `reference_state_projections` replay artifacts;
-- `candidate_source_assets` evidence rows.
-
-No schema change, mutable current-state row, document-reference v2 store,
-legacy-facade write, or dual write is used.
-
-Every append checks the expected item revision, decision-stream head, complete
-state-projection set, and candidate asset-plan set. Exact retries are idempotent.
-A stale head or stale evidence set aborts the owner transaction. For
-`ACCEPT_NEW`, exact observation/candidate insertion and decision/projection
-append occur in the same transaction, so a failed append leaves no partially
-inserted inline candidate.
-
-## Replay outputs
-
-Identity replay may establish:
-
-- `bibliographic_work_id`;
-- explicit `identity_status = accepted`;
-- active and alias citekeys;
-- the controlling identity decision.
-
-A later asset replay may additionally establish:
-
-- `source_asset_id`;
-- the controlling canonical-asset decision;
-- the work-to-source authority binding.
-
-`project_reviewed_course_references` fails unless every selected item has both
-stages, then returns the exact Courses order and original locator-binding IDs
-alongside accepted work/citekey/source authority. This is the tuple API should
-compose with the Courses projector.
+It also binds the References asset observation. Flattened document-binding and
+Ingestion evidence IDs remain replay provenance and are never join semantics.
+An authorized asset with missing, empty, mismatched, or stale typed linkage
+remains visible to reference review but is omitted from Search authority.
 
 `project_search_reference_authority` emits only replay-current complete
-bindings. Each result identifies the accepted work and citekey, canonical source
-asset, both decisions, exact authority evidence IDs, authority binding, state
-projection, and content-derived result. Superseding either decision removes
-stale authority on replay rather
-than mutating old history.
+bindings. Each binding exposes accepted work/citekey authority, the canonical
+asset, both controlling decisions, typed Ingestion links, provenance evidence,
+the authority binding, and state projection. Superseding either decision
+removes stale authority on replay without mutating history.
+
+## Persistence, CAS, and receipts
+
+`ReferenceAuthorityDecisionAppender` creates typed `HumanReviewDecision`
+records and replay-derived `ReferenceStateProjection` values. Schema-5
+`ReferenceCatalog` implements its repository protocol with the existing source
+observation, candidate, source-asset, human-decision, and state-projection
+tables. There is no schema change, mutable current-state row,
+document-reference v2 store, legacy-facade write, or dual write.
+
+Append CAS covers the preview ID, queue/item revision, exact decision head,
+complete projection inventory, candidate/asset observation inventory, and—for
+asset review—the complete plan ID containing runtime and typed linkage
+evidence. Exact retries are idempotent. Stale or concurrent state aborts the
+transaction. For `ACCEPT_NEW`, exact observation/candidate insertion and
+decision/projection append are atomic.
+
+An append return becomes a `ReferenceAuthorityDecisionReceipt` only after the
+service rereads owner evidence and schema-5 state and verifies the exact current
+decision, projection, refreshed queue, and refreshed item. Service failures use
+the closed `CourseReferenceAuthorityFailureReason` enum (`COURSE_NOT_FOUND`,
+`ITEM_NOT_FOUND`, `EVIDENCE_STALE`, `REVISION_STALE`, `TARGET_STALE`,
+`CONCURRENT_DECISION`, `INVALID_DISPOSITION`, `OWNER_MALFORMED`, and
+`OWNER_UNAVAILABLE`). API maps the enum and never parses exception text.
+
+## Reviewed Courses output
+
+`project_reviewed_course_references` fails unless every Courses item has accepted
+identity and canonical-asset authority. It then returns the original scope,
+selection identity/order, and locator binding alongside accepted work, citekey,
+and source authority. Typed Ingestion links are required only by the separate
+Search authority projection. Unresolved queue projection itself
+remains complete and transportable; it is never shortened to only resolvable
+items.

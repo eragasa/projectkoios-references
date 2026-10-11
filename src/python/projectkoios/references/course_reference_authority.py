@@ -60,6 +60,19 @@ class CourseReferenceAuthorityError(ValueError):
     """Raised when queue evidence or an authority transition is invalid."""
 
 
+class CourseReferenceSelectionOrigin(StrEnum):
+    """Mirror the Courses-owned selection origin."""
+
+    PRESERVED_MANUSCRIPT = "preserved-manuscript"
+    DIRECTED_REFERENCE_SCOPE = "directed-reference-scope"
+
+
+class CourseReferenceRole(StrEnum):
+    """Mirror the bounded Courses-owned reference role."""
+
+    MANUSCRIPT_BIBLIOGRAPHY = "manuscript-bibliography"
+
+
 class CourseDisplayCitekeyStatus(StrEnum):
     """Mirror the two non-authoritative Courses display statuses."""
 
@@ -75,6 +88,18 @@ class ReferenceRecordMatchKind(StrEnum):
     SAME_KEY_DIFFERENT_BYTES = "same-key-different-bytes"
     SAME_OBSERVED_BYTES_DIFFERENT_KEY = "same-observed-bytes-different-key"
     SAME_RENDERED_BYTES_DIFFERENT_KEY = "same-rendered-bytes-different-key"
+
+
+class CourseReferenceItemResolution(StrEnum):
+    """Expose left-projection resolution without dropping a Course item."""
+
+    READY = "ready"
+    RENDERED_LOCATOR_UNAVAILABLE = "rendered-locator-unavailable"
+    DISPLAY_GUARD_MISMATCH = "display-guard-mismatch"
+    CANDIDATE_UNAVAILABLE = "candidate-unavailable"
+    CANDIDATE_AMBIGUOUS = "candidate-ambiguous"
+    CANDIDATE_DISPLAY_GUARD_MISMATCH = "candidate-display-guard-mismatch"
+    OWNER_EVIDENCE_MALFORMED = "owner-evidence-malformed"
 
 
 class RuntimeAssetAvailability(StrEnum):
@@ -93,7 +118,11 @@ class CourseReferenceSelectionEvidence(DataObjectModel):
     selection_id: str
     locator_binding_id: str
     course_id: str
+    manifest_id: str
+    inventory_id: str
     ordinal: int
+    origin: CourseReferenceSelectionOrigin
+    role: CourseReferenceRole
     display_citekey: str
     display_citekey_status: CourseDisplayCitekeyStatus
     reference_locator: str
@@ -106,9 +135,17 @@ class CourseReferenceSelectionEvidence(DataObjectModel):
         ):
             _content_id(value, field=label)
         _bounded(self.course_id, field="course_id")
+        _content_id(self.manifest_id, field="manifest_id")
+        _content_id(self.inventory_id, field="inventory_id")
         if type(self.ordinal) is not int or not 1 <= self.ordinal <= _MAX_ITEMS:
             raise CourseReferenceAuthorityError(
                 "selection ordinal is outside the supported range"
+            )
+        if not isinstance(self.origin, CourseReferenceSelectionOrigin):
+            raise TypeError("origin must be CourseReferenceSelectionOrigin")
+        if self.role is not CourseReferenceRole.MANUSCRIPT_BIBLIOGRAPHY:
+            raise CourseReferenceAuthorityError(
+                "selection role must be manuscript-bibliography"
             )
         validate_citekey(self.display_citekey, field="display citekey")
         if not isinstance(
@@ -134,6 +171,41 @@ class CourseReferenceSelectionEvidence(DataObjectModel):
             raise CourseReferenceAuthorityError(
                 "locator binding differs from the Courses contract"
             )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CourseReferenceResolutionScopeEvidence(DataObjectModel):
+    """Mirror the complete Courses 1.0 resolution-scope envelope."""
+
+    scope_id: str
+    course_id: str
+    course_title: str
+    manifest_id: str
+    manifest_sha256: str
+    inventory_id: str
+    total: int
+    ordered_selection_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _content_id(self.scope_id, field="scope_id")
+        _bounded(self.course_id, field="course_id")
+        _bounded(self.course_title, field="course_title", maximum=500)
+        _content_id(self.manifest_id, field="manifest_id")
+        _sha256(self.manifest_sha256, field="manifest_sha256")
+        _content_id(self.inventory_id, field="inventory_id")
+        if (
+            type(self.total) is not int
+            or not 1 <= self.total <= _MAX_ITEMS
+            or self.total != len(self.ordered_selection_ids)
+        ):
+            raise CourseReferenceAuthorityError(
+                "scope total differs from its ordered selection inventory"
+            )
+        _content_ids(
+            self.ordered_selection_ids,
+            field="ordered_selection_ids",
+            ordered=True,
+        )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -250,6 +322,43 @@ class RenderedCandidateEntryEvidence(DataObjectModel):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class RenderedEntryCandidateBinding(DataObjectModel):
+    """Bind an opaque rendered locator to one exact candidate identity."""
+
+    reference_locator: str
+    rendered_entry_id: str
+    candidate_id: str
+    source_observation_ids: tuple[str, ...]
+    binding_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        _content_id(self.reference_locator, field="reference_locator")
+        _content_id(self.rendered_entry_id, field="rendered_entry_id")
+        _content_id(self.candidate_id, field="candidate_id")
+        _content_ids(
+            self.source_observation_ids,
+            field="source_observation_ids",
+        )
+        if self.reference_locator != self.rendered_entry_id:
+            raise CourseReferenceAuthorityError(
+                "rendered candidate locator differs from its entry identity"
+            )
+        object.__setattr__(
+            self,
+            "binding_id",
+            _stable_id(
+                "rendered-entry-candidate-binding",
+                {
+                    "candidate_id": self.candidate_id,
+                    "reference_locator": self.reference_locator,
+                    "rendered_entry_id": self.rendered_entry_id,
+                    "source_observation_ids": self.source_observation_ids,
+                },
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ReferenceRecordDiscrepancy(DataObjectModel):
     """Retain a non-authoritative exact record solely for comparison."""
 
@@ -315,6 +424,44 @@ class ReferenceRecordMatch(DataObjectModel):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class IngestionArtifactAuthorityLink(DataObjectModel):
+    """Bind one asset observation to exact Ingestion cross-binding fields."""
+
+    asset_observation_id: str
+    source_id: str
+    document_id: str
+    artifact_verification_result_id: str
+    link_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("asset_observation_id", self.asset_observation_id),
+            ("source_id", self.source_id),
+            ("document_id", self.document_id),
+            (
+                "artifact_verification_result_id",
+                self.artifact_verification_result_id,
+            ),
+        ):
+            _content_id(value, field=label)
+        object.__setattr__(
+            self,
+            "link_id",
+            _stable_id(
+                "reference-ingestion-artifact-link",
+                {
+                    "artifact_verification_result_id": (
+                        self.artifact_verification_result_id
+                    ),
+                    "asset_observation_id": self.asset_observation_id,
+                    "document_id": self.document_id,
+                    "source_id": self.source_id,
+                },
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ReferenceAssetAuthorityEvidence(DataObjectModel):
     """Expose path-free asset, runtime, document, and ingestion evidence."""
 
@@ -328,6 +475,7 @@ class ReferenceAssetAuthorityEvidence(DataObjectModel):
     runtime_evidence_id: str | None = None
     document_binding_ids: tuple[str, ...] = ()
     ingestion_evidence_ids: tuple[str, ...] = ()
+    ingestion_artifact_links: tuple[IngestionArtifactAuthorityLink, ...] = ()
 
     def __post_init__(self) -> None:
         _content_id(self.candidate_id, field="candidate_id")
@@ -365,6 +513,26 @@ class ReferenceAssetAuthorityEvidence(DataObjectModel):
             self.ingestion_evidence_ids,
             field="ingestion_evidence_ids",
         )
+        _typed_tuple(
+            self.ingestion_artifact_links,
+            IngestionArtifactAuthorityLink,
+            field="ingestion_artifact_links",
+        )
+        if any(
+            item.asset_observation_id != self.asset_observation_id
+            for item in self.ingestion_artifact_links
+        ):
+            raise CourseReferenceAuthorityError(
+                "Ingestion artifact link differs from its asset observation"
+            )
+        if tuple(
+            item.link_id for item in self.ingestion_artifact_links
+        ) != tuple(
+            sorted({item.link_id for item in self.ingestion_artifact_links})
+        ):
+            raise CourseReferenceAuthorityError(
+                "Ingestion artifact links must use unique lexical order"
+            )
 
     @classmethod
     def from_asset(
@@ -377,6 +545,9 @@ class ReferenceAssetAuthorityEvidence(DataObjectModel):
         runtime_evidence_id: str | None = None,
         document_binding_ids: tuple[str, ...] = (),
         ingestion_evidence_ids: tuple[str, ...] = (),
+        ingestion_artifact_links: tuple[
+            IngestionArtifactAuthorityLink, ...
+        ] = (),
     ) -> ReferenceAssetAuthorityEvidence:
         """Derive an opaque identity while omitting root and relative path."""
         if type(asset) is not SourceAssetRecord:
@@ -395,6 +566,12 @@ class ReferenceAssetAuthorityEvidence(DataObjectModel):
             runtime_evidence_id=runtime_evidence_id,
             document_binding_ids=tuple(sorted(document_binding_ids)),
             ingestion_evidence_ids=tuple(sorted(ingestion_evidence_ids)),
+            ingestion_artifact_links=tuple(
+                sorted(
+                    ingestion_artifact_links,
+                    key=lambda item: item.link_id,
+                )
+            ),
         )
 
 
@@ -527,9 +704,11 @@ class CurrentReviewDecisionHead(DataObjectModel):
 class CourseReferenceAuthorityQueueRequest(DataObjectActionRequest):
     """Bind exact Courses scope and current References evidence."""
 
+    scope: CourseReferenceResolutionScopeEvidence
     selections: tuple[CourseReferenceSelectionEvidence, ...]
     render_result: CandidateBibliographyRenderResult
     candidates: tuple[ReferenceCandidate, ...]
+    rendered_candidate_bindings: tuple[RenderedEntryCandidateBinding, ...]
     record_discrepancies: tuple[ReferenceRecordDiscrepancy, ...]
     assets: tuple[ReferenceAssetAuthorityEvidence, ...]
     review_projection: ReviewProjection
@@ -537,6 +716,10 @@ class CourseReferenceAuthorityQueueRequest(DataObjectActionRequest):
     request_id: str = field(init=False)
 
     def __post_init__(self) -> None:
+        if type(self.scope) is not CourseReferenceResolutionScopeEvidence:
+            raise TypeError(
+                "scope must be CourseReferenceResolutionScopeEvidence"
+            )
         _typed_tuple(
             self.selections,
             CourseReferenceSelectionEvidence,
@@ -553,7 +736,11 @@ class CourseReferenceAuthorityQueueRequest(DataObjectActionRequest):
             self.candidates,
             ReferenceCandidate,
             field="candidates",
-            nonempty=True,
+        )
+        _typed_tuple(
+            self.rendered_candidate_bindings,
+            RenderedEntryCandidateBinding,
+            field="rendered_candidate_bindings",
         )
         _typed_tuple(
             self.record_discrepancies,
@@ -574,17 +761,32 @@ class CourseReferenceAuthorityQueueRequest(DataObjectActionRequest):
         )
         for label, values in (
             ("candidates", self.candidates),
+            ("rendered candidate bindings", self.rendered_candidate_bindings),
             ("record discrepancies", self.record_discrepancies),
             ("assets", self.assets),
             ("state projections", self.state_projections),
         ):
             if len(values) > _MAX_ITEMS:
                 raise CourseReferenceAuthorityError(f"{label} limit exceeded")
-        scope_ids = {item.scope_id for item in self.selections}
-        course_ids = {item.course_id for item in self.selections}
-        if len(scope_ids) != 1 or len(course_ids) != 1:
+        if tuple(item.selection_id for item in self.selections) != (
+            self.scope.ordered_selection_ids
+        ):
             raise CourseReferenceAuthorityError(
-                "selections must share one course scope"
+                "selections differ from the complete Courses scope envelope"
+            )
+        if len(self.selections) != self.scope.total:
+            raise CourseReferenceAuthorityError(
+                "selection count differs from Courses scope total"
+            )
+        if any(
+            item.scope_id != self.scope.scope_id
+            or item.course_id != self.scope.course_id
+            or item.manifest_id != self.scope.manifest_id
+            or item.inventory_id != self.scope.inventory_id
+            for item in self.selections
+        ):
+            raise CourseReferenceAuthorityError(
+                "selections differ from the Courses scope revision"
             )
         if tuple(item.ordinal for item in self.selections) != tuple(
             range(1, len(self.selections) + 1)
@@ -605,6 +807,17 @@ class CourseReferenceAuthorityQueueRequest(DataObjectActionRequest):
             field="candidate identities",
         )
         _unique(
+            (
+                item.reference_locator
+                for item in self.rendered_candidate_bindings
+            ),
+            field="rendered candidate locators",
+        )
+        _unique(
+            (item.binding_id for item in self.rendered_candidate_bindings),
+            field="rendered candidate binding identities",
+        )
+        _unique(
             (item.record_id for item in self.record_discrepancies),
             field="record discrepancy identities",
         )
@@ -618,26 +831,85 @@ class CourseReferenceAuthorityQueueRequest(DataObjectActionRequest):
             _stable_id(
                 "course-reference-authority-queue-request",
                 {
+                    "asset_evidence": tuple(
+                        sorted(
+                            (
+                                item.asset_observation_id,
+                                item,
+                            )
+                            for item in self.assets
+                        )
+                    ),
                     "asset_observation_ids": tuple(
                         sorted(
                             item.asset_observation_id for item in self.assets
+                        )
+                    ),
+                    "candidate_evidence": tuple(
+                        sorted(
+                            self.candidates,
+                            key=lambda item: item.candidate_id,
                         )
                     ),
                     "candidate_ids": tuple(
                         sorted(item.candidate_id for item in self.candidates)
                     ),
                     "contract_id": COURSE_REFERENCE_AUTHORITY_CONTRACT_ID,
+                    "observation_evidence": tuple(
+                        sorted(
+                            (
+                                ObservedCandidateEntry.from_observation(item)
+                                for source in (
+                                    self.render_result.request.source.sources
+                                )
+                                for item in source.observations
+                            ),
+                            key=lambda item: item.observation_id,
+                        )
+                    ),
+                    "record_evidence": tuple(
+                        sorted(
+                            self.record_discrepancies,
+                            key=lambda item: item.record_id,
+                        )
+                    ),
                     "record_ids": tuple(
                         sorted(
                             item.record_id for item in self.record_discrepancies
                         )
                     ),
                     "render_result_id": self.render_result.result_id,
+                    "rendered_entries": tuple(
+                        RenderedCandidateEntryEvidence.from_rendered(item)
+                        for item in self.render_result.entries
+                    ),
+                    "rendered_candidate_binding_evidence": tuple(
+                        sorted(
+                            self.rendered_candidate_bindings,
+                            key=lambda item: item.binding_id,
+                        )
+                    ),
+                    "rendered_candidate_binding_ids": tuple(
+                        sorted(
+                            item.binding_id
+                            for item in self.rendered_candidate_bindings
+                        )
+                    ),
+                    "review_projection": self.review_projection,
                     "review_projection_id": (
                         self.review_projection.projection_id
                     ),
+                    "scope": self.scope,
+                    "scope_id": self.scope.scope_id,
+                    "selections": self.selections,
                     "selection_ids": tuple(
                         item.selection_id for item in self.selections
+                    ),
+                    "state_projection_evidence": tuple(
+                        sorted(
+                            self.state_projections,
+                            key=lambda item: item.projection_id,
+                        )
                     ),
                     "state_projection_ids": tuple(
                         sorted(
@@ -655,9 +927,10 @@ class CourseReferenceAuthorityQueueItem(DataObjectModel):
     """One path-free candidate review item with owner-computed actions."""
 
     selection: CourseReferenceSelectionEvidence
-    candidate: ReferenceCandidate
+    resolution: CourseReferenceItemResolution
+    candidate: ReferenceCandidate | None
     observations: tuple[ObservedCandidateEntry, ...]
-    rendered_entry: RenderedCandidateEntryEvidence
+    rendered_entry: RenderedCandidateEntryEvidence | None
     record_matches: tuple[ReferenceRecordMatch, ...]
     assets: tuple[ReferenceAssetAuthorityEvidence, ...]
     current_identity_decisions: tuple[CurrentReviewDecisionHead, ...]
@@ -670,16 +943,38 @@ class CourseReferenceAuthorityQueueItem(DataObjectModel):
     def __post_init__(self) -> None:
         if type(self.selection) is not CourseReferenceSelectionEvidence:
             raise TypeError("selection has an invalid type")
-        if type(self.candidate) is not ReferenceCandidate:
+        if not isinstance(self.resolution, CourseReferenceItemResolution):
+            raise TypeError("resolution has an invalid type")
+        if (
+            self.candidate is not None
+            and type(self.candidate) is not ReferenceCandidate
+        ):
             raise TypeError("candidate has an invalid type")
         _typed_tuple(
             self.observations,
             ObservedCandidateEntry,
             field="observations",
-            nonempty=True,
         )
-        if type(self.rendered_entry) is not RenderedCandidateEntryEvidence:
+        if (
+            self.rendered_entry is not None
+            and type(self.rendered_entry) is not RenderedCandidateEntryEvidence
+        ):
             raise TypeError("rendered_entry has an invalid type")
+        ready = self.resolution is CourseReferenceItemResolution.READY
+        if ready and (
+            self.candidate is None
+            or self.rendered_entry is None
+            or not self.observations
+        ):
+            raise CourseReferenceAuthorityError(
+                "ready item lacks complete candidate evidence"
+            )
+        if not ready and (
+            self.allowed_identity_actions or self.allowed_asset_actions
+        ):
+            raise CourseReferenceAuthorityError(
+                "unresolved item cannot expose mutation actions"
+            )
         _typed_tuple(
             self.record_matches,
             ReferenceRecordMatch,
@@ -725,10 +1020,15 @@ class CourseReferenceAuthorityQueueItem(DataObjectModel):
                     "active_authority": self.active_authority,
                     "allowed_asset_actions": self.allowed_asset_actions,
                     "allowed_identity_actions": self.allowed_identity_actions,
+                    "asset_evidence": self.assets,
                     "asset_observation_ids": tuple(
                         item.asset_observation_id for item in self.assets
                     ),
-                    "candidate_id": self.candidate.candidate_id,
+                    "candidate_id": (
+                        None
+                        if self.candidate is None
+                        else self.candidate.candidate_id
+                    ),
                     "current_asset_decision_id": (
                         None
                         if self.current_asset_decision is None
@@ -742,7 +1042,12 @@ class CourseReferenceAuthorityQueueItem(DataObjectModel):
                         item.observation_id for item in self.observations
                     ),
                     "record_matches": self.record_matches,
-                    "rendered_entry_id": self.rendered_entry.entry_id,
+                    "rendered_entry_id": (
+                        None
+                        if self.rendered_entry is None
+                        else self.rendered_entry.entry_id
+                    ),
+                    "resolution": self.resolution,
                     "selection_id": self.selection.selection_id,
                 },
             ),
@@ -754,6 +1059,7 @@ class CourseReferenceAuthorityQueue(DataObjectModel):
     """Deterministic complete queue for one Courses-owned selection scope."""
 
     request_id: str
+    scope: CourseReferenceResolutionScopeEvidence
     scope_id: str
     course_id: str
     items: tuple[CourseReferenceAuthorityQueueItem, ...]
@@ -766,6 +1072,8 @@ class CourseReferenceAuthorityQueue(DataObjectModel):
     queue_id: str = field(init=False)
 
     def __post_init__(self) -> None:
+        if type(self.scope) is not CourseReferenceResolutionScopeEvidence:
+            raise TypeError("scope has an invalid type")
         for label, value in (
             ("request_id", self.request_id),
             ("scope_id", self.scope_id),
@@ -775,6 +1083,15 @@ class CourseReferenceAuthorityQueue(DataObjectModel):
         ):
             _content_id(value, field=label)
         _bounded(self.course_id, field="course_id")
+        if (
+            self.scope.scope_id != self.scope_id
+            or self.scope.course_id != self.course_id
+            or tuple(item.selection.selection_id for item in self.items)
+            != self.scope.ordered_selection_ids
+        ):
+            raise CourseReferenceAuthorityError(
+                "queue differs from its complete Courses scope envelope"
+            )
         if self.control_class != "CONTROL":
             raise CourseReferenceAuthorityError(
                 "course authority queue must remain a CONTROL queue"
@@ -815,6 +1132,7 @@ class CourseReferenceAuthorityQueue(DataObjectModel):
                     "render_result_id": self.render_result_id,
                     "request_id": self.request_id,
                     "review_projection_id": self.review_projection_id,
+                    "scope": self.scope,
                     "scope_id": self.scope_id,
                     "source_export_result_id": self.source_export_result_id,
                     "state_projection_ids": self.state_projection_ids,
@@ -830,6 +1148,76 @@ class CourseReferenceAuthorityQueue(DataObjectModel):
         raise CourseReferenceAuthorityError("selection is not in the queue")
 
 
+def _unresolved_item(
+    selection: CourseReferenceSelectionEvidence,
+    resolution: CourseReferenceItemResolution,
+    *,
+    rendered: RenderedCandidateEntryEvidence | None = None,
+    candidate: ReferenceCandidate | None = None,
+) -> CourseReferenceAuthorityQueueItem:
+    return CourseReferenceAuthorityQueueItem(
+        selection=selection,
+        resolution=resolution,
+        candidate=candidate,
+        observations=(),
+        rendered_entry=rendered,
+        record_matches=(),
+        assets=(),
+        current_identity_decisions=(),
+        current_asset_decision=None,
+        active_authority=None,
+        allowed_identity_actions=(),
+        allowed_asset_actions=(),
+    )
+
+
+def _validate_queue_request_freshness(
+    request: CourseReferenceAuthorityQueueRequest,
+) -> None:
+    scope = CourseReferenceResolutionScopeEvidence(
+        scope_id=request.scope.scope_id,
+        course_id=request.scope.course_id,
+        course_title=request.scope.course_title,
+        manifest_id=request.scope.manifest_id,
+        manifest_sha256=request.scope.manifest_sha256,
+        inventory_id=request.scope.inventory_id,
+        total=request.scope.total,
+        ordered_selection_ids=request.scope.ordered_selection_ids,
+    )
+    selections = tuple(
+        CourseReferenceSelectionEvidence(
+            scope_id=item.scope_id,
+            selection_id=item.selection_id,
+            locator_binding_id=item.locator_binding_id,
+            course_id=item.course_id,
+            manifest_id=item.manifest_id,
+            inventory_id=item.inventory_id,
+            ordinal=item.ordinal,
+            origin=item.origin,
+            role=item.role,
+            display_citekey=item.display_citekey,
+            display_citekey_status=item.display_citekey_status,
+            reference_locator=item.reference_locator,
+        )
+        for item in request.selections
+    )
+    fresh = CourseReferenceAuthorityQueueRequest(
+        scope=scope,
+        selections=selections,
+        render_result=request.render_result,
+        candidates=request.candidates,
+        rendered_candidate_bindings=request.rendered_candidate_bindings,
+        record_discrepancies=request.record_discrepancies,
+        assets=request.assets,
+        review_projection=request.review_projection,
+        state_projections=request.state_projections,
+    )
+    if fresh.request_id != request.request_id:
+        raise CourseReferenceAuthorityError(
+            "course authority queue request revision is stale"
+        )
+
+
 class CourseReferenceAuthorityProjector:
     """Project a path-free queue without promoting candidate authority."""
 
@@ -842,10 +1230,17 @@ class CourseReferenceAuthorityProjector:
             raise TypeError(
                 "request must be CourseReferenceAuthorityQueueRequest"
             )
+        _validate_queue_request_freshness(request)
         rendered_by_id = {
             item.entry_id: item for item in request.render_result.entries
         }
-        candidates = request.candidates
+        candidates_by_id = {
+            item.candidate_id: item for item in request.candidates
+        }
+        bindings_by_locator = {
+            item.reference_locator: item
+            for item in request.rendered_candidate_bindings
+        }
         observations = {
             item.observation_id: item
             for source in request.render_result.request.source.sources
@@ -862,39 +1257,88 @@ class CourseReferenceAuthorityProjector:
             if item.decision_id
             in set(request.review_projection.current_human_decision_ids)
         }
-        items = []
+        items: list[CourseReferenceAuthorityQueueItem] = []
         for selection in request.selections:
-            try:
-                rendered = rendered_by_id[selection.reference_locator]
-            except KeyError as error:
-                raise CourseReferenceAuthorityError(
-                    "Courses locator has no rendered References entry"
-                ) from error
-            if rendered.citekey != selection.display_citekey:
-                raise CourseReferenceAuthorityError(
-                    "Courses citekey guard differs from References entry"
+            rendered = rendered_by_id.get(selection.reference_locator)
+            if rendered is None:
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.RENDERED_LOCATOR_UNAVAILABLE,
+                    )
                 )
-            matching_candidates = tuple(
-                item
-                for item in candidates
-                if item.proposed_citekey == rendered.citekey
-                and set(item.source_observation_ids)
-                == set(rendered.source_observation_ids)
+                continue
+            rendered_evidence = RenderedCandidateEntryEvidence.from_rendered(
+                rendered
             )
-            if len(matching_candidates) != 1:
-                raise CourseReferenceAuthorityError(
-                    "rendered entry does not resolve to exactly one candidate"
+            if rendered.citekey != selection.display_citekey:
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.DISPLAY_GUARD_MISMATCH,
+                        rendered=rendered_evidence,
+                    )
                 )
-            candidate = matching_candidates[0]
+                continue
+            binding = bindings_by_locator.get(selection.reference_locator)
+            if binding is None:
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.CANDIDATE_UNAVAILABLE,
+                        rendered=rendered_evidence,
+                    )
+                )
+                continue
+            candidate = candidates_by_id.get(binding.candidate_id)
+            if candidate is None:
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.CANDIDATE_UNAVAILABLE,
+                        rendered=rendered_evidence,
+                    )
+                )
+                continue
+            if (
+                binding.rendered_entry_id != rendered.entry_id
+                or binding.source_observation_ids
+                != rendered.source_observation_ids
+                or binding.source_observation_ids
+                != candidate.source_observation_ids
+            ):
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.OWNER_EVIDENCE_MALFORMED,
+                        rendered=rendered_evidence,
+                    )
+                )
+                continue
+            if candidate.proposed_citekey != rendered.citekey:
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.CANDIDATE_DISPLAY_GUARD_MISMATCH,
+                        rendered=rendered_evidence,
+                        candidate=candidate,
+                    )
+                )
+                continue
             try:
                 source_observations = tuple(
                     observations[item]
                     for item in rendered.source_observation_ids
                 )
-            except KeyError as error:
-                raise CourseReferenceAuthorityError(
-                    "rendered entry lacks its exact source observation"
-                ) from error
+            except KeyError:
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.OWNER_EVIDENCE_MALFORMED,
+                        rendered=rendered_evidence,
+                    )
+                )
+                continue
             observed = tuple(
                 ObservedCandidateEntry.from_observation(item)
                 for item in source_observations
@@ -938,9 +1382,14 @@ class CourseReferenceAuthorityProjector:
                 and item.context_id == _ASSET_CONTEXT
             )
             if len(asset_decisions) > 1:
-                raise CourseReferenceAuthorityError(
-                    "candidate has multiple current asset decisions"
+                items.append(
+                    _unresolved_item(
+                        selection,
+                        CourseReferenceItemResolution.OWNER_EVIDENCE_MALFORMED,
+                        rendered=rendered_evidence,
+                    )
                 )
+                continue
             active = next(
                 (
                     item
@@ -983,11 +1432,10 @@ class CourseReferenceAuthorityProjector:
             items.append(
                 CourseReferenceAuthorityQueueItem(
                     selection=selection,
+                    resolution=CourseReferenceItemResolution.READY,
                     candidate=candidate,
                     observations=observed,
-                    rendered_entry=(
-                        RenderedCandidateEntryEvidence.from_rendered(rendered)
-                    ),
+                    rendered_entry=rendered_evidence,
                     record_matches=matches,
                     assets=candidate_assets,
                     current_identity_decisions=identity_decisions,
@@ -999,30 +1447,11 @@ class CourseReferenceAuthorityProjector:
                     allowed_asset_actions=asset_actions,
                 )
             )
-        selected_locators = {item.selection.reference_locator for item in items}
-        if selected_locators != set(rendered_by_id):
-            raise CourseReferenceAuthorityError(
-                "Courses selections differ from the rendered entry set"
-            )
-        selected_candidate_ids = {item.candidate.candidate_id for item in items}
-        if selected_candidate_ids != {
-            item.candidate_id for item in request.candidates
-        }:
-            raise CourseReferenceAuthorityError(
-                "Courses selections differ from the candidate set"
-            )
-        if any(
-            asset.candidate_id not in selected_candidate_ids
-            for asset in request.assets
-        ):
-            raise CourseReferenceAuthorityError(
-                "asset evidence is outside the selected candidate set"
-            )
-        first = request.selections[0]
         return CourseReferenceAuthorityQueue(
             request_id=request.request_id,
-            scope_id=first.scope_id,
-            course_id=first.course_id,
+            scope=request.scope,
+            scope_id=request.scope.scope_id,
+            course_id=request.scope.course_id,
             items=tuple(items),
             active_authorities=active_authorities,
             source_export_result_id=request.render_result.source_export_result_id,
@@ -1035,53 +1464,58 @@ class CourseReferenceAuthorityProjector:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class AppendReferenceIdentityDecisionRequest(DataObjectActionRequest):
-    """Request one CAS-guarded append to identity authority history."""
+class ReferenceIdentityDecisionPreview(DataObjectModel):
+    """Owner-generated explicit identity action preview."""
 
     queue: CourseReferenceAuthorityQueue
     selection_id: str
     disposition: ReferenceIdentityDecision
-    actor: ReviewActorProvenance
-    rationale: str
-    decided_at: str
-    expected_item_revision_id: str
+    target_state_projection_id: str | None
+    canonical_citekey: str | None
+    alias_citekeys: tuple[str, ...]
+    selected_record_match_ids: tuple[str, ...]
     expected_current_decision_id: str | None
-    target_state_projection_id: str | None = None
-    request_id: str = field(init=False)
+    preview_id: str = field(init=False)
 
     def __post_init__(self) -> None:
         if type(self.queue) is not CourseReferenceAuthorityQueue:
-            raise TypeError("queue must be CourseReferenceAuthorityQueue")
-        _content_id(self.selection_id, field="selection_id")
-        if not isinstance(self.disposition, ReferenceIdentityDecision):
-            raise TypeError("disposition must be ReferenceIdentityDecision")
-        if type(self.actor) is not ReviewActorProvenance:
-            raise TypeError("actor must be ReviewActorProvenance")
-        _bounded(self.rationale, field="rationale")
-        _bounded(self.decided_at, field="decided_at")
-        _content_id(
-            self.expected_item_revision_id,
-            field="expected_item_revision_id",
-        )
-        if self.expected_current_decision_id is not None:
-            _content_id(
-                self.expected_current_decision_id,
-                field="expected_current_decision_id",
-            )
-        if self.target_state_projection_id is not None:
-            _content_id(
-                self.target_state_projection_id,
-                field="target_state_projection_id",
-            )
+            raise TypeError("queue has an invalid type")
         item = self.queue.item(self.selection_id)
-        if item.item_revision_id != self.expected_item_revision_id:
-            raise CourseReferenceAuthorityError(
-                "identity request item revision is stale"
-            )
+        candidate = _ready_candidate(item)
         if self.disposition not in item.allowed_identity_actions:
             raise CourseReferenceAuthorityError(
                 "identity disposition is not currently allowed"
             )
+        _citekeys(self.alias_citekeys, field="alias_citekeys")
+        _content_ids(
+            self.selected_record_match_ids,
+            field="selected_record_match_ids",
+        )
+        available_match_ids = {match.record_id for match in item.record_matches}
+        if not set(self.selected_record_match_ids).issubset(
+            available_match_ids
+        ):
+            raise CourseReferenceAuthorityError(
+                "identity preview selects an unavailable record match"
+            )
+        accepting = self.disposition in {
+            ReferenceIdentityDecision.ACCEPT_NEW,
+            ReferenceIdentityDecision.ACCEPT_EXISTING,
+            ReferenceIdentityDecision.MERGE,
+        }
+        if accepting != (self.canonical_citekey is not None):
+            raise CourseReferenceAuthorityError(
+                "canonical citekey does not match identity disposition"
+            )
+        if self.canonical_citekey is not None:
+            validate_citekey(
+                self.canonical_citekey,
+                field="canonical citekey",
+            )
+            if self.canonical_citekey in self.alias_citekeys:
+                raise CourseReferenceAuthorityError(
+                    "canonical citekey cannot also be an alias"
+                )
         needs_target = self.disposition in {
             ReferenceIdentityDecision.ACCEPT_EXISTING,
             ReferenceIdentityDecision.MERGE,
@@ -1090,35 +1524,84 @@ class AppendReferenceIdentityDecisionRequest(DataObjectActionRequest):
             raise CourseReferenceAuthorityError(
                 "identity target does not match the disposition"
             )
-        if self.target_state_projection_id is not None:
-            target = _target_authority(
+        target = (
+            None
+            if self.target_state_projection_id is None
+            else _target_authority(
                 self.queue,
                 self.target_state_projection_id,
             )
-            if (
-                self.disposition is ReferenceIdentityDecision.ACCEPT_EXISTING
-                and target.active_citekey != item.candidate.proposed_citekey
+        )
+        if self.disposition is ReferenceIdentityDecision.ACCEPT_NEW:
+            if self.canonical_citekey != candidate.proposed_citekey:
+                raise CourseReferenceAuthorityError(
+                    "new work canonical citekey must be explicitly confirmed"
+                )
+            if self.alias_citekeys:
+                raise CourseReferenceAuthorityError(
+                    "new work cannot begin with inferred aliases"
+                )
+            if any(
+                authority.active_citekey == self.canonical_citekey
+                for authority in self.queue.active_authorities
             ):
                 raise CourseReferenceAuthorityError(
-                    "accept-existing requires the same active citekey"
+                    "canonical citekey is already active"
                 )
+        elif target is not None:
+            if (
+                self.disposition is ReferenceIdentityDecision.ACCEPT_EXISTING
+                and candidate.proposed_citekey != target.active_citekey
+            ):
+                raise CourseReferenceAuthorityError(
+                    "existing-work target differs from the candidate key"
+                )
+            if self.canonical_citekey != target.active_citekey:
+                raise CourseReferenceAuthorityError(
+                    "canonical citekey differs from the explicit target"
+                )
+            expected_aliases = set(target.alias_citekeys)
+            if (
+                self.disposition is ReferenceIdentityDecision.MERGE
+                and candidate.proposed_citekey != target.active_citekey
+            ):
+                expected_aliases.add(candidate.proposed_citekey)
+            if self.alias_citekeys != tuple(sorted(expected_aliases)):
+                raise CourseReferenceAuthorityError(
+                    "explicit aliases differ from the target/merge plan"
+                )
+        elif self.alias_citekeys:
+            raise CourseReferenceAuthorityError(
+                "non-accepting identity preview cannot carry aliases"
+            )
+        context_id = (
+            item.selection.course_id
+            if self.disposition is ReferenceIdentityDecision.DEFER
+            else _IDENTITY_CONTEXT
+        )
+        current = _current_decision(
+            item.current_identity_decisions,
+            dimension=HumanReviewDimension.REFERENCE_IDENTITY,
+            context_id=context_id,
+        )
+        _require_expected_head(current, self.expected_current_decision_id)
         object.__setattr__(
             self,
-            "request_id",
+            "preview_id",
             _stable_id(
-                "append-reference-identity-decision-request",
+                "reference-identity-decision-preview",
                 {
-                    "actor": self.actor,
-                    "decided_at": self.decided_at,
+                    "alias_citekeys": self.alias_citekeys,
+                    "canonical_citekey": self.canonical_citekey,
                     "disposition": self.disposition,
                     "expected_current_decision_id": (
                         self.expected_current_decision_id
                     ),
-                    "expected_item_revision_id": (
-                        self.expected_item_revision_id
-                    ),
+                    "item_revision_id": item.item_revision_id,
                     "queue_id": self.queue.queue_id,
-                    "rationale": self.rationale,
+                    "selected_record_match_ids": (
+                        self.selected_record_match_ids
+                    ),
                     "selection_id": self.selection_id,
                     "target_state_projection_id": (
                         self.target_state_projection_id
@@ -1129,67 +1612,206 @@ class AppendReferenceIdentityDecisionRequest(DataObjectActionRequest):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class AppendCanonicalAssetDecisionRequest(DataObjectActionRequest):
-    """Request a separate CAS-guarded canonical-asset decision."""
+class CanonicalAssetEvidencePlan(DataObjectModel):
+    """Fresh post-identity plan binding all asset competitors and evidence."""
 
     queue: CourseReferenceAuthorityQueue
     selection_id: str
+    identity_state_projection_id: str
+    assets: tuple[ReferenceAssetAuthorityEvidence, ...]
+    plan_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        item = self.queue.item(self.selection_id)
+        _ready_candidate(item)
+        if item.active_authority is None:
+            raise CourseReferenceAuthorityError(
+                "asset plan requires current accepted identity"
+            )
+        if (
+            self.identity_state_projection_id
+            != item.active_authority.state_projection_id
+        ):
+            raise CourseReferenceAuthorityError(
+                "asset plan identity projection is stale"
+            )
+        if self.assets != item.assets:
+            raise CourseReferenceAuthorityError(
+                "asset plan differs from the refreshed queue evidence"
+            )
+        _typed_tuple(
+            self.assets,
+            ReferenceAssetAuthorityEvidence,
+            field="assets",
+        )
+        object.__setattr__(
+            self,
+            "plan_id",
+            _stable_id(
+                "canonical-asset-evidence-plan",
+                {
+                    "asset_evidence": self.assets,
+                    "identity_state_projection_id": (
+                        self.identity_state_projection_id
+                    ),
+                    "item_revision_id": item.item_revision_id,
+                    "queue_id": self.queue.queue_id,
+                    "selection_id": self.selection_id,
+                },
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CanonicalAssetCompetitorDisposition(DataObjectModel):
+    """Record an explicit action and rationale for one plan competitor."""
+
+    asset_observation_id: str
     disposition: CanonicalAssetDecision
+    rationale: str
+
+    def __post_init__(self) -> None:
+        _content_id(
+            self.asset_observation_id,
+            field="asset_observation_id",
+        )
+        if not isinstance(self.disposition, CanonicalAssetDecision):
+            raise TypeError("competitor disposition is invalid")
+        _bounded(self.rationale, field="competitor rationale")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CanonicalAssetDecisionPreview(DataObjectModel):
+    """Owner-generated asset decision preview over a complete fresh plan."""
+
+    plan: CanonicalAssetEvidencePlan
+    disposition: CanonicalAssetDecision
+    competitor_dispositions: tuple[CanonicalAssetCompetitorDisposition, ...]
+    expected_current_decision_id: str | None
+    preview_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if type(self.plan) is not CanonicalAssetEvidencePlan:
+            raise TypeError("plan has an invalid type")
+        if not isinstance(self.disposition, CanonicalAssetDecision):
+            raise TypeError("asset disposition is invalid")
+        _typed_tuple(
+            self.competitor_dispositions,
+            CanonicalAssetCompetitorDisposition,
+            field="competitor_dispositions",
+        )
+        asset_ids = tuple(
+            item.asset_observation_id for item in self.plan.assets
+        )
+        disposition_ids = tuple(
+            item.asset_observation_id for item in self.competitor_dispositions
+        )
+        if tuple(sorted(asset_ids)) != tuple(sorted(disposition_ids)):
+            raise CourseReferenceAuthorityError(
+                "asset preview must disposition every competitor exactly once"
+            )
+        selected = tuple(
+            item
+            for item in self.competitor_dispositions
+            if item.disposition is CanonicalAssetDecision.AUTHORIZE
+        )
+        if self.disposition is CanonicalAssetDecision.AUTHORIZE:
+            if len(selected) != 1:
+                raise CourseReferenceAuthorityError(
+                    "asset authorization must select exactly one competitor"
+                )
+            selected_asset = _asset(
+                self.plan.queue.item(self.plan.selection_id),
+                selected[0].asset_observation_id,
+            )
+            if selected_asset.runtime_availability is not (
+                RuntimeAssetAvailability.AVAILABLE
+            ):
+                raise CourseReferenceAuthorityError(
+                    "authorized asset is not freshly available"
+                )
+        elif selected:
+            raise CourseReferenceAuthorityError(
+                "non-authorization preview cannot authorize a competitor"
+            )
+        item = self.plan.queue.item(self.plan.selection_id)
+        _require_expected_head(
+            item.current_asset_decision,
+            self.expected_current_decision_id,
+        )
+        object.__setattr__(
+            self,
+            "preview_id",
+            _stable_id(
+                "canonical-asset-decision-preview",
+                {
+                    "competitor_dispositions": (self.competitor_dispositions),
+                    "disposition": self.disposition,
+                    "expected_current_decision_id": (
+                        self.expected_current_decision_id
+                    ),
+                    "plan_id": self.plan.plan_id,
+                },
+            ),
+        )
+
+    @property
+    def selected_asset_observation_id(self) -> str | None:
+        for item in self.competitor_dispositions:
+            if item.disposition is CanonicalAssetDecision.AUTHORIZE:
+                return item.asset_observation_id
+        return None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AppendReferenceIdentityDecisionRequest(DataObjectActionRequest):
+    """Append exactly one owner-generated identity preview."""
+
+    preview: ReferenceIdentityDecisionPreview
     actor: ReviewActorProvenance
     rationale: str
     decided_at: str
-    expected_item_revision_id: str
-    expected_current_decision_id: str | None
-    selected_asset_observation_id: str | None = None
     request_id: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if type(self.queue) is not CourseReferenceAuthorityQueue:
-            raise TypeError("queue must be CourseReferenceAuthorityQueue")
-        _content_id(self.selection_id, field="selection_id")
-        if not isinstance(self.disposition, CanonicalAssetDecision):
-            raise TypeError("disposition must be CanonicalAssetDecision")
+        if type(self.preview) is not ReferenceIdentityDecisionPreview:
+            raise TypeError("preview has an invalid type")
         if type(self.actor) is not ReviewActorProvenance:
             raise TypeError("actor must be ReviewActorProvenance")
         _bounded(self.rationale, field="rationale")
         _bounded(self.decided_at, field="decided_at")
-        _content_id(
-            self.expected_item_revision_id,
-            field="expected_item_revision_id",
+        object.__setattr__(
+            self,
+            "request_id",
+            _stable_id(
+                "append-reference-identity-decision-request",
+                {
+                    "actor": self.actor,
+                    "decided_at": self.decided_at,
+                    "preview_id": self.preview.preview_id,
+                    "rationale": self.rationale,
+                },
+            ),
         )
-        if self.expected_current_decision_id is not None:
-            _content_id(
-                self.expected_current_decision_id,
-                field="expected_current_decision_id",
-            )
-        if self.selected_asset_observation_id is not None:
-            _content_id(
-                self.selected_asset_observation_id,
-                field="selected_asset_observation_id",
-            )
-        item = self.queue.item(self.selection_id)
-        if item.item_revision_id != self.expected_item_revision_id:
-            raise CourseReferenceAuthorityError(
-                "asset request item revision is stale"
-            )
-        if self.disposition not in item.allowed_asset_actions:
-            raise CourseReferenceAuthorityError(
-                "asset disposition is not currently allowed"
-            )
-        selecting = self.disposition is CanonicalAssetDecision.AUTHORIZE
-        if selecting != (self.selected_asset_observation_id is not None):
-            raise CourseReferenceAuthorityError(
-                "selected asset does not match the disposition"
-            )
-        if self.selected_asset_observation_id is not None:
-            selected = _asset(item, self.selected_asset_observation_id)
-            if (
-                selected.runtime_availability
-                is not RuntimeAssetAvailability.AVAILABLE
-            ):
-                raise CourseReferenceAuthorityError(
-                    "selected asset is not currently available"
-                )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AppendCanonicalAssetDecisionRequest(DataObjectActionRequest):
+    """Append exactly one owner-generated complete asset preview."""
+
+    preview: CanonicalAssetDecisionPreview
+    actor: ReviewActorProvenance
+    rationale: str
+    decided_at: str
+    request_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if type(self.preview) is not CanonicalAssetDecisionPreview:
+            raise TypeError("preview has an invalid type")
+        if type(self.actor) is not ReviewActorProvenance:
+            raise TypeError("actor must be ReviewActorProvenance")
+        _bounded(self.rationale, field="rationale")
+        _bounded(self.decided_at, field="decided_at")
         object.__setattr__(
             self,
             "request_id",
@@ -1198,19 +1820,8 @@ class AppendCanonicalAssetDecisionRequest(DataObjectActionRequest):
                 {
                     "actor": self.actor,
                     "decided_at": self.decided_at,
-                    "disposition": self.disposition,
-                    "expected_current_decision_id": (
-                        self.expected_current_decision_id
-                    ),
-                    "expected_item_revision_id": (
-                        self.expected_item_revision_id
-                    ),
-                    "queue_id": self.queue.queue_id,
+                    "preview_id": self.preview.preview_id,
                     "rationale": self.rationale,
-                    "selected_asset_observation_id": (
-                        self.selected_asset_observation_id
-                    ),
-                    "selection_id": self.selection_id,
                 },
             ),
         )
@@ -1265,6 +1876,8 @@ class CourseReferenceAuthorityRepository(Protocol):
         expected_current_decision_id: str | None,
         expected_queue_id: str,
         expected_item_revision_id: str,
+        expected_preview_id: str,
+        expected_asset_plan_id: str | None,
         expected_review_projection_id: str,
         expected_state_projection_ids: tuple[str, ...],
         expected_asset_observation_ids: tuple[str, ...],
@@ -1298,14 +1911,17 @@ class ReferenceAuthorityDecisionAppender:
     def append_identity(
         self, *, request: AppendReferenceIdentityDecisionRequest
     ) -> ReferenceAuthorityDecisionResult:
-        """Append one identity decision without selecting an asset."""
+        """Append exactly one fresh explicit identity preview."""
         if type(request) is not AppendReferenceIdentityDecisionRequest:
             raise TypeError("request has an invalid identity request type")
-        item = request.queue.item(request.selection_id)
-        candidate = self._candidate(item.candidate.candidate_id)
+        preview = request.preview
+        queue = preview.queue
+        item = queue.item(preview.selection_id)
+        candidate = self._candidate(_ready_candidate(item).candidate_id)
+        assert item.rendered_entry is not None
         context = (
             item.selection.course_id
-            if request.disposition is ReferenceIdentityDecision.DEFER
+            if preview.disposition is ReferenceIdentityDecision.DEFER
             else _IDENTITY_CONTEXT
         )
         current = _current_decision(
@@ -1313,18 +1929,19 @@ class ReferenceAuthorityDecisionAppender:
             dimension=HumanReviewDimension.REFERENCE_IDENTITY,
             context_id=context,
         )
-        _require_expected_head(current, request.expected_current_decision_id)
+        _require_expected_head(current, preview.expected_current_decision_id)
         target = (
             None
-            if request.target_state_projection_id is None
+            if preview.target_state_projection_id is None
             else _target_authority(
-                request.queue,
-                request.target_state_projection_id,
+                queue,
+                preview.target_state_projection_id,
             )
         )
         evidence_ids = {
-            request.queue.queue_id,
-            request.queue.review_projection_id,
+            queue.queue_id,
+            queue.review_projection_id,
+            preview.preview_id,
             item.item_revision_id,
             item.selection.scope_id,
             item.selection.selection_id,
@@ -1333,6 +1950,7 @@ class ReferenceAuthorityDecisionAppender:
             candidate.candidate_id,
             request.actor.verification_record_id,
             *(entry.observation_id for entry in item.observations),
+            *preview.selected_record_match_ids,
         }
         if target is not None:
             evidence_ids.update(
@@ -1346,7 +1964,7 @@ class ReferenceAuthorityDecisionAppender:
             subject_id=candidate.candidate_id,
             context_id=context,
             dimension=HumanReviewDimension.REFERENCE_IDENTITY,
-            decision=request.disposition,
+            decision=preview.disposition,
             producer=COURSE_REFERENCE_AUTHORITY_PRODUCER,
             transition_kind=(
                 ReviewTransitionKind.INITIAL
@@ -1362,27 +1980,32 @@ class ReferenceAuthorityDecisionAppender:
             ),
         )
         state_projection = None
-        if request.disposition in {
+        if preview.disposition in {
             ReferenceIdentityDecision.ACCEPT_NEW,
             ReferenceIdentityDecision.ACCEPT_EXISTING,
             ReferenceIdentityDecision.MERGE,
         }:
+            assert preview.canonical_citekey is not None
             state_projection = _identity_state_projection(
                 candidate=candidate,
                 decision=decision,
-                disposition=request.disposition,
+                disposition=preview.disposition,
                 target=target,
+                canonical_citekey=preview.canonical_citekey,
+                alias_citekeys=preview.alias_citekeys,
             )
         self._repository.append_course_authority_decision(
             candidate=candidate,
             observations=self._candidate_observations(candidate),
             decision=decision,
             state_projection=state_projection,
-            expected_current_decision_id=request.expected_current_decision_id,
-            expected_queue_id=request.queue.queue_id,
+            expected_current_decision_id=preview.expected_current_decision_id,
+            expected_queue_id=queue.queue_id,
             expected_item_revision_id=item.item_revision_id,
-            expected_review_projection_id=(request.queue.review_projection_id),
-            expected_state_projection_ids=request.queue.state_projection_ids,
+            expected_preview_id=preview.preview_id,
+            expected_asset_plan_id=None,
+            expected_review_projection_id=queue.review_projection_id,
+            expected_state_projection_ids=queue.state_projection_ids,
             expected_asset_observation_ids=tuple(
                 item.asset_observation_id for item in item.assets
             ),
@@ -1396,25 +2019,30 @@ class ReferenceAuthorityDecisionAppender:
     def append_asset(
         self, *, request: AppendCanonicalAssetDecisionRequest
     ) -> ReferenceAuthorityDecisionResult:
-        """Append one asset decision only after accepted identity exists."""
+        """Append exactly one fresh complete asset preview."""
         if type(request) is not AppendCanonicalAssetDecisionRequest:
             raise TypeError("request has an invalid asset request type")
-        item = request.queue.item(request.selection_id)
-        candidate = self._candidate(item.candidate.candidate_id)
+        preview = request.preview
+        plan = preview.plan
+        queue = plan.queue
+        item = queue.item(plan.selection_id)
+        candidate = self._candidate(_ready_candidate(item).candidate_id)
         if item.active_authority is None:
             raise CourseReferenceAuthorityError(
                 "asset decision requires accepted identity authority"
             )
         current = item.current_asset_decision
-        _require_expected_head(current, request.expected_current_decision_id)
+        _require_expected_head(current, preview.expected_current_decision_id)
         selected = (
             None
-            if request.selected_asset_observation_id is None
-            else _asset(item, request.selected_asset_observation_id)
+            if preview.selected_asset_observation_id is None
+            else _asset(item, preview.selected_asset_observation_id)
         )
         evidence_ids = {
-            request.queue.queue_id,
-            request.queue.review_projection_id,
+            queue.queue_id,
+            queue.review_projection_id,
+            plan.plan_id,
+            preview.preview_id,
             item.item_revision_id,
             item.selection.scope_id,
             item.selection.selection_id,
@@ -1426,16 +2054,12 @@ class ReferenceAuthorityDecisionAppender:
             *(asset.asset_observation_id for asset in item.assets),
         }
         if selected is not None:
-            evidence_ids.add(selected.asset_observation_id)
-            if selected.runtime_evidence_id is not None:
-                evidence_ids.add(selected.runtime_evidence_id)
-            evidence_ids.update(selected.document_binding_ids)
-            evidence_ids.update(selected.ingestion_evidence_ids)
+            evidence_ids.update(_asset_evidence_ids(selected))
         decision = HumanReviewDecision.create(
             subject_id=candidate.candidate_id,
             context_id=_ASSET_CONTEXT,
             dimension=HumanReviewDimension.CANONICAL_ASSET,
-            decision=request.disposition,
+            decision=preview.disposition,
             producer=COURSE_REFERENCE_AUTHORITY_PRODUCER,
             transition_kind=(
                 ReviewTransitionKind.INITIAL
@@ -1451,7 +2075,7 @@ class ReferenceAuthorityDecisionAppender:
             ),
         )
         state_projection = None
-        if request.disposition is CanonicalAssetDecision.AUTHORIZE:
+        if preview.disposition is CanonicalAssetDecision.AUTHORIZE:
             assert selected is not None
             identity_decision = _accepted_identity_decision(item)
             state_projection = _asset_state_projection(
@@ -1466,11 +2090,13 @@ class ReferenceAuthorityDecisionAppender:
             observations=self._candidate_observations(candidate),
             decision=decision,
             state_projection=state_projection,
-            expected_current_decision_id=request.expected_current_decision_id,
-            expected_queue_id=request.queue.queue_id,
+            expected_current_decision_id=preview.expected_current_decision_id,
+            expected_queue_id=queue.queue_id,
             expected_item_revision_id=item.item_revision_id,
-            expected_review_projection_id=(request.queue.review_projection_id),
-            expected_state_projection_ids=request.queue.state_projection_ids,
+            expected_preview_id=preview.preview_id,
+            expected_asset_plan_id=plan.plan_id,
+            expected_review_projection_id=queue.review_projection_id,
+            expected_state_projection_ids=queue.state_projection_ids,
             expected_asset_observation_ids=tuple(
                 item.asset_observation_id for item in item.assets
             ),
@@ -1503,6 +2129,631 @@ class ReferenceAuthorityDecisionAppender:
             ) from error
 
 
+class CourseReferenceAuthorityFailureReason(StrEnum):
+    """Stable API-mappable owner service failure categories."""
+
+    COURSE_NOT_FOUND = "course-not-found"
+    ITEM_NOT_FOUND = "item-not-found"
+    EVIDENCE_STALE = "evidence-stale"
+    REVISION_STALE = "revision-stale"
+    TARGET_STALE = "target-stale"
+    CONCURRENT_DECISION = "concurrent-decision"
+    INVALID_DISPOSITION = "invalid-disposition"
+    OWNER_MALFORMED = "owner-malformed"
+    OWNER_UNAVAILABLE = "owner-unavailable"
+
+
+class CourseReferenceAuthorityServiceError(RuntimeError):
+    """Expose one stable reason while retaining internal exception chaining."""
+
+    def __init__(
+        self,
+        reason: CourseReferenceAuthorityFailureReason,
+        message: str,
+    ) -> None:
+        self.reason = reason
+        super().__init__(message)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CourseReferenceAuthorityOwnerEvidence(DataObjectModel):
+    """Owner-private evidence loaded behind the runtime façade."""
+
+    render_result: CandidateBibliographyRenderResult
+    candidates: tuple[ReferenceCandidate, ...]
+    observations: tuple[SourceBibliographyObservation, ...]
+    rendered_candidate_bindings: tuple[RenderedEntryCandidateBinding, ...]
+    record_discrepancies: tuple[ReferenceRecordDiscrepancy, ...]
+    assets: tuple[ReferenceAssetAuthorityEvidence, ...]
+    evidence_revision_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if type(self.render_result) is not CandidateBibliographyRenderResult:
+            raise TypeError("render_result has an invalid type")
+        _typed_tuple(
+            self.candidates,
+            ReferenceCandidate,
+            field="candidates",
+        )
+        _typed_tuple(
+            self.observations,
+            SourceBibliographyObservation,
+            field="observations",
+        )
+        _typed_tuple(
+            self.rendered_candidate_bindings,
+            RenderedEntryCandidateBinding,
+            field="rendered_candidate_bindings",
+        )
+        _typed_tuple(
+            self.record_discrepancies,
+            ReferenceRecordDiscrepancy,
+            field="record_discrepancies",
+        )
+        _typed_tuple(
+            self.assets,
+            ReferenceAssetAuthorityEvidence,
+            field="assets",
+        )
+        object.__setattr__(
+            self,
+            "evidence_revision_id",
+            _stable_id(
+                "course-reference-authority-owner-evidence",
+                {
+                    "asset_evidence": self.assets,
+                    "candidate_ids": tuple(
+                        item.candidate_id for item in self.candidates
+                    ),
+                    "observation_ids": tuple(
+                        item.observation_id for item in self.observations
+                    ),
+                    "record_ids": tuple(
+                        item.record_id for item in self.record_discrepancies
+                    ),
+                    "render_result_id": self.render_result.result_id,
+                    "rendered_candidate_binding_ids": tuple(
+                        item.binding_id
+                        for item in self.rendered_candidate_bindings
+                    ),
+                },
+            ),
+        )
+
+
+class CourseReferenceAuthorityEvidenceProvider(Protocol):
+    """Load owner-private artifacts and runtime evidence behind References."""
+
+    def load_course_reference_authority_evidence(
+        self,
+        *,
+        scope: CourseReferenceResolutionScopeEvidence,
+        catalog_candidates: tuple[ReferenceCandidate, ...],
+        catalog_observations: tuple[SourceBibliographyObservation, ...],
+        catalog_assets: tuple[SourceAssetRecord, ...],
+    ) -> CourseReferenceAuthorityOwnerEvidence: ...
+
+
+class CourseReferenceAuthorityRuntimeCatalog(
+    CourseReferenceAuthorityRepository,
+    Protocol,
+):
+    """Schema-5 reads and atomic append required by the runtime service."""
+
+    def read_candidates(self) -> tuple[ReferenceCandidate, ...]: ...
+
+    def read_observations(
+        self,
+    ) -> tuple[SourceBibliographyObservation, ...]: ...
+
+    def read_source_assets(self) -> tuple[SourceAssetRecord, ...]: ...
+
+    def read_review_projection(self) -> ReviewProjection: ...
+
+    def read_state_projections(
+        self,
+    ) -> tuple[ReferenceStateProjection, ...]: ...
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReferenceAuthorityDecisionReceipt(DataObjectModel):
+    """Owner-reread post-commit receipt, never a pre-write prediction."""
+
+    decision_result: ReferenceAuthorityDecisionResult
+    preview_id: str
+    refreshed_queue: CourseReferenceAuthorityQueue
+    refreshed_item: CourseReferenceAuthorityQueueItem
+    refreshed_queue_id: str
+    refreshed_item_revision_id: str
+    current_decision_id: str
+    current_state_projection_id: str | None
+    receipt_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if type(self.decision_result) is not ReferenceAuthorityDecisionResult:
+            raise TypeError("decision_result has an invalid type")
+        if type(self.refreshed_queue) is not CourseReferenceAuthorityQueue:
+            raise TypeError("refreshed_queue has an invalid type")
+        if type(self.refreshed_item) is not CourseReferenceAuthorityQueueItem:
+            raise TypeError("refreshed_item has an invalid type")
+        _content_id(self.preview_id, field="preview_id")
+        for label, value in (
+            ("refreshed_queue_id", self.refreshed_queue_id),
+            ("refreshed_item_revision_id", self.refreshed_item_revision_id),
+            ("current_decision_id", self.current_decision_id),
+        ):
+            _content_id(value, field=label)
+        if self.current_state_projection_id is not None:
+            _content_id(
+                self.current_state_projection_id,
+                field="current_state_projection_id",
+            )
+        if (
+            self.refreshed_queue_id != self.refreshed_queue.queue_id
+            or self.refreshed_item_revision_id
+            != self.refreshed_item.item_revision_id
+            or self.refreshed_queue.item(
+                self.refreshed_item.selection.selection_id
+            )
+            != self.refreshed_item
+        ):
+            raise CourseReferenceAuthorityError(
+                "receipt objects differ from their owner reread identities"
+            )
+        if self.preview_id not in self.decision_result.decision.evidence_ids:
+            raise CourseReferenceAuthorityError(
+                "receipt decision lacks the exact owner preview"
+            )
+        if self.current_decision_id != (
+            self.decision_result.decision.decision_id
+        ):
+            raise CourseReferenceAuthorityError(
+                "receipt decision differs from the owner reread head"
+            )
+        object.__setattr__(
+            self,
+            "receipt_id",
+            _stable_id(
+                "reference-authority-decision-receipt",
+                {
+                    "current_decision_id": self.current_decision_id,
+                    "preview_id": self.preview_id,
+                    "current_state_projection_id": (
+                        self.current_state_projection_id
+                    ),
+                    "decision_result_id": self.decision_result.result_id,
+                    "refreshed_item_revision_id": (
+                        self.refreshed_item_revision_id
+                    ),
+                    "refreshed_queue_id": self.refreshed_queue_id,
+                },
+            ),
+        )
+
+
+class CourseReferenceAuthorityService:
+    """Only API-facing owner façade for queue, preview, append, and reread."""
+
+    __slots__ = ("_catalog", "_provider")
+
+    def __init__(
+        self,
+        *,
+        catalog: CourseReferenceAuthorityRuntimeCatalog,
+        provider: CourseReferenceAuthorityEvidenceProvider,
+    ) -> None:
+        self._catalog = catalog
+        self._provider = provider
+
+    def queue(
+        self,
+        *,
+        scope: CourseReferenceResolutionScopeEvidence,
+        selections: tuple[CourseReferenceSelectionEvidence, ...],
+    ) -> CourseReferenceAuthorityQueue:
+        queue, _ = self._load(scope=scope, selections=selections)
+        return queue
+
+    def preview_identity(
+        self,
+        *,
+        scope: CourseReferenceResolutionScopeEvidence,
+        selections: tuple[CourseReferenceSelectionEvidence, ...],
+        selection_id: str,
+        disposition: ReferenceIdentityDecision,
+        target_state_projection_id: str | None,
+        canonical_citekey: str | None,
+        alias_citekeys: tuple[str, ...],
+        selected_record_match_ids: tuple[str, ...],
+        expected_current_decision_id: str | None,
+    ) -> ReferenceIdentityDecisionPreview:
+        queue = self.queue(scope=scope, selections=selections)
+        try:
+            queue.item(selection_id)
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.ITEM_NOT_FOUND,
+                "course reference item is unavailable",
+            ) from error
+        try:
+            return ReferenceIdentityDecisionPreview(
+                queue=queue,
+                selection_id=selection_id,
+                disposition=disposition,
+                target_state_projection_id=target_state_projection_id,
+                canonical_citekey=canonical_citekey,
+                alias_citekeys=alias_citekeys,
+                selected_record_match_ids=selected_record_match_ids,
+                expected_current_decision_id=expected_current_decision_id,
+            )
+        except CourseReferenceAuthorityError as error:
+            reason = (
+                CourseReferenceAuthorityFailureReason.TARGET_STALE
+                if target_state_projection_id is not None
+                else CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION
+            )
+            raise CourseReferenceAuthorityServiceError(
+                reason,
+                "identity preview is not available",
+            ) from error
+
+    def preview_asset(
+        self,
+        *,
+        scope: CourseReferenceResolutionScopeEvidence,
+        selections: tuple[CourseReferenceSelectionEvidence, ...],
+        selection_id: str,
+        disposition: CanonicalAssetDecision,
+        competitor_dispositions: tuple[
+            CanonicalAssetCompetitorDisposition, ...
+        ],
+        expected_current_decision_id: str | None,
+    ) -> CanonicalAssetDecisionPreview:
+        queue = self.queue(scope=scope, selections=selections)
+        try:
+            item = queue.item(selection_id)
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.ITEM_NOT_FOUND,
+                "course reference item is unavailable",
+            ) from error
+        try:
+            if item.active_authority is None:
+                raise CourseReferenceAuthorityError(
+                    "asset preview lacks accepted identity"
+                )
+            plan = CanonicalAssetEvidencePlan(
+                queue=queue,
+                selection_id=selection_id,
+                identity_state_projection_id=(
+                    item.active_authority.state_projection_id
+                ),
+                assets=item.assets,
+            )
+            return CanonicalAssetDecisionPreview(
+                plan=plan,
+                disposition=disposition,
+                competitor_dispositions=competitor_dispositions,
+                expected_current_decision_id=(expected_current_decision_id),
+            )
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION,
+                "asset preview is not available",
+            ) from error
+
+    def append_identity(
+        self,
+        *,
+        preview: ReferenceIdentityDecisionPreview,
+        actor: ReviewActorProvenance,
+        rationale: str,
+        decided_at: str,
+    ) -> ReferenceAuthorityDecisionReceipt:
+        selections = tuple(item.selection for item in preview.queue.items)
+        fresh_queue, evidence = self._load(
+            scope=preview.queue.scope,
+            selections=selections,
+        )
+        old_candidate = _ready_candidate(
+            preview.queue.item(preview.selection_id)
+        )
+        decision_history = (
+            self._catalog.read_review_projection().human_decision_history
+        )
+        retry = any(
+            item.subject_id == old_candidate.candidate_id
+            and item.dimension is HumanReviewDimension.REFERENCE_IDENTITY
+            and item.decision == preview.disposition.value
+            and item.actor == actor
+            and item.rationale == rationale
+            and item.decided_at == decided_at
+            and preview.preview_id in item.evidence_ids
+            for item in decision_history
+        )
+        if retry:
+            appender = ReferenceAuthorityDecisionAppender(
+                repository=self._catalog,
+                candidates=evidence.candidates,
+                observations=evidence.observations,
+            )
+            result = appender.append_identity(
+                request=AppendReferenceIdentityDecisionRequest(
+                    preview=preview,
+                    actor=actor,
+                    rationale=rationale,
+                    decided_at=decided_at,
+                )
+            )
+            return self._receipt(
+                result=result,
+                scope=preview.queue.scope,
+                selections=selections,
+                selection_id=preview.selection_id,
+                preview_id=preview.preview_id,
+            )
+        try:
+            fresh_preview = ReferenceIdentityDecisionPreview(
+                queue=fresh_queue,
+                selection_id=preview.selection_id,
+                disposition=preview.disposition,
+                target_state_projection_id=(preview.target_state_projection_id),
+                canonical_citekey=preview.canonical_citekey,
+                alias_citekeys=preview.alias_citekeys,
+                selected_record_match_ids=(preview.selected_record_match_ids),
+                expected_current_decision_id=(
+                    preview.expected_current_decision_id
+                ),
+            )
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                "identity preview revision is stale",
+            ) from error
+        if fresh_preview.preview_id != preview.preview_id:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.EVIDENCE_STALE,
+                "identity preview evidence is stale",
+            )
+        appender = ReferenceAuthorityDecisionAppender(
+            repository=self._catalog,
+            candidates=evidence.candidates,
+            observations=evidence.observations,
+        )
+        try:
+            result = appender.append_identity(
+                request=AppendReferenceIdentityDecisionRequest(
+                    preview=fresh_preview,
+                    actor=actor,
+                    rationale=rationale,
+                    decided_at=decided_at,
+                )
+            )
+        except Exception as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION,
+                "identity decision append did not commit",
+            ) from error
+        return self._receipt(
+            result=result,
+            scope=preview.queue.scope,
+            selections=tuple(item.selection for item in preview.queue.items),
+            selection_id=preview.selection_id,
+            preview_id=preview.preview_id,
+        )
+
+    def append_asset(
+        self,
+        *,
+        preview: CanonicalAssetDecisionPreview,
+        actor: ReviewActorProvenance,
+        rationale: str,
+        decided_at: str,
+    ) -> ReferenceAuthorityDecisionReceipt:
+        old_queue = preview.plan.queue
+        selections = tuple(item.selection for item in old_queue.items)
+        fresh_queue, evidence = self._load(
+            scope=old_queue.scope,
+            selections=selections,
+        )
+        old_candidate = _ready_candidate(
+            old_queue.item(preview.plan.selection_id)
+        )
+        decision_history = (
+            self._catalog.read_review_projection().human_decision_history
+        )
+        retry = any(
+            item.subject_id == old_candidate.candidate_id
+            and item.dimension is HumanReviewDimension.CANONICAL_ASSET
+            and item.decision == preview.disposition.value
+            and item.actor == actor
+            and item.rationale == rationale
+            and item.decided_at == decided_at
+            and preview.preview_id in item.evidence_ids
+            for item in decision_history
+        )
+        if retry:
+            appender = ReferenceAuthorityDecisionAppender(
+                repository=self._catalog,
+                candidates=evidence.candidates,
+                observations=evidence.observations,
+            )
+            result = appender.append_asset(
+                request=AppendCanonicalAssetDecisionRequest(
+                    preview=preview,
+                    actor=actor,
+                    rationale=rationale,
+                    decided_at=decided_at,
+                )
+            )
+            return self._receipt(
+                result=result,
+                scope=old_queue.scope,
+                selections=selections,
+                selection_id=preview.plan.selection_id,
+                preview_id=preview.preview_id,
+            )
+        try:
+            fresh_item = fresh_queue.item(preview.plan.selection_id)
+            if fresh_item.active_authority is None:
+                raise CourseReferenceAuthorityError(
+                    "accepted identity is stale"
+                )
+            fresh_plan = CanonicalAssetEvidencePlan(
+                queue=fresh_queue,
+                selection_id=preview.plan.selection_id,
+                identity_state_projection_id=(
+                    fresh_item.active_authority.state_projection_id
+                ),
+                assets=fresh_item.assets,
+            )
+            fresh_preview = CanonicalAssetDecisionPreview(
+                plan=fresh_plan,
+                disposition=preview.disposition,
+                competitor_dispositions=(preview.competitor_dispositions),
+                expected_current_decision_id=(
+                    preview.expected_current_decision_id
+                ),
+            )
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                "asset plan revision is stale",
+            ) from error
+        if fresh_preview.preview_id != preview.preview_id:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.EVIDENCE_STALE,
+                "asset runtime evidence is stale",
+            )
+        appender = ReferenceAuthorityDecisionAppender(
+            repository=self._catalog,
+            candidates=evidence.candidates,
+            observations=evidence.observations,
+        )
+        try:
+            result = appender.append_asset(
+                request=AppendCanonicalAssetDecisionRequest(
+                    preview=fresh_preview,
+                    actor=actor,
+                    rationale=rationale,
+                    decided_at=decided_at,
+                )
+            )
+        except Exception as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION,
+                "asset decision append did not commit",
+            ) from error
+        return self._receipt(
+            result=result,
+            scope=old_queue.scope,
+            selections=selections,
+            selection_id=preview.plan.selection_id,
+            preview_id=preview.preview_id,
+        )
+
+    def _load(
+        self,
+        *,
+        scope: CourseReferenceResolutionScopeEvidence,
+        selections: tuple[CourseReferenceSelectionEvidence, ...],
+    ) -> tuple[
+        CourseReferenceAuthorityQueue,
+        CourseReferenceAuthorityOwnerEvidence,
+    ]:
+        try:
+            evidence = self._provider.load_course_reference_authority_evidence(
+                scope=scope,
+                catalog_candidates=self._catalog.read_candidates(),
+                catalog_observations=self._catalog.read_observations(),
+                catalog_assets=self._catalog.read_source_assets(),
+            )
+            request = CourseReferenceAuthorityQueueRequest(
+                scope=scope,
+                selections=selections,
+                render_result=evidence.render_result,
+                candidates=evidence.candidates,
+                rendered_candidate_bindings=(
+                    evidence.rendered_candidate_bindings
+                ),
+                record_discrepancies=evidence.record_discrepancies,
+                assets=evidence.assets,
+                review_projection=self._catalog.read_review_projection(),
+                state_projections=self._catalog.read_state_projections(),
+            )
+            queue = CourseReferenceAuthorityProjector().project(request=request)
+        except CourseReferenceAuthorityServiceError:
+            raise
+        except (OSError, RuntimeError) as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.OWNER_UNAVAILABLE,
+                "References authority evidence is unavailable",
+            ) from error
+        except Exception as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.OWNER_MALFORMED,
+                "References authority evidence is malformed",
+            ) from error
+        return queue, evidence
+
+    def _receipt(
+        self,
+        *,
+        result: ReferenceAuthorityDecisionResult,
+        scope: CourseReferenceResolutionScopeEvidence,
+        selections: tuple[CourseReferenceSelectionEvidence, ...],
+        selection_id: str,
+        preview_id: str,
+    ) -> ReferenceAuthorityDecisionReceipt:
+        queue = self.queue(scope=scope, selections=selections)
+        try:
+            item = queue.item(selection_id)
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.ITEM_NOT_FOUND,
+                "course reference item is unavailable after append",
+            ) from error
+        heads = (
+            item.current_identity_decisions
+            if result.decision.dimension
+            is HumanReviewDimension.REFERENCE_IDENTITY
+            else (
+                ()
+                if item.current_asset_decision is None
+                else (item.current_asset_decision,)
+            )
+        )
+        if result.decision.decision_id not in {
+            head.decision_id for head in heads
+        }:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION,
+                "appended decision is not the owner-reread current head",
+            )
+        state_projection_id = (
+            None
+            if result.state_projection is None
+            else result.state_projection.projection_id
+        )
+        if state_projection_id is not None and state_projection_id not in (
+            queue.state_projection_ids
+        ):
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.EVIDENCE_STALE,
+                "appended projection is absent from owner reread",
+            )
+        return ReferenceAuthorityDecisionReceipt(
+            decision_result=result,
+            preview_id=preview_id,
+            refreshed_queue=queue,
+            refreshed_item=item,
+            refreshed_queue_id=queue.queue_id,
+            refreshed_item_revision_id=item.item_revision_id,
+            current_decision_id=result.decision.decision_id,
+            current_state_projection_id=state_projection_id,
+        )
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SearchReferenceAuthorityBinding(DataObjectModel):
     """Supply the exact References C authority needed by Search."""
@@ -1515,6 +2766,7 @@ class SearchReferenceAuthorityBinding(DataObjectModel):
     authority_binding_id: str
     identity_decision_id: str
     canonical_asset_decision_id: str
+    ingestion_artifact_links: tuple[IngestionArtifactAuthorityLink, ...]
     authority_evidence_ids: tuple[str, ...]
     state_projection_id: str
     binding_id: str = field(init=False)
@@ -1537,6 +2789,20 @@ class SearchReferenceAuthorityBinding(DataObjectModel):
             raise CourseReferenceAuthorityError(
                 "Search authority binding must be explicitly accepted"
             )
+        _typed_tuple(
+            self.ingestion_artifact_links,
+            IngestionArtifactAuthorityLink,
+            field="ingestion_artifact_links",
+            nonempty=True,
+        )
+        if tuple(
+            item.link_id for item in self.ingestion_artifact_links
+        ) != tuple(
+            sorted({item.link_id for item in self.ingestion_artifact_links})
+        ):
+            raise CourseReferenceAuthorityError(
+                "Search Ingestion links must use unique lexical order"
+            )
         _content_ids(
             self.authority_evidence_ids,
             field="authority_evidence_ids",
@@ -1557,6 +2823,7 @@ class SearchReferenceAuthorityBinding(DataObjectModel):
                         self.canonical_asset_decision_id
                     ),
                     "identity_decision_id": self.identity_decision_id,
+                    "ingestion_artifact_links": self.ingestion_artifact_links,
                     "reference_identity_status": (
                         self.reference_identity_status
                     ),
@@ -1741,6 +3008,7 @@ def project_reviewed_course_references(
         raise TypeError("queue must be CourseReferenceAuthorityQueue")
     bindings = []
     for item in queue.items:
+        candidate = _ready_candidate(item)
         authority = item.active_authority
         if authority is None or authority.source_asset_id is None:
             raise CourseReferenceAuthorityError(
@@ -1757,7 +3025,7 @@ def project_reviewed_course_references(
                 display_citekey=item.selection.display_citekey,
                 display_citekey_status=(item.selection.display_citekey_status),
                 reference_locator=item.selection.reference_locator,
-                candidate_id=item.candidate.candidate_id,
+                candidate_id=candidate.candidate_id,
                 bibliographic_work_id=authority.bibliographic_work_id,
                 accepted_citekey=authority.active_citekey,
                 source_asset_id=authority.source_asset_id,
@@ -1781,38 +3049,76 @@ def project_search_reference_authority(
     *,
     review_projection: ReviewProjection,
     state_projections: tuple[ReferenceStateProjection, ...],
+    asset_evidence: tuple[ReferenceAssetAuthorityEvidence, ...] = (),
 ) -> SearchReferenceAuthorityProjection:
-    """Project only current identity-plus-asset authority; never infer it."""
+    """Project only complete authority with typed Ingestion linkage."""
     active = _active_authorities(state_projections, review_projection)
     projections_by_id = {item.projection_id: item for item in state_projections}
-    bindings = tuple(
-        sorted(
-            (
-                SearchReferenceAuthorityBinding(
-                    candidate_id=item.candidate_id,
-                    bibliographic_work_id=item.bibliographic_work_id,
-                    reference_identity_status="accepted",
-                    accepted_citekey=item.active_citekey,
-                    source_asset_id=cast(str, item.source_asset_id),
-                    authority_binding_id=cast(str, item.authority_binding_id),
-                    identity_decision_id=item.identity_decision_id,
-                    canonical_asset_decision_id=cast(
-                        str, item.canonical_asset_decision_id
+    bindings = []
+    for item in active:
+        if (
+            item.source_asset_id is None
+            or item.canonical_asset_decision_id is None
+            or item.authority_binding_id is None
+        ):
+            continue
+        matching_assets = tuple(
+            asset
+            for asset in asset_evidence
+            if asset.candidate_id == item.candidate_id
+            and item.source_asset_id
+            == _stable_id(
+                "source-asset",
+                {
+                    "asset_observation_id": asset.asset_observation_id,
+                    "authorization_decision_id": (
+                        item.canonical_asset_decision_id
                     ),
-                    authority_evidence_ids=projections_by_id[
-                        item.state_projection_id
-                    ].authoritative_input_ids,
-                    state_projection_id=item.state_projection_id,
-                )
-                for item in active
-                if item.source_asset_id is not None
-            ),
-            key=lambda item: item.binding_id,
+                    "bibliographic_work_id": item.bibliographic_work_id,
+                },
+            )
         )
-    )
+        if (
+            len(matching_assets) != 1
+            or not matching_assets[0].ingestion_artifact_links
+        ):
+            continue
+        selected = matching_assets[0]
+        authoritative_inputs = set(
+            projections_by_id[item.state_projection_id].authoritative_input_ids
+        )
+        if (
+            selected.runtime_availability
+            is not RuntimeAssetAvailability.AVAILABLE
+            or not set(_asset_evidence_ids(selected)).issubset(
+                authoritative_inputs
+            )
+            or any(
+                link.link_id not in authoritative_inputs
+                for link in selected.ingestion_artifact_links
+            )
+        ):
+            continue
+        bindings.append(
+            SearchReferenceAuthorityBinding(
+                candidate_id=item.candidate_id,
+                bibliographic_work_id=item.bibliographic_work_id,
+                reference_identity_status="accepted",
+                accepted_citekey=item.active_citekey,
+                source_asset_id=item.source_asset_id,
+                authority_binding_id=item.authority_binding_id,
+                identity_decision_id=item.identity_decision_id,
+                canonical_asset_decision_id=(item.canonical_asset_decision_id),
+                ingestion_artifact_links=(selected.ingestion_artifact_links),
+                authority_evidence_ids=projections_by_id[
+                    item.state_projection_id
+                ].authoritative_input_ids,
+                state_projection_id=item.state_projection_id,
+            )
+        )
     return SearchReferenceAuthorityProjection(
         review_projection_id=review_projection.projection_id,
-        bindings=bindings,
+        bindings=tuple(sorted(bindings, key=lambda item: item.binding_id)),
     )
 
 
@@ -1822,6 +3128,8 @@ def _identity_state_projection(
     decision: HumanReviewDecision,
     disposition: ReferenceIdentityDecision,
     target: ActiveReferenceAuthority | None,
+    canonical_citekey: str,
+    alias_citekeys: tuple[str, ...],
 ) -> ReferenceStateProjection:
     if disposition is ReferenceIdentityDecision.ACCEPT_NEW:
         work_id = _stable_id(
@@ -1831,21 +3139,16 @@ def _identity_state_projection(
                 "creating_decision_id": decision.decision_id,
             },
         )
-        active_citekey = candidate.proposed_citekey
-        aliases: tuple[str, ...] = ()
+        active_citekey = canonical_citekey
+        aliases = alias_citekeys
     else:
         if target is None:
             raise CourseReferenceAuthorityError(
                 "accepted existing or merged identity requires a target"
             )
         work_id = target.bibliographic_work_id
-        active_citekey = target.active_citekey
-        aliases = target.alias_citekeys
-        if (
-            disposition is ReferenceIdentityDecision.MERGE
-            and candidate.proposed_citekey != active_citekey
-        ):
-            aliases = tuple(sorted({*aliases, candidate.proposed_citekey}))
+        active_citekey = canonical_citekey
+        aliases = alias_citekeys
     claims = _candidate_claims_for_acceptance(candidate)
     claims.extend(
         _human_claims(
@@ -2288,6 +3591,33 @@ def _target_authority(
     )
 
 
+def _ready_candidate(
+    item: CourseReferenceAuthorityQueueItem,
+) -> ReferenceCandidate:
+    if (
+        item.resolution is not CourseReferenceItemResolution.READY
+        or item.candidate is None
+    ):
+        raise CourseReferenceAuthorityError(
+            "course reference item is unresolved and cannot mutate"
+        )
+    return item.candidate
+
+
+def _asset_evidence_ids(
+    asset: ReferenceAssetAuthorityEvidence,
+) -> tuple[str, ...]:
+    values = {
+        asset.asset_observation_id,
+        *asset.document_binding_ids,
+        *asset.ingestion_evidence_ids,
+        *(link.link_id for link in asset.ingestion_artifact_links),
+    }
+    if asset.runtime_evidence_id is not None:
+        values.add(asset.runtime_evidence_id)
+    return tuple(sorted(values))
+
+
 def _asset(
     item: CourseReferenceAuthorityQueueItem,
     observation_id: str,
@@ -2361,15 +3691,20 @@ def _content_id(value: str, *, field: str) -> str:
     return value
 
 
-def _content_ids(values: tuple[str, ...], *, field: str) -> None:
+def _content_ids(
+    values: tuple[str, ...],
+    *,
+    field: str,
+    ordered: bool = False,
+) -> None:
     if not isinstance(values, tuple):
         raise TypeError(f"{field} must be a tuple")
     for value in values:
         _content_id(value, field=field)
-    if values != tuple(sorted(set(values))):
-        raise CourseReferenceAuthorityError(
-            f"{field} must use unique lexical order"
-        )
+    if len(values) != len(set(values)):
+        raise CourseReferenceAuthorityError(f"{field} must be unique")
+    if not ordered and values != tuple(sorted(values)):
+        raise CourseReferenceAuthorityError(f"{field} must use lexical order")
 
 
 def _sha256(value: str, *, field: str) -> str:
