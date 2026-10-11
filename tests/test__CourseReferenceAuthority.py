@@ -1150,6 +1150,17 @@ def test__stateless_identity_put__retries_after_service_reopen(
     )
     item = queue.items[0]
     actor = _actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR)
+    preview = service.preview_identity(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+        selection_id=item.selection.selection_id,
+        disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+        target_state_projection_id=None,
+        canonical_citekey=evidence.candidates[0].proposed_citekey,
+        alias_citekeys=(),
+        selected_record_match_ids=(),
+        expected_current_decision_id=None,
+    )
     arguments: dict[str, Any] = {
         "scope": evidence.request.scope,
         "selections": evidence.request.selections,
@@ -1162,11 +1173,25 @@ def test__stateless_identity_put__retries_after_service_reopen(
         "expected_current_decision_id": None,
         "expected_queue_id": queue.queue_id,
         "expected_item_revision_id": item.item_revision_id,
+        "expected_preview_id": preview.preview_id,
         "actor": actor,
         "rationale": "Stateless identity PUT.",
         "decided_at": "2026-09-20T12:00:00Z",
         "idempotency_key": "http-put-identity-1",
     }
+    stale_preview = dict(arguments)
+    stale_preview["expected_preview_id"] = _cid(
+        "reference-identity-decision-preview",
+        "different-preview",
+    )
+    stale_preview["idempotency_key"] = "http-put-identity-stale-preview"
+    with pytest.raises(CourseReferenceAuthorityServiceError) as captured:
+        service.put_identity_decision(**stale_preview)
+    assert captured.value.reason is (
+        CourseReferenceAuthorityFailureReason.EVIDENCE_STALE
+    )
+    assert catalog.counts()["human_review_decisions"] == 0
+
     first = service.put_identity_decision(**arguments)
 
     reopened = CourseReferenceAuthorityService(
@@ -1203,6 +1228,17 @@ def test__stateless_identity_put__recovers_exact_concurrent_commit(
         selections=evidence.request.selections,
     )
     item = queue.items[0]
+    preview = service.preview_identity(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+        selection_id=item.selection.selection_id,
+        disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+        target_state_projection_id=None,
+        canonical_citekey=evidence.candidates[0].proposed_citekey,
+        alias_citekeys=(),
+        selected_record_match_ids=(),
+        expected_current_decision_id=None,
+    )
     original = ReferenceAuthorityDecisionAppender.append_identity
 
     def commit_then_report_conflict(
@@ -1230,6 +1266,7 @@ def test__stateless_identity_put__recovers_exact_concurrent_commit(
         expected_current_decision_id=None,
         expected_queue_id=queue.queue_id,
         expected_item_revision_id=item.item_revision_id,
+        expected_preview_id=preview.preview_id,
         actor=_actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR),
         rationale="Recover exact concurrent PUT.",
         decided_at="2026-09-20T12:00:00Z",
@@ -1258,6 +1295,17 @@ def test__stateless_asset_put__retries_after_service_reopen(
         selections=evidence.request.selections,
     )
     identity_item = identity_queue.items[0]
+    identity_preview = service.preview_identity(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+        selection_id=identity_item.selection.selection_id,
+        disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+        target_state_projection_id=None,
+        canonical_citekey=evidence.candidates[0].proposed_citekey,
+        alias_citekeys=(),
+        selected_record_match_ids=(),
+        expected_current_decision_id=None,
+    )
     service.put_identity_decision(
         scope=evidence.request.scope,
         selections=evidence.request.selections,
@@ -1270,6 +1318,7 @@ def test__stateless_asset_put__retries_after_service_reopen(
         expected_current_decision_id=None,
         expected_queue_id=identity_queue.queue_id,
         expected_item_revision_id=identity_item.item_revision_id,
+        expected_preview_id=identity_preview.preview_id,
         actor=_actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR),
         rationale="Accept before stateless asset PUT.",
         decided_at="2026-09-20T12:00:00Z",
@@ -1304,6 +1353,14 @@ def test__stateless_asset_put__retries_after_service_reopen(
             rationale="Select exact current competitor.",
         ),
     )
+    preview = service.preview_asset(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+        selection_id=item.selection.selection_id,
+        disposition=CanonicalAssetDecision.AUTHORIZE,
+        competitor_dispositions=dispositions,
+        expected_current_decision_id=None,
+    )
     arguments: dict[str, Any] = {
         "scope": evidence.request.scope,
         "selections": evidence.request.selections,
@@ -1313,15 +1370,29 @@ def test__stateless_asset_put__retries_after_service_reopen(
         "expected_current_decision_id": None,
         "expected_queue_id": queue.queue_id,
         "expected_item_revision_id": item.item_revision_id,
+        "expected_preview_id": preview.preview_id,
         "expected_identity_state_projection_id": (
             item.active_authority.state_projection_id
         ),
-        "expected_plan_id": None,
+        "expected_plan_id": preview.plan.plan_id,
         "actor": actor,
         "rationale": "Stateless asset PUT.",
         "decided_at": "2026-09-20T12:01:00Z",
         "idempotency_key": "http-put-asset-1",
     }
+    stale_preview = dict(arguments)
+    stale_preview["expected_preview_id"] = _cid(
+        "canonical-asset-decision-preview",
+        "different-preview",
+    )
+    stale_preview["idempotency_key"] = "http-put-asset-stale-preview"
+    with pytest.raises(CourseReferenceAuthorityServiceError) as captured:
+        service.put_asset_decision(**stale_preview)
+    assert captured.value.reason is (
+        CourseReferenceAuthorityFailureReason.EVIDENCE_STALE
+    )
+    assert catalog.counts()["human_review_decisions"] == 1
+
     first = service.put_asset_decision(**arguments)
 
     reopened_provider = _Provider(evidence)

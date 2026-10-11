@@ -154,9 +154,10 @@ configuration. It validates the complete opaque Courses scope, projects every se
 (including typed unresolved items), resolves candidates only through explicit
 rendered-entry bindings, omits private paths and bytes, and exposes only
 schema-5 accepted targets. Owner previews bind action choices and complete
-runtime evidence; stateless identity/asset PUT operations persist only derived
-idempotency evidence, replay exact retries after service reopen, and reject
-differing key reuse. Atomic CAS append followed by an owner reread produces a
+runtime evidence; stateless identity/asset PUT operations require the exact
+owner-generated preview ID, persist only derived idempotency evidence, replay
+exact retries after service reopen, and reject differing key reuse. Atomic CAS
+append followed by an owner reread produces a
 receipt. Search authority additionally requires typed `source_id`,
 `document_id`, and `artifact_verification_result_id` linkage. See
 [Actor-provenanced reference review state](docs/review-state.md) and

@@ -118,23 +118,41 @@ client-generated hints.
 `CourseReferenceAuthorityService.put_identity_decision` and
 `put_asset_decision` are the stateless composition operations. API supplies the
 complete Courses scope/selections, decision inputs, old queue/item CAS values,
-asset identity/optional plan CAS values, actor evidence, and one bounded opaque
-idempotency key. API does not create, retain, or persist an owner preview.
+asset identity/optional plan CAS values, actor evidence, the exact
+References-generated `expected_preview_id`, and one bounded opaque idempotency
+key. API does not create or persist an owner preview object; it returns the
+owner-generated preview to its caller and sends the returned preview ID in the
+PUT request.
 
-References derives two content IDs. The idempotency scope binds operation kind,
-course scope, selection, and complete actor verification. The exact request ID
-additionally binds every action input and caller-visible CAS value. Both IDs,
-the owner preview ID, the owner append-request ID, and (for assets) the complete
-plan ID are retained in append-only decision evidence; the raw idempotency key
-is not persisted.
+The identity preview's safe consequence surface is `preview_id`, selection and
+disposition, target state projection (for reuse/merge), canonical citekey,
+complete aliases, selected discrepancy matches, expected decision head, and
+its queue/item revision IDs. The asset preview's safe consequence surface is
+`preview_id`, `plan_id`, selection and disposition, identity state projection,
+complete competitor disposition/rationale pairs, selected asset observation,
+expected decision head, and queue/item revision IDs. API need not expose the
+embedded queue, private runtime evidence, filesystem information, or typed
+linkage payload. A separate consequence ID would duplicate `preview_id`: the
+identity preview ID commits the complete identity consequence and CAS inputs;
+the asset preview ID commits the complete asset consequence and `plan_id`.
+
+References derives two idempotency content IDs. The idempotency scope binds
+operation kind, course scope, selection, and complete actor verification. The
+exact request ID additionally binds every action input, caller-visible CAS
+value, and expected preview ID. Both IDs, the owner preview ID, the owner
+append-request ID, and (for assets) the complete plan ID are retained in
+append-only decision evidence; the raw idempotency key is not persisted.
 
 On retry, References checks idempotency history before applying the now-stale
 head/queue checks. Exact request reuse reconstructs the original decision result
 and projection from schema-5 history, rereads current owner state, and returns a
 fresh verified receipt. Reusing the scoped key with any different input fails
 with `IDEMPOTENCY_CONFLICT` and performs no mutation. This remains valid after
-service/catalog reopen and requires no API-side preview storage or authority
-inference.
+service/catalog reopen and requires no API-side preview-object storage or
+authority inference. On a new mutation, References regenerates the preview and
+requires exact equality with `expected_preview_id` before append; mismatch is
+`EVIDENCE_STALE`. Exact retries perform history matching first, so the original
+preview ID remains usable after the committed decision changes queue state.
 
 ## Typed Ingestion linkage and Search
 

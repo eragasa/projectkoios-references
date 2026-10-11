@@ -2555,6 +2555,7 @@ class CourseReferenceAuthorityService:
         expected_current_decision_id: str | None,
         expected_queue_id: str,
         expected_item_revision_id: str,
+        expected_preview_id: str,
         actor: ReviewActorProvenance,
         rationale: str,
         decided_at: str,
@@ -2562,6 +2563,7 @@ class CourseReferenceAuthorityService:
     ) -> ReferenceAuthorityDecisionReceipt:
         """Create or replay one stateless idempotent identity PUT."""
         try:
+            _content_id(expected_preview_id, field="expected_preview_id")
             idempotency_scope_id = _idempotency_scope_id(
                 key=idempotency_key,
                 operation="reference-identity",
@@ -2580,6 +2582,7 @@ class CourseReferenceAuthorityService:
                         expected_current_decision_id
                     ),
                     "expected_item_revision_id": expected_item_revision_id,
+                    "expected_preview_id": expected_preview_id,
                     "expected_queue_id": expected_queue_id,
                     "rationale": rationale,
                     "selected_record_match_ids": selected_record_match_ids,
@@ -2622,6 +2625,11 @@ class CourseReferenceAuthorityService:
                 selected_record_match_ids=selected_record_match_ids,
                 expected_current_decision_id=expected_current_decision_id,
             )
+            if preview.preview_id != expected_preview_id:
+                raise CourseReferenceAuthorityServiceError(
+                    CourseReferenceAuthorityFailureReason.EVIDENCE_STALE,
+                    "identity PUT preview evidence is stale",
+                )
             if (
                 preview.queue.queue_id != expected_queue_id
                 or preview.queue.item(selection_id).item_revision_id
@@ -2699,6 +2707,7 @@ class CourseReferenceAuthorityService:
         expected_current_decision_id: str | None,
         expected_queue_id: str,
         expected_item_revision_id: str,
+        expected_preview_id: str,
         expected_identity_state_projection_id: str,
         expected_plan_id: str | None,
         actor: ReviewActorProvenance,
@@ -2708,6 +2717,7 @@ class CourseReferenceAuthorityService:
     ) -> ReferenceAuthorityDecisionReceipt:
         """Create or replay one stateless idempotent asset PUT."""
         try:
+            _content_id(expected_preview_id, field="expected_preview_id")
             idempotency_scope_id = _idempotency_scope_id(
                 key=idempotency_key,
                 operation="canonical-asset",
@@ -2730,6 +2740,7 @@ class CourseReferenceAuthorityService:
                     ),
                     "expected_item_revision_id": expected_item_revision_id,
                     "expected_plan_id": expected_plan_id,
+                    "expected_preview_id": expected_preview_id,
                     "expected_queue_id": expected_queue_id,
                     "rationale": rationale,
                 },
@@ -2776,6 +2787,11 @@ class CourseReferenceAuthorityService:
                 expected_current_decision_id=expected_current_decision_id,
             )
             preview_item = preview.plan.queue.item(selection_id)
+            if preview.preview_id != expected_preview_id:
+                raise CourseReferenceAuthorityServiceError(
+                    CourseReferenceAuthorityFailureReason.EVIDENCE_STALE,
+                    "asset PUT preview evidence is stale",
+                )
             if (
                 preview.plan.queue.queue_id != expected_queue_id
                 or preview_item.item_revision_id != expected_item_revision_id
