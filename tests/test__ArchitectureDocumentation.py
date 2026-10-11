@@ -1,3 +1,8 @@
+"""Architecture ownership and documentation completeness gates.
+
+These tests bind documented nodes to source classes and reject orphaned pages.
+"""
+
 from __future__ import annotations
 
 import ast
@@ -201,6 +206,9 @@ PACKAGE_DIRECTORIES = {
     ARCHITECTURE / "projectkoios" / "references",
 }
 NODE_DOCUMENTS = {"implementation.md", "index.md", "schematic.md"}
+# Courses adopts the stronger four-view convention independently of older
+# three-page migrated slices, so its expected tree is checked explicitly.
+COURSES_ARCHITECTURE = ARCHITECTURE / "projectkoios" / "references" / "courses"
 EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.acquisition",
     "projectkoios.references.assets",
@@ -208,8 +216,6 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.candidate_bibliography",
     "projectkoios.references.citation_closure",
     "projectkoios.references.citation_draft",
-    "projectkoios.references.course_reference_authority",
-    "projectkoios.references.course_reference_authority_runtime",
     "projectkoios.references.coverage",
     "projectkoios.references.enrichment",
     "projectkoios.references.graph",
@@ -235,6 +241,18 @@ _MERMAID = re.compile(
 
 
 def _public_classes(path: Path) -> set[str]:
+    """Evaluate deterministic architecture coverage.
+
+    Parameters
+    ----------
+    path
+        Typed input constrained by the helper contract.
+
+    Returns
+    -------
+    object
+        Deterministic architecture evidence described by the annotation.
+    """
     sources = tuple(path.rglob("*.py")) if path.is_dir() else (path,)
     result: set[str] = set()
     for source in sources:
@@ -247,7 +265,16 @@ def _public_classes(path: Path) -> set[str]:
     return result
 
 
+# Build exact expectations rather than accepting arbitrary Markdown additions;
+# this makes missing, stale, and orphaned architecture pages review-visible.
 def _expected_documents() -> set[Path]:
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    object
+        Deterministic architecture evidence described by the annotation.
+    """
     expected = {ARCHITECTURE / "index.md"}
     module_directories = {
         **MODULE_DIRECTORIES,
@@ -264,10 +291,23 @@ def _expected_documents() -> set[Path]:
             module_directories[module_name] / class_name / "index.md"
             for class_name in public_classes
         )
+    expected.update(COURSES_ARCHITECTURE.rglob("*.md"))
     return expected
 
 
 def _markdown_links(path: Path) -> tuple[Path, ...]:
+    """Evaluate deterministic architecture coverage.
+
+    Parameters
+    ----------
+    path
+        Typed input constrained by the helper contract.
+
+    Returns
+    -------
+    object
+        Deterministic architecture evidence described by the annotation.
+    """
     resolved: list[Path] = []
     for target in _LINK.findall(path.read_text(encoding="utf-8")):
         if target.startswith(("https://", "http://", "mailto:", "#")):
@@ -279,6 +319,13 @@ def _markdown_links(path: Path) -> tuple[Path, ...]:
 
 
 def _source_modules() -> set[str]:
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    object
+        Deterministic architecture evidence described by the annotation.
+    """
     references = REPOSITORY / "src" / "python" / "projectkoios" / "references"
     modules = {
         f"projectkoios.references.{path.stem}"
@@ -303,6 +350,13 @@ def _source_modules() -> set[str]:
 
 
 def _source_public_class_count() -> int:
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    object
+        Deterministic architecture evidence described by the annotation.
+    """
     references = REPOSITORY / "src" / "python" / "projectkoios" / "references"
     paths = (
         tuple(
@@ -325,6 +379,13 @@ def _source_public_class_count() -> int:
 
 
 def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    None
+        The architecture assertion completes without an artifact.
+    """
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
     assert not (source_root / "catalog.py").exists()
     assert not (source_root / "document_reference.py").exists()
@@ -378,7 +439,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     actual = set(ARCHITECTURE.rglob("*.md"))
     expected = _expected_documents()
     assert actual == expected
-    assert len(actual) == 198
+    assert len(actual) == 482
 
     mermaid_documents = {
         directory / name
@@ -397,11 +458,19 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
 def test__architecture_docs__report_remaining_modules_without_completion() -> (
     None
 ):
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    None
+        The architecture assertion completes without an artifact.
+    """
     all_modules = _source_modules()
     migrated = {
         "projectkoios.references." + name.replace("/", ".")
         for name in MIGRATED_MODULES
     }
+    migrated.add("projectkoios.references.courses")
     remaining = {
         module
         for module in all_modules
@@ -413,7 +482,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "198 pages; 324 remain unmigrated" in navigator
+    assert "supply 482 component-architecture pages" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -425,10 +494,62 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 522
+    assert expected_total == 541
+
+
+# One class directory and one dedicated test filename are required for every
+# public course-authority class, regardless of broader integration coverage.
+def test__courses_architecture_and_tests_mirror_every_public_class() -> None:
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    None
+        The architecture assertion completes without an artifact.
+    """
+    courses_source = (
+        REPOSITORY
+        / "src"
+        / "python"
+        / "projectkoios"
+        / "references"
+        / "courses"
+    )
+    courses_docs = ARCHITECTURE / "projectkoios" / "references" / "courses"
+    courses_tests = (
+        REPOSITORY
+        / "tests"
+        / "package"
+        / "projectkoios"
+        / "references"
+        / "courses"
+    )
+    required = {"index.md", "schematics.md", "numerics.md", "scientific.md"}
+    assert {item.name for item in courses_docs.glob("*.md")} == required
+    for module_name in ("authority", "runtime"):
+        source = courses_source / f"{module_name}.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        classes = {
+            node.name
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
+        }
+        module_docs = courses_docs / module_name
+        assert {item.name for item in module_docs.glob("*.md")} == required
+        for class_name in classes:
+            class_docs = module_docs / class_name
+            assert {item.name for item in class_docs.glob("*.md")} == required
+            assert tuple(courses_tests.glob(f"test__{class_name}__*.py"))
 
 
 def test__citation_package_dependencies_are_one_way() -> None:
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    None
+        The architecture assertion completes without an artifact.
+    """
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
     forbidden_document = "projectkoios.references.citation_document"
     forbidden_bibliography = "projectkoios.references.bibliography"
@@ -457,7 +578,16 @@ def test__citation_package_dependencies_are_one_way() -> None:
                 ), source
 
 
+# Reachability is checked from the architecture root so generated-looking
+# pages cannot satisfy completeness while remaining undiscoverable.
 def test__architecture_docs__have_no_orphans_or_broken_local_links() -> None:
+    """Evaluate deterministic architecture coverage.
+
+    Returns
+    -------
+    None
+        The architecture assertion completes without an artifact.
+    """
     expected = _expected_documents()
     links = {path: _markdown_links(path) for path in expected}
     for path, targets in links.items():

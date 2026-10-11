@@ -23,21 +23,27 @@ References owns:
 - append-only human decisions and deterministic state replay;
 - the reviewed course tuple and Search authority projection.
 
-`CourseReferenceAuthorityService` is the API-facing owner seam. API passes the
-Courses scope and selection evidence without interpreting it. A configured
-References evidence provider loads owner-private render, candidate,
-observation, record-discrepancy, runtime-asset, document, and Ingestion
-evidence. The service owns schema-5 reads, queue projection, previews, append,
-and the post-append owner reread. API and Web may transport returned objects;
-they must not query the References catalog, parse private artifacts, recompute
-actions, or infer authority.
+The public owner seam is the typed immutable action boundary under
+`projectkoios.references.courses`: every operation accepts one
+`DataObjectActionRequest`, is executed by one `DataObjectActionizer`, and
+returns one `DataObjectActionResult`. API passes the Courses scope and selection
+evidence without interpreting it. The owner-internal
+`CourseReferenceAuthorityService` and configured evidence provider load private
+render, candidate, observation, record-discrepancy, runtime-asset, document,
+and Ingestion evidence; API never receives those internal graphs. References
+owns schema-5 reads, queue projection, previews, append, and the post-append
+owner reread. API and Web may transport safe action results; they must not query
+the References catalog, parse private artifacts, recompute actions, or infer
+authority.
 
 The concrete owner implementation is
 `FilesystemCourseReferenceAuthorityEvidenceProvider`. API supplies only a
 `CourseReferenceAuthorityRuntimeConfiguration`: expected course ID, existing
 schema-5 catalog path/storage class, and explicit private bibliography source
-configurations. `open_course_reference_authority_service` constructs the
-catalog reader, provider, and façade without creating or migrating a catalog.
+configurations. `FilesystemCourseReferenceAuthorityRuntime` constructs the
+catalog reader and provider without creating or migrating a catalog, then
+exposes only queue, identity-preview, asset-preview, identity-PUT, and asset-PUT
+actionizers.
 The provider rereads bounded bibliography files, verifies asserted SHA-256
 revisions, reconstructs exact observations/candidates/render output, creates
 rendered-entry bindings by observation identities rather than citekeys, merges
@@ -115,31 +121,35 @@ client-generated hints.
 
 ## Stateless HTTP PUT retry
 
-`CourseReferenceAuthorityService.put_identity_decision` and
-`put_asset_decision` are the stateless composition operations. API supplies the
-complete Courses scope/selections, decision inputs, old queue/item CAS values,
-asset identity/optional plan CAS values, actor evidence, the exact
-References-generated `expected_preview_id`, and one bounded opaque idempotency
-key. API does not create or persist an owner preview object; it returns the
-owner-generated preview to its caller and sends the returned preview ID in the
-PUT request.
+`PutReferenceIdentityDecisionActionizer` and
+`PutCanonicalAssetDecisionActionizer` are the stateless composition operations.
+Each accepts its matching immutable PUT request, which contains the exact
+preview request plus old queue/item CAS values, asset identity/plan CAS values,
+actor evidence, the exact References-generated `expected_preview_id`, the safe
+preview `expected_preview_result_id`, and one bounded opaque idempotency key.
+API does not create or persist an owner preview object; it returns the safe
+preview result to its caller and sends the returned preview-result/preview/plan
+IDs in the PUT request.
 
 The identity preview's safe consequence surface is `preview_id`, selection and
 disposition, target state projection (for reuse/merge), canonical citekey,
 complete aliases, selected discrepancy matches, expected decision head, and
-its queue/item revision IDs. The asset preview's safe consequence surface is
+its queue/item revision IDs and `result_id`. The asset preview's safe
+consequence surface is
 `preview_id`, `plan_id`, selection and disposition, identity state projection,
 complete competitor disposition/rationale pairs, selected asset observation,
-expected decision head, and queue/item revision IDs. API need not expose the
-embedded queue, private runtime evidence, filesystem information, or typed
-linkage payload. A separate consequence ID would duplicate `preview_id`: the
+expected decision head, queue/item revision IDs, and `result_id`. These action
+results cannot contain an embedded queue, private runtime evidence, filesystem
+information, or typed-linkage payload. A separate consequence ID would
+duplicate `preview_id`: the
 identity preview ID commits the complete identity consequence and CAS inputs;
 the asset preview ID commits the complete asset consequence and `plan_id`.
 
 References derives two idempotency content IDs. The idempotency scope binds
 operation kind, course scope, selection, and complete actor verification. The
 exact request ID additionally binds every action input, caller-visible CAS
-value, and expected preview ID. Both IDs, the owner preview ID, the owner
+value, expected preview ID, and expected safe preview-result ID. Both IDs, the
+owner preview ID, the owner
 append-request ID, and (for assets) the complete plan ID are retained in
 append-only decision evidence; the raw idempotency key is not persisted.
 

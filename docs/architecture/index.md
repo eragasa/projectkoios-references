@@ -20,6 +20,7 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.catalog`](projectkoios/references/catalog/index.md)
 - [`projectkoios.references.collections.reconciliation`](projectkoios/references/collections/reconciliation/index.md)
 - [`projectkoios.references.document_reference`](projectkoios/references/document_reference/index.md)
+- [`projectkoios.references.courses`](projectkoios/references/courses/index.md)
 - [`projectkoios.references.path_safety`](projectkoios/references/path_safety/index.md)
 - [`projectkoios.references.state_projection_replay`](projectkoios/references/state_projection_replay/index.md)
 - [`projectkoios.references.adapters.bibliography.pybtex_metadata_reader`](projectkoios/references/adapters/bibliography/pybtex_metadata_reader/index.md)
@@ -27,9 +28,10 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_schema`](projectkoios/references/adapters/sql/sqlite/document_reference_schema/index.md)
 - [`projectkoios.references.adapters.sql.sqlite.document_reference_store`](projectkoios/references/adapters/sql/sqlite/document_reference_store/index.md)
 
-The current source tree requires 522 component-architecture pages under the
-established convention. These slices supply 198 pages; 324 remain unmigrated.
-That count is coverage evidence, not a request for a bulk retrofit.
+The current documented slices supply 482 component-architecture pages. The
+Courses slice uses the stronger four-view convention for every package,
+module, and class: overview, schematics, numerics, and scientific authority.
+That count is coverage evidence, not a request for unrelated bulk retrofit.
 
 ## Remaining unmigrated modules
 
@@ -39,8 +41,6 @@ That count is coverage evidence, not a request for a bulk retrofit.
 - `projectkoios.references.candidate_bibliography`
 - `projectkoios.references.citation_closure`
 - `projectkoios.references.citation_draft`
-- `projectkoios.references.course_reference_authority`
-- `projectkoios.references.course_reference_authority_runtime`
 - `projectkoios.references.coverage`
 - `projectkoios.references.enrichment`
 - `projectkoios.references.graph`

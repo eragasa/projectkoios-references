@@ -1,3 +1,10 @@
+"""Schema-5 References catalog and append-only authority persistence.
+
+The catalog owns durable candidates, observations, reviews, projections, and
+atomic compare-and-swap appends. Course authority types are imported lazily at
+method boundaries to avoid making persistence the owner of course workflows.
+"""
+
 from __future__ import annotations
 
 import json
@@ -107,6 +114,22 @@ class ReferenceCatalog(_CatalogInternals):
         storage_class: RootStorageClass,
         placeholder_probe: CloudPlaceholderProbe | None = None,
     ) -> None:
+        """Initialize the schema-5 catalog capability.
+
+        Parameters
+        ----------
+        path
+            Typed catalog input governed by the method annotation.
+        storage_class
+            Typed catalog input governed by the method annotation.
+        placeholder_probe
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         if storage_class is RootStorageClass.CLOUD_BACKED:
             raise CloudRootMutationError(
                 "SQLite catalogs require an explicitly local staging path"
@@ -116,6 +139,13 @@ class ReferenceCatalog(_CatalogInternals):
         self.placeholder_probe = placeholder_probe
 
     def initialize(self) -> CatalogSchemaInfo:
+        """Initialize an empty catalog at the supported schema.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=True)
         connection = self._open(path)
         try:
@@ -141,6 +171,13 @@ class ReferenceCatalog(_CatalogInternals):
             connection.close()
 
     def schema_info(self) -> CatalogSchemaInfo:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return CatalogSchemaInfo(
@@ -149,6 +186,13 @@ class ReferenceCatalog(_CatalogInternals):
             )
 
     def migration_plan(self) -> CatalogMigrationPlan | None:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:
@@ -170,6 +214,18 @@ class ReferenceCatalog(_CatalogInternals):
         )
 
     def migrate(self, *, backup_confirmed: bool = False) -> CatalogSchemaInfo:
+        """Apply the explicitly authorized catalog migration plan.
+
+        Parameters
+        ----------
+        backup_confirmed
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:
@@ -283,11 +339,25 @@ class ReferenceCatalog(_CatalogInternals):
             self._validate_identity_rows(connection)
 
     def read_observations(self) -> tuple[SourceBibliographyObservation, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_observations(connection)
 
     def read_candidates(self) -> tuple[ReferenceCandidate, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             observations = {
@@ -394,9 +464,33 @@ class ReferenceCatalog(_CatalogInternals):
                 )
 
     def record_source_asset(self, asset: SourceAssetRecord) -> None:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        asset
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         self.record_source_assets((asset,))
 
     def record_source_assets(self, assets: Iterable[SourceAssetRecord]) -> None:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        assets
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         asset_values = tuple(assets)
         if any(
             not isinstance(item, SourceAssetRecord) for item in asset_values
@@ -430,6 +524,18 @@ class ReferenceCatalog(_CatalogInternals):
     def read_source_assets(
         self, *, max_records: int | None = None
     ) -> tuple[SourceAssetRecord, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        max_records
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         if max_records is not None and (
             type(max_records) is not int or max_records < 1
         ):
@@ -564,8 +670,11 @@ class ReferenceCatalog(_CatalogInternals):
         expected_asset_observation_ids: tuple[str, ...],
     ) -> None:
         """Atomically append candidate evidence and one CAS-guarded decision."""
-        from projectkoios.references.course_reference_authority import (
-            ReferenceAssetAuthorityEvidence,
+        # Import the owner protocol only at the adapter boundary. This avoids
+        # a catalog-module cycle and keeps Courses orchestration out of storage.
+        from projectkoios.references.courses.authority import (
+            ReferenceAssetAuthorityEvidenceActionizer,
+            ReferenceAssetAuthorityEvidenceRequest,
         )
 
         if type(candidate) is not ReferenceCandidate:
@@ -784,11 +893,16 @@ class ReferenceCatalog(_CatalogInternals):
             ).fetchall()
             current_asset_ids = tuple(
                 sorted(
-                    ReferenceAssetAuthorityEvidence.from_asset(
-                        self._source_asset_from_row(
-                            tuple(row), label="candidate source asset"
+                    ReferenceAssetAuthorityEvidenceActionizer()
+                    .action(
+                        request=ReferenceAssetAuthorityEvidenceRequest(
+                            asset=self._source_asset_from_row(
+                                tuple(row),
+                                label="candidate source asset",
+                            )
                         )
-                    ).asset_observation_id
+                    )
+                    .evidence.asset_observation_id
                     for row in asset_rows
                 )
             )
@@ -856,11 +970,25 @@ class ReferenceCatalog(_CatalogInternals):
             self._validate_state_projection_rows(connection)
 
     def read_review_projection(self) -> ReviewProjection:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_review_projection(connection)
 
     def export_review_json(self) -> str:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         return self.read_review_projection().to_json()
 
     def import_state_projections(
@@ -962,6 +1090,13 @@ class ReferenceCatalog(_CatalogInternals):
     def read_state_projections(
         self,
     ) -> tuple[ReferenceStateProjection, ...]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_state_projections(
@@ -971,6 +1106,13 @@ class ReferenceCatalog(_CatalogInternals):
             )
 
     def export_state_projections_json(self) -> str:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         projections = self.read_state_projections()
         input_ids = sorted(
             {
@@ -1053,14 +1195,40 @@ class ReferenceCatalog(_CatalogInternals):
             self._validate_graph_rows(connection)
 
     def read_citation_graph(self) -> CitationGraph:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         with self._read_transaction() as connection:
             self._require_current_schema(connection)
             return self._read_citation_graph(connection)
 
     def export_citation_graph_json(self) -> str:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         return self.read_citation_graph().to_json()
 
     def add_abstract(self, abstract: AbstractRecord) -> None:
+        """Execute one schema-5 catalog operation.
+
+        Parameters
+        ----------
+        abstract
+            Typed catalog input governed by the method annotation.
+
+        Returns
+        -------
+        None
+            The catalog operation completes after validation and persistence.
+        """
         columns = (
             "citekey",
             "provider",
@@ -1095,6 +1263,13 @@ class ReferenceCatalog(_CatalogInternals):
             )
 
     def counts(self) -> dict[str, int]:
+        """Execute one schema-5 catalog operation.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         projections = (
             ("candidate_records", "reference_candidates"),
             ("bibliography_observations", "source_bibliography_observations"),
@@ -1128,6 +1303,13 @@ class ReferenceCatalog(_CatalogInternals):
 
     @contextmanager
     def _read_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Open a bounded read-only catalog transaction.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:
@@ -1142,6 +1324,13 @@ class ReferenceCatalog(_CatalogInternals):
 
     @contextmanager
     def _write_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Open an atomic write transaction with rollback.
+
+        Returns
+        -------
+        object
+            Immutable catalog evidence governed by the return annotation.
+        """
         path = self._safe_path(create_parent=False)
         connection = self._open(path)
         try:
