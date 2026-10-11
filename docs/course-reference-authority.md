@@ -41,10 +41,17 @@ catalog reader, provider, and façade without creating or migrating a catalog.
 The provider rereads bounded bibliography files, verifies asserted SHA-256
 revisions, reconstructs exact observations/candidates/render output, creates
 rendered-entry bindings by observation identities rather than citekeys, merges
-current schema-5 evidence, and returns path-free owner evidence. Optional typed
-runtime asset evidence is accepted only for asset observations still present in
-schema 5. Private paths remain runtime configuration and never enter queue or
-receipt output.
+current schema-5 evidence, and returns path-free owner evidence.
+`CourseReferenceAuthorityAssetRoot` declarations let the provider descriptor-
+confined-preflight and hash each current schema-5 asset on every load; missing,
+changed, unavailable, and available states therefore produce fresh evidence
+rather than accepting a startup snapshot. An optional bounded private linkage
+JSON path is likewise reread and parsed by References on every load to obtain
+exact document/Ingestion links. API supplies paths/root capabilities only and
+never constructs `ReferenceAssetAuthorityEvidence`. Cloud-backed roots are
+preflighted before byte access, so ambiguous or placeholder state remains
+`UNKNOWN` and cannot authorize. Private paths remain runtime configuration and
+never enter queue or receipt output.
 
 ## Complete left-projected queue
 

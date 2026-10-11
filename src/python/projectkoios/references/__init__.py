@@ -134,6 +134,7 @@ from projectkoios.references.course_reference_authority import (
     project_search_reference_authority,
 )
 from projectkoios.references.course_reference_authority_runtime import (
+    CourseReferenceAuthorityAssetRoot,
     CourseReferenceAuthorityBibliographySource,
     CourseReferenceAuthorityRuntimeConfiguration,
     FilesystemCourseReferenceAuthorityEvidenceProvider,
@@ -380,6 +381,7 @@ __all__ = [
     "CanonicalAssetDecisionPreview",
     "CanonicalAssetEvidencePlan",
     "CourseDisplayCitekeyStatus",
+    "CourseReferenceAuthorityAssetRoot",
     "CourseReferenceAuthorityBibliographySource",
     "CourseReferenceAuthorityError",
     "CourseReferenceAuthorityEvidenceProvider",

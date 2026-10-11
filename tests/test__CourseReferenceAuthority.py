@@ -52,6 +52,7 @@ from projectkoios.references.course_reference_authority import (
     project_search_reference_authority,
 )
 from projectkoios.references.course_reference_authority_runtime import (
+    CourseReferenceAuthorityAssetRoot,
     CourseReferenceAuthorityBibliographySource,
     CourseReferenceAuthorityRuntimeConfiguration,
     FilesystemCourseReferenceAuthorityEvidenceProvider,
@@ -864,6 +865,130 @@ def test__filesystem_provider_factory__owns_private_parsing_and_catalog_reads(
         item.resolution is CourseReferenceItemResolution.READY
         for item in queue.items
     )
+
+
+def test__filesystem_provider__reobserves_asset_and_linkage_evidence(
+    tmp_path: Path,
+) -> None:
+    evidence = _evidence()
+    asset_root = tmp_path / "assets"
+    asset_root.mkdir()
+    asset_path = asset_root / "asset.pdf"
+    initial_bytes = b"%PDF-1.7\nfixture\n"
+    asset_path.write_bytes(initial_bytes)
+    candidate = evidence.candidates[0]
+    raw_asset = SourceAssetRecord(
+        candidate_id=candidate.candidate_id,
+        proposed_citekey=candidate.proposed_citekey,
+        identity_status=candidate.lifecycle_status,
+        citekey_status=candidate.citekey_status,
+        sha256=hashlib.sha256(initial_bytes).hexdigest(),
+        byte_size=len(initial_bytes),
+        root_alias="runtime-assets",
+        relative_path="asset.pdf",
+        rights_status="rights-not-assessed",
+        asset_status="observed-source-copy",
+    )
+    asset_observation_id = ReferenceAssetAuthorityEvidence.from_asset(
+        raw_asset
+    ).asset_observation_id
+    linkage_path = tmp_path / "linkage.json"
+
+    def write_linkage(source_id: str) -> None:
+        linkage_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "assets": [
+                        {
+                            "asset_observation_id": asset_observation_id,
+                            "document_binding_ids": [
+                                _cid("document-source-binding", "binding")
+                            ],
+                            "ingestion_evidence_ids": [
+                                _cid("ingestion-evidence", "evidence")
+                            ],
+                            "ingestion_artifact_links": [
+                                {
+                                    "source_id": source_id,
+                                    "document_id": (
+                                        "reading-evidence-document:sha256:"
+                                        "8a7358d8dafbf7da3d58f6b3233c9db0"
+                                        "284f4ee0ec7d4891da1106bfd7942871"
+                                    ),
+                                    "artifact_verification_result_id": (
+                                        "managed-artifact-verification-result:"
+                                        "sha256:5c68aeb1065e4215cbfb07e12dcb0b54"
+                                        "329a1010a58c04bb54d39d3469b60be0"
+                                    ),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    write_linkage("source:book")
+    digest = hashlib.sha256(_FIXTURE.read_bytes()).hexdigest()
+    provider = FilesystemCourseReferenceAuthorityEvidenceProvider(
+        course_id=evidence.request.scope.course_id,
+        bibliography_sources=(
+            CourseReferenceAuthorityBibliographySource(
+                collection_id="materials-course",
+                bibliography_path=_FIXTURE,
+                source_id="sanitized-test:course-authority",
+                asserted_source_revision=f"sha256:{digest}",
+                source_path="fixtures/render-specials.bib",
+                storage_class=RootStorageClass.LOCAL,
+            ),
+        ),
+        asset_roots=(
+            CourseReferenceAuthorityAssetRoot(
+                root_alias="runtime-assets",
+                root_path=asset_root,
+                storage_class=RootStorageClass.LOCAL,
+            ),
+        ),
+        asset_linkage_path=linkage_path,
+    )
+
+    def load_asset() -> ReferenceAssetAuthorityEvidence:
+        owner = provider.load_course_reference_authority_evidence(
+            scope=evidence.request.scope,
+            catalog_candidates=(),
+            catalog_observations=(),
+            catalog_assets=(raw_asset,),
+        )
+        assert len(owner.assets) == 1
+        return owner.assets[0]
+
+    available = load_asset()
+    assert available.runtime_availability is RuntimeAssetAvailability.AVAILABLE
+    assert available.ingestion_artifact_links[0].source_id == "source:book"
+
+    asset_path.write_bytes(b"%PDF-1.7\nchanged\n")
+    changed = load_asset()
+    assert changed.runtime_availability is RuntimeAssetAvailability.UNAVAILABLE
+    assert changed.runtime_evidence_id != available.runtime_evidence_id
+
+    asset_path.write_bytes(initial_bytes)
+    write_linkage("source:replacement")
+    relinked = load_asset()
+    assert relinked.runtime_availability is RuntimeAssetAvailability.AVAILABLE
+    assert relinked.ingestion_artifact_links[0].source_id == (
+        "source:replacement"
+    )
+    assert relinked.ingestion_artifact_links != (
+        available.ingestion_artifact_links
+    )
+
+    asset_path.unlink()
+    missing = load_asset()
+    assert missing.runtime_availability is RuntimeAssetAvailability.UNAVAILABLE
+    assert missing.runtime_evidence_id != available.runtime_evidence_id
+    assert missing.runtime_evidence_id != changed.runtime_evidence_id
 
 
 class _Provider:

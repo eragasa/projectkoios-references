@@ -413,7 +413,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
 
     navigator = (ARCHITECTURE / "index.md").read_text(encoding="utf-8")
     assert "does not claim repository-wide documentation coverage" in navigator
-    assert "198 pages; 323 remain unmigrated" in navigator
+    assert "198 pages; 324 remain unmigrated" in navigator
     for module in EXPECTED_REMAINING_MODULES:
         assert f"`{module}`" in navigator
 
@@ -425,7 +425,7 @@ def test__architecture_docs__report_remaining_modules_without_completion() -> (
         + len(MIGRATED_FILE_MODULES) * 3
         + _source_public_class_count()
     )
-    assert expected_total == 521
+    assert expected_total == 522
 
 
 def test__citation_package_dependencies_are_one_way() -> None:
