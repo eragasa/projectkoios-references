@@ -147,10 +147,12 @@ and superseded history and rejects stale concurrent branches. Identity and
 asset authority use distinct curator scopes and decision streams; neither can
 represent scientific acceptance, manuscript use, rights clearance, or
 publication as a generic review status. The course authority service is the
-API-facing owner seam: it validates the complete opaque Courses scope, projects
-every selection in order (including typed unresolved items), resolves candidates
-only through explicit rendered-entry bindings, omits private paths and bytes,
-and exposes only schema-5 accepted targets. Owner previews bind action choices
+API-facing owner seam: its concrete filesystem provider/service factory owns
+private bibliography parsing and schema-5 reads from runtime configuration. It
+validates the complete opaque Courses scope, projects every selection in order
+(including typed unresolved items), resolves candidates only through explicit
+rendered-entry bindings, omits private paths and bytes, and exposes only
+schema-5 accepted targets. Owner previews bind action choices
 and complete runtime evidence; atomic CAS append followed by an owner reread
 produces a receipt. Search authority additionally requires typed `source_id`,
 `document_id`, and `artifact_verification_result_id` linkage. See

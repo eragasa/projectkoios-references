@@ -27,6 +27,7 @@ from projectkoios.references.course_reference_authority import (
     CanonicalAssetDecisionPreview,
     CanonicalAssetEvidencePlan,
     CourseDisplayCitekeyStatus,
+    CourseReferenceAuthorityError,
     CourseReferenceAuthorityFailureReason,
     CourseReferenceAuthorityOwnerEvidence,
     CourseReferenceAuthorityProjector,
@@ -49,6 +50,12 @@ from projectkoios.references.course_reference_authority import (
     RuntimeAssetAvailability,
     project_reviewed_course_references,
     project_search_reference_authority,
+)
+from projectkoios.references.course_reference_authority_runtime import (
+    CourseReferenceAuthorityBibliographySource,
+    CourseReferenceAuthorityRuntimeConfiguration,
+    FilesystemCourseReferenceAuthorityEvidenceProvider,
+    open_course_reference_authority_service,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
@@ -562,11 +569,14 @@ def _asset_evidence(
     base = ReferenceAssetAuthorityEvidence.from_asset(asset)
     link = IngestionArtifactAuthorityLink(
         asset_observation_id=base.asset_observation_id,
-        source_id=_cid("source", "source-a"),
-        document_id=_cid("document", "document-a"),
-        artifact_verification_result_id=_cid(
-            "managed-artifact-verification-result",
-            "artifact-a",
+        source_id="source:book",
+        document_id=(
+            "reading-evidence-document:sha256:"
+            "8a7358d8dafbf7da3d58f6b3233c9db0284f4ee0ec7d4891da1106bfd7942871"
+        ),
+        artifact_verification_result_id=(
+            "managed-artifact-verification-result:sha256:"
+            "5c68aeb1065e4215cbfb07e12dcb0b54329a1010a58c04bb54d39d3469b60be0"
         ),
     )
     return ReferenceAssetAuthorityEvidence.from_asset(
@@ -577,6 +587,47 @@ def _asset_evidence(
         ingestion_evidence_ids=(_cid("ingestion-evidence", "ingested"),),
         ingestion_artifact_links=(link,),
     )
+
+
+def test__ingestion_link__accepts_exact_opaque_source_identity() -> None:
+    first = IngestionArtifactAuthorityLink(
+        asset_observation_id=_cid("source-asset-observation", "asset"),
+        source_id="source:book",
+        document_id=(
+            "reading-evidence-document:sha256:"
+            "8a7358d8dafbf7da3d58f6b3233c9db0284f4ee0ec7d4891da1106bfd7942871"
+        ),
+        artifact_verification_result_id=(
+            "managed-artifact-verification-result:sha256:"
+            "5c68aeb1065e4215cbfb07e12dcb0b54329a1010a58c04bb54d39d3469b60be0"
+        ),
+    )
+    second = IngestionArtifactAuthorityLink(
+        asset_observation_id=first.asset_observation_id,
+        source_id="source:other-book",
+        document_id=first.document_id,
+        artifact_verification_result_id=(first.artifact_verification_result_id),
+    )
+    assert first.source_id == "source:book"
+    assert first.link_id != second.link_id
+    with pytest.raises(ValueError, match="nonempty Ingestion identity"):
+        IngestionArtifactAuthorityLink(
+            asset_observation_id=first.asset_observation_id,
+            source_id="",
+            document_id=first.document_id,
+            artifact_verification_result_id=(
+                first.artifact_verification_result_id
+            ),
+        )
+    with pytest.raises(ValueError, match="Ingestion identity limit"):
+        IngestionArtifactAuthorityLink(
+            asset_observation_id=first.asset_observation_id,
+            source_id="x" * 1_025,
+            document_id=first.document_id,
+            artifact_verification_result_id=(
+                first.artifact_verification_result_id
+            ),
+        )
 
 
 def test__asset_plan_and_search_require_typed_ingestion_linkage(
@@ -700,11 +751,14 @@ def test__asset_plan_and_search_require_typed_ingestion_linkage(
     assert without_link.bindings == ()
     mismatched_link = IngestionArtifactAuthorityLink(
         asset_observation_id=asset_evidence.asset_observation_id,
-        source_id=_cid("source", "wrong-source"),
-        document_id=_cid("document", "document-a"),
-        artifact_verification_result_id=_cid(
-            "managed-artifact-verification-result",
-            "artifact-a",
+        source_id="source:other-book",
+        document_id=(
+            "reading-evidence-document:sha256:"
+            "8a7358d8dafbf7da3d58f6b3233c9db0284f4ee0ec7d4891da1106bfd7942871"
+        ),
+        artifact_verification_result_id=(
+            "managed-artifact-verification-result:sha256:"
+            "5c68aeb1065e4215cbfb07e12dcb0b54329a1010a58c04bb54d39d3469b60be0"
         ),
     )
     mismatched_evidence = ReferenceAssetAuthorityEvidence.from_asset(
@@ -753,10 +807,63 @@ def test__asset_plan_and_search_require_typed_ingestion_linkage(
     assert binding.ingestion_artifact_links == (
         asset_evidence.ingestion_artifact_links
     )
-    assert binding.ingestion_artifact_links[0].source_id == _cid(
-        "source", "source-a"
-    )
+    assert binding.ingestion_artifact_links[0].source_id == "source:book"
     assert asset.relative_path not in repr(search)
+
+
+def test__owner_evidence__requires_consistent_observations() -> None:
+    evidence = _evidence()
+    with pytest.raises(ValueError, match="differ from render observations"):
+        CourseReferenceAuthorityOwnerEvidence(
+            render_result=evidence.request.render_result,
+            candidates=evidence.candidates,
+            observations=(),
+            rendered_candidate_bindings=(
+                evidence.request.rendered_candidate_bindings
+            ),
+            record_discrepancies=(),
+            assets=(),
+        )
+
+
+def test__filesystem_provider_factory__owns_private_parsing_and_catalog_reads(
+    tmp_path: Path,
+) -> None:
+    evidence = _evidence()
+    catalog_path = tmp_path / "references.sqlite3"
+    _catalog(catalog_path)
+    digest = hashlib.sha256(_FIXTURE.read_bytes()).hexdigest()
+    configuration = CourseReferenceAuthorityRuntimeConfiguration(
+        course_id=evidence.request.scope.course_id,
+        catalog_path=catalog_path,
+        catalog_storage_class=RootStorageClass.LOCAL,
+        bibliography_sources=(
+            CourseReferenceAuthorityBibliographySource(
+                collection_id="materials-course",
+                bibliography_path=_FIXTURE,
+                source_id="sanitized-test:course-authority",
+                asserted_source_revision=f"sha256:{digest}",
+                source_path="fixtures/render-specials.bib",
+                storage_class=RootStorageClass.LOCAL,
+            ),
+        ),
+    )
+    assert str(_FIXTURE) not in repr(configuration)
+    assert str(catalog_path) not in repr(configuration)
+    service = open_course_reference_authority_service(
+        configuration=configuration
+    )
+    queue = service.queue(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+    )
+    assert tuple(item.selection.selection_id for item in queue.items) == (
+        evidence.request.scope.ordered_selection_ids
+    )
+    assert all(
+        item.resolution is CourseReferenceItemResolution.READY
+        for item in queue.items
+    )
 
 
 class _Provider:
@@ -798,6 +905,134 @@ class _Provider:
         )
 
 
+def _service_identity_context(
+    tmp_path: Path,
+) -> tuple[
+    CourseReferenceAuthorityService,
+    _FixtureEvidence,
+    ReferenceIdentityDecisionPreview,
+]:
+    evidence = _evidence()
+    service = CourseReferenceAuthorityService(
+        catalog=_catalog(tmp_path / "service.sqlite3"),
+        provider=_Provider(evidence),
+    )
+    preview = service.preview_identity(
+        scope=evidence.request.scope,
+        selections=evidence.request.selections,
+        selection_id=evidence.request.selections[0].selection_id,
+        disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+        target_state_projection_id=None,
+        canonical_citekey=evidence.candidates[0].proposed_citekey,
+        alias_citekeys=(),
+        selected_record_match_ids=(),
+        expected_current_decision_id=None,
+    )
+    return service, evidence, preview
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    (
+        (
+            CatalogConflictError("synthetic conflict"),
+            CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION,
+        ),
+        (
+            CourseReferenceAuthorityError("synthetic malformed owner"),
+            CourseReferenceAuthorityFailureReason.OWNER_MALFORMED,
+        ),
+        (
+            OSError("synthetic unavailable owner"),
+            CourseReferenceAuthorityFailureReason.OWNER_UNAVAILABLE,
+        ),
+    ),
+)
+def test__service_append__maps_owner_failures_without_message_parsing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    reason: CourseReferenceAuthorityFailureReason,
+) -> None:
+    service, _, preview = _service_identity_context(tmp_path)
+
+    def fail_append(*args: object, **kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr(
+        ReferenceAuthorityDecisionAppender,
+        "append_identity",
+        fail_append,
+    )
+    with pytest.raises(CourseReferenceAuthorityServiceError) as captured:
+        service.append_identity(
+            preview=preview,
+            actor=_actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR),
+            rationale="Exercise the typed service boundary.",
+            decided_at="2026-09-20T12:00:00Z",
+        )
+    assert captured.value.reason is reason
+
+
+def test__service_exact_retry_failure_does_not_leak(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, preview = _service_identity_context(tmp_path)
+    actor = _actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR)
+    service.append_identity(
+        preview=preview,
+        actor=actor,
+        rationale="Commit before exact retry.",
+        decided_at="2026-09-20T12:00:00Z",
+    )
+
+    def fail_retry(*args: object, **kwargs: object) -> None:
+        raise CatalogConflictError("synthetic retry conflict")
+
+    monkeypatch.setattr(
+        ReferenceAuthorityDecisionAppender,
+        "append_identity",
+        fail_retry,
+    )
+    with pytest.raises(CourseReferenceAuthorityServiceError) as captured:
+        service.append_identity(
+            preview=preview,
+            actor=actor,
+            rationale="Commit before exact retry.",
+            decided_at="2026-09-20T12:00:00Z",
+        )
+    assert captured.value.reason is (
+        CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION
+    )
+
+
+def test__service_receipt_validation_failure_does_not_leak(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, preview = _service_identity_context(tmp_path)
+
+    def fail_receipt(*args: object, **kwargs: object) -> None:
+        raise CourseReferenceAuthorityError("synthetic receipt mismatch")
+
+    monkeypatch.setattr(
+        CourseReferenceAuthorityService,
+        "_receipt",
+        fail_receipt,
+    )
+    with pytest.raises(CourseReferenceAuthorityServiceError) as captured:
+        service.append_identity(
+            preview=preview,
+            actor=_actor(ReviewAuthorityScope.REFERENCE_IDENTITY_CURATOR),
+            rationale="Exercise receipt validation translation.",
+            decided_at="2026-09-20T12:00:00Z",
+        )
+    assert captured.value.reason is (
+        CourseReferenceAuthorityFailureReason.OWNER_MALFORMED
+    )
+
+
 def test__service_rereads_receipt_and_rejects_stale_runtime_plan(
     tmp_path: Path,
 ) -> None:
@@ -823,6 +1058,57 @@ def test__service_rereads_receipt_and_rejects_stale_runtime_plan(
         )
     assert missing.value.reason is (
         CourseReferenceAuthorityFailureReason.ITEM_NOT_FOUND
+    )
+    with pytest.raises(CourseReferenceAuthorityServiceError) as stale_head:
+        service.preview_identity(
+            scope=evidence.request.scope,
+            selections=selections,
+            selection_id=selections[0].selection_id,
+            disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+            target_state_projection_id=None,
+            canonical_citekey=evidence.candidates[0].proposed_citekey,
+            alias_citekeys=(),
+            selected_record_match_ids=(),
+            expected_current_decision_id=_cid(
+                "human-review-decision",
+                "stale",
+            ),
+        )
+    assert stale_head.value.reason is (
+        CourseReferenceAuthorityFailureReason.REVISION_STALE
+    )
+    with pytest.raises(CourseReferenceAuthorityServiceError) as stale_target:
+        service.preview_identity(
+            scope=evidence.request.scope,
+            selections=selections,
+            selection_id=selections[0].selection_id,
+            disposition=ReferenceIdentityDecision.REJECT,
+            target_state_projection_id=_cid(
+                "reference-state-projection",
+                "missing",
+            ),
+            canonical_citekey=None,
+            alias_citekeys=(),
+            selected_record_match_ids=(),
+            expected_current_decision_id=None,
+        )
+    assert stale_target.value.reason is (
+        CourseReferenceAuthorityFailureReason.TARGET_STALE
+    )
+    with pytest.raises(CourseReferenceAuthorityServiceError) as invalid_match:
+        service.preview_identity(
+            scope=evidence.request.scope,
+            selections=selections,
+            selection_id=selections[0].selection_id,
+            disposition=ReferenceIdentityDecision.ACCEPT_NEW,
+            target_state_projection_id=None,
+            canonical_citekey=evidence.candidates[0].proposed_citekey,
+            alias_citekeys=(),
+            selected_record_match_ids=(_cid("reference-record", "missing"),),
+            expected_current_decision_id=None,
+        )
+    assert invalid_match.value.reason is (
+        CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION
     )
     identity_preview = service.preview_identity(
         scope=evidence.request.scope,
@@ -858,6 +1144,30 @@ def test__service_rereads_receipt_and_rejects_stale_runtime_plan(
         decided_at="2026-09-20T12:00:00Z",
     )
     assert retry_receipt.decision_result == receipt.decision_result
+    active_queue = service.queue(
+        scope=evidence.request.scope,
+        selections=selections,
+    )
+    assert active_queue.items[0].active_authority is not None
+    with pytest.raises(
+        CourseReferenceAuthorityServiceError
+    ) as invalid_target_use:
+        service.preview_identity(
+            scope=evidence.request.scope,
+            selections=selections,
+            selection_id=selections[0].selection_id,
+            disposition=ReferenceIdentityDecision.REJECT,
+            target_state_projection_id=(
+                active_queue.items[0].active_authority.state_projection_id
+            ),
+            canonical_citekey=None,
+            alias_citekeys=("invalidAlias",),
+            selected_record_match_ids=(),
+            expected_current_decision_id=receipt.current_decision_id,
+        )
+    assert invalid_target_use.value.reason is (
+        CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION
+    )
 
     candidate = evidence.candidates[0]
     raw_asset = SourceAssetRecord(
@@ -874,6 +1184,43 @@ def test__service_rereads_receipt_and_rejects_stale_runtime_plan(
     )
     catalog.record_source_asset(raw_asset)
     provider.assets = (_asset_evidence(raw_asset, runtime_token="first"),)
+    with pytest.raises(
+        CourseReferenceAuthorityServiceError
+    ) as stale_asset_head:
+        service.preview_asset(
+            scope=evidence.request.scope,
+            selections=selections,
+            selection_id=selections[0].selection_id,
+            disposition=CanonicalAssetDecision.AUTHORIZE,
+            competitor_dispositions=(
+                CanonicalAssetCompetitorDisposition(
+                    asset_observation_id=(
+                        provider.assets[0].asset_observation_id
+                    ),
+                    disposition=CanonicalAssetDecision.AUTHORIZE,
+                    rationale="Select the only competitor.",
+                ),
+            ),
+            expected_current_decision_id=_cid(
+                "human-review-decision",
+                "stale-asset",
+            ),
+        )
+    assert stale_asset_head.value.reason is (
+        CourseReferenceAuthorityFailureReason.REVISION_STALE
+    )
+    with pytest.raises(CourseReferenceAuthorityServiceError) as invalid_asset:
+        service.preview_asset(
+            scope=evidence.request.scope,
+            selections=selections,
+            selection_id=selections[0].selection_id,
+            disposition=CanonicalAssetDecision.AUTHORIZE,
+            competitor_dispositions=(),
+            expected_current_decision_id=None,
+        )
+    assert invalid_asset.value.reason is (
+        CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION
+    )
     asset_preview = service.preview_asset(
         scope=evidence.request.scope,
         selections=selections,
@@ -908,29 +1255,82 @@ def test__optional_private_exact_fourteen_smoke() -> None:
     )
     if declaration_file is None:
         pytest.skip("private authority smoke declaration is not configured")
-    declarations = json.loads(
-        Path(declaration_file).read_text(encoding="utf-8")
+    declaration = json.loads(Path(declaration_file).read_text(encoding="utf-8"))
+    raw_scope = declaration["scope"]
+    raw_selections = raw_scope["selections"]
+    selections = tuple(
+        CourseReferenceSelectionEvidence(
+            scope_id=raw_scope["scope_id"],
+            selection_id=item["selection_id"],
+            locator_binding_id=item["locator_binding_id"],
+            course_id=raw_scope["course_id"],
+            manifest_id=raw_scope["manifest_id"],
+            inventory_id=raw_scope["inventory_id"],
+            ordinal=item["ordinal"],
+            origin=CourseReferenceSelectionOrigin(item["origin"]),
+            role=CourseReferenceRole(item["role"]),
+            display_citekey=item["display_citekey"],
+            display_citekey_status=CourseDisplayCitekeyStatus(
+                item["display_citekey_status"]
+            ),
+            reference_locator=item["reference_locator"],
+        )
+        for item in raw_selections
     )
-    sources = []
-    for item in declarations:
-        path = Path(item["path"])
-        content = path.read_bytes()
-        imported = load_bibliography(
-            path,
+    scope = CourseReferenceResolutionScopeEvidence(
+        scope_id=raw_scope["scope_id"],
+        course_id=raw_scope["course_id"],
+        course_title=raw_scope["course_title"],
+        manifest_id=raw_scope["manifest_id"],
+        manifest_sha256=raw_scope["manifest_sha256"],
+        inventory_id=raw_scope["inventory_id"],
+        total=raw_scope["total"],
+        ordered_selection_ids=tuple(item.selection_id for item in selections),
+    )
+    sources = tuple(
+        CourseReferenceAuthorityBibliographySource(
+            collection_id=item["collection_id"],
+            bibliography_path=Path(item["path"]),
             source_id=item["source_id"],
-            source_revision=f"sha256:{hashlib.sha256(content).hexdigest()}",
+            asserted_source_revision=item["asserted_source_revision"],
             source_path=item["source_path"],
-            storage_class=RootStorageClass.LOCAL,
+            storage_class=RootStorageClass(item["storage_class"]),
         )
-        sources.append(
-            CandidateBibliographySourceDeclaration(
-                collection_id=item["collection_id"],
-                observations=imported.observations,
-            )
-        )
-    result = CandidateBibliographyRenderer().render(
-        request=CandidateBibliographyRenderRequest(
-            source=CandidateBibliographyExportRequest(sources=tuple(sources))
+        for item in declaration["sources"]
+    )
+    provider = FilesystemCourseReferenceAuthorityEvidenceProvider(
+        course_id=scope.course_id,
+        bibliography_sources=sources,
+    )
+    evidence = provider.load_course_reference_authority_evidence(
+        scope=scope,
+        catalog_candidates=(),
+        catalog_observations=(),
+        catalog_assets=(),
+    )
+    queue = _queue(
+        CourseReferenceAuthorityQueueRequest(
+            scope=scope,
+            selections=selections,
+            render_result=evidence.render_result,
+            candidates=evidence.candidates,
+            rendered_candidate_bindings=(evidence.rendered_candidate_bindings),
+            record_discrepancies=evidence.record_discrepancies,
+            assets=evidence.assets,
+            review_projection=replay_review_records((), ()),
+            state_projections=(),
         )
     )
-    assert len(result.entries) == 14
+    assert (
+        evidence.render_result.result_id
+        == declaration["expected_render_result_id"]
+    )
+    assert scope.inventory_id == declaration["expected_inventory_id"]
+    assert len(queue.items) == declaration["expected_total"] == 14
+    assert tuple(item.selection.selection_id for item in queue.items) == (
+        scope.ordered_selection_ids
+    )
+    assert all(
+        item.resolution is CourseReferenceItemResolution.READY
+        for item in queue.items
+    )

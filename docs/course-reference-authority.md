@@ -32,6 +32,20 @@ and the post-append owner reread. API and Web may transport returned objects;
 they must not query the References catalog, parse private artifacts, recompute
 actions, or infer authority.
 
+The concrete owner implementation is
+`FilesystemCourseReferenceAuthorityEvidenceProvider`. API supplies only a
+`CourseReferenceAuthorityRuntimeConfiguration`: expected course ID, existing
+schema-5 catalog path/storage class, and explicit private bibliography source
+configurations. `open_course_reference_authority_service` constructs the
+catalog reader, provider, and façade without creating or migrating a catalog.
+The provider rereads bounded bibliography files, verifies asserted SHA-256
+revisions, reconstructs exact observations/candidates/render output, creates
+rendered-entry bindings by observation identities rather than citekeys, merges
+current schema-5 evidence, and returns path-free owner evidence. Optional typed
+runtime asset evidence is accepted only for asset observations still present in
+schema 5. Private paths remain runtime configuration and never enter queue or
+receipt output.
+
 ## Complete left-projected queue
 
 `CourseReferenceAuthorityProjector` produces a `CONTROL` queue containing
@@ -101,8 +115,13 @@ join fields required to compare References C with Ingestion A/B:
 - `document_id`;
 - `artifact_verification_result_id`.
 
-It also binds the References asset observation. Flattened document-binding and
-Ingestion evidence IDs remain replay provenance and are never join semantics.
+The link ID is content-derived over all four exact fields. `source_id` itself
+retains Ingestion's current bounded opaque identity syntax (including values
+such as `source:book`); References does not coerce it into a content-ID alias.
+`document_id` and `artifact_verification_result_id` retain their exact current
+Ingestion identities. The link also binds the References asset observation.
+Flattened document-binding and Ingestion evidence IDs remain replay provenance
+and are never join semantics.
 An authorized asset with missing, empty, mismatched, or stale typed linkage
 remains visible to reference review but is omitted from Search authority.
 
@@ -135,6 +154,18 @@ the closed `CourseReferenceAuthorityFailureReason` enum (`COURSE_NOT_FOUND`,
 `ITEM_NOT_FOUND`, `EVIDENCE_STALE`, `REVISION_STALE`, `TARGET_STALE`,
 `CONCURRENT_DECISION`, `INVALID_DISPOSITION`, `OWNER_MALFORMED`, and
 `OWNER_UNAVAILABLE`). API maps the enum and never parses exception text.
+
+## Private exact-scope smoke
+
+The env-gated `test__optional_private_exact_fourteen_smoke` consumes one
+untracked mode-0600 JSON capability named by
+`PROJECTKOIOS_REFERENCE_AUTHORITY_PRIVATE_SMOKE_JSON`. The capability contains
+only runtime source declarations plus the complete opaque Courses scope and
+ordered selections; bibliography bytes remain in their private source files.
+The test uses the concrete filesystem provider, verifies the expected render
+and inventory identities, projects the full queue, and requires exactly 14
+items, exact Courses selection order, and `READY` resolution for every item.
+No private name, path, or scope payload is committed.
 
 ## Reviewed Courses output
 

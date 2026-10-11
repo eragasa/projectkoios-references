@@ -133,6 +133,12 @@ from projectkoios.references.course_reference_authority import (
     project_reviewed_course_references,
     project_search_reference_authority,
 )
+from projectkoios.references.course_reference_authority_runtime import (
+    CourseReferenceAuthorityBibliographySource,
+    CourseReferenceAuthorityRuntimeConfiguration,
+    FilesystemCourseReferenceAuthorityEvidenceProvider,
+    open_course_reference_authority_service,
+)
 from projectkoios.references.coverage import (
     AmbiguityEvaluation,
     CandidateVersionRelation,
@@ -374,6 +380,7 @@ __all__ = [
     "CanonicalAssetDecisionPreview",
     "CanonicalAssetEvidencePlan",
     "CourseDisplayCitekeyStatus",
+    "CourseReferenceAuthorityBibliographySource",
     "CourseReferenceAuthorityError",
     "CourseReferenceAuthorityEvidenceProvider",
     "CourseReferenceAuthorityFailureReason",
@@ -383,6 +390,7 @@ __all__ = [
     "CourseReferenceAuthorityQueueItem",
     "CourseReferenceAuthorityQueueRequest",
     "CourseReferenceAuthorityRuntimeCatalog",
+    "CourseReferenceAuthorityRuntimeConfiguration",
     "CourseReferenceAuthorityService",
     "CourseReferenceAuthorityServiceError",
     "CourseReferenceItemResolution",
@@ -455,6 +463,7 @@ __all__ = [
     "RootStorageClass",
     "FileObservation",
     "FilesystemBoundaryError",
+    "FilesystemCourseReferenceAuthorityEvidenceProvider",
     "ProvidedReference",
     "ProvidedReferenceIntakeError",
     "ProvidedReferenceIntakeStore",
@@ -562,6 +571,7 @@ __all__ = [
     "project_search_reference_authority",
     "rollback_materialized_asset",
     "normalize_doi",
+    "open_course_reference_authority_service",
     "validate_citekey",
     "validate_relative_path",
     "verify_acquisition_manifest",

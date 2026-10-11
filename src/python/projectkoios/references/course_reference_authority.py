@@ -436,7 +436,6 @@ class IngestionArtifactAuthorityLink(DataObjectModel):
     def __post_init__(self) -> None:
         for label, value in (
             ("asset_observation_id", self.asset_observation_id),
-            ("source_id", self.source_id),
             ("document_id", self.document_id),
             (
                 "artifact_verification_result_id",
@@ -444,6 +443,7 @@ class IngestionArtifactAuthorityLink(DataObjectModel):
             ),
         ):
             _content_id(value, field=label)
+        _ingestion_identity(self.source_id, field="source_id")
         object.__setattr__(
             self,
             "link_id",
@@ -2195,6 +2195,54 @@ class CourseReferenceAuthorityOwnerEvidence(DataObjectModel):
             ReferenceAssetAuthorityEvidence,
             field="assets",
         )
+        observations_by_id = {
+            item.observation_id: item for item in self.observations
+        }
+        candidates_by_id = {item.candidate_id: item for item in self.candidates}
+        rendered_by_id = {
+            item.entry_id: item for item in self.render_result.entries
+        }
+        if len(observations_by_id) != len(self.observations):
+            raise CourseReferenceAuthorityError(
+                "owner source observation identities repeat"
+            )
+        if len(candidates_by_id) != len(self.candidates):
+            raise CourseReferenceAuthorityError(
+                "owner candidate identities repeat"
+            )
+        render_observations = tuple(
+            item
+            for source in self.render_result.request.source.sources
+            for item in source.observations
+        )
+        if any(
+            observations_by_id.get(item.observation_id) != item
+            for item in render_observations
+        ):
+            raise CourseReferenceAuthorityError(
+                "owner observations differ from render observations"
+            )
+        if any(
+            not set(item.source_observation_ids).issubset(observations_by_id)
+            for item in self.candidates
+        ):
+            raise CourseReferenceAuthorityError(
+                "owner candidate lacks its exact source observations"
+            )
+        for binding in self.rendered_candidate_bindings:
+            rendered = rendered_by_id.get(binding.rendered_entry_id)
+            candidate = candidates_by_id.get(binding.candidate_id)
+            if (
+                rendered is None
+                or candidate is None
+                or binding.source_observation_ids
+                != rendered.source_observation_ids
+                or binding.source_observation_ids
+                != candidate.source_observation_ids
+            ):
+                raise CourseReferenceAuthorityError(
+                    "owner rendered-candidate binding is inconsistent"
+                )
         object.__setattr__(
             self,
             "evidence_revision_id",
@@ -2369,12 +2417,41 @@ class CourseReferenceAuthorityService:
     ) -> ReferenceIdentityDecisionPreview:
         queue = self.queue(scope=scope, selections=selections)
         try:
-            queue.item(selection_id)
+            item = queue.item(selection_id)
         except CourseReferenceAuthorityError as error:
             raise CourseReferenceAuthorityServiceError(
                 CourseReferenceAuthorityFailureReason.ITEM_NOT_FOUND,
                 "course reference item is unavailable",
             ) from error
+        if target_state_projection_id is not None:
+            try:
+                _target_authority(queue, target_state_projection_id)
+            except CourseReferenceAuthorityError as error:
+                raise CourseReferenceAuthorityServiceError(
+                    CourseReferenceAuthorityFailureReason.TARGET_STALE,
+                    "identity target is stale",
+                ) from error
+        if isinstance(disposition, ReferenceIdentityDecision):
+            context_id = (
+                item.selection.course_id
+                if disposition is ReferenceIdentityDecision.DEFER
+                else _IDENTITY_CONTEXT
+            )
+            current = _current_decision(
+                item.current_identity_decisions,
+                dimension=HumanReviewDimension.REFERENCE_IDENTITY,
+                context_id=context_id,
+            )
+            try:
+                _require_expected_head(
+                    current,
+                    expected_current_decision_id,
+                )
+            except CourseReferenceAuthorityError as error:
+                raise CourseReferenceAuthorityServiceError(
+                    CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                    "identity decision revision is stale",
+                ) from error
         try:
             return ReferenceIdentityDecisionPreview(
                 queue=queue,
@@ -2386,14 +2463,9 @@ class CourseReferenceAuthorityService:
                 selected_record_match_ids=selected_record_match_ids,
                 expected_current_decision_id=expected_current_decision_id,
             )
-        except CourseReferenceAuthorityError as error:
-            reason = (
-                CourseReferenceAuthorityFailureReason.TARGET_STALE
-                if target_state_projection_id is not None
-                else CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION
-            )
+        except (CourseReferenceAuthorityError, TypeError) as error:
             raise CourseReferenceAuthorityServiceError(
-                reason,
+                CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION,
                 "identity preview is not available",
             ) from error
 
@@ -2418,6 +2490,16 @@ class CourseReferenceAuthorityService:
                 "course reference item is unavailable",
             ) from error
         try:
+            _require_expected_head(
+                item.current_asset_decision,
+                expected_current_decision_id,
+            )
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                "asset decision revision is stale",
+            ) from error
+        try:
             if item.active_authority is None:
                 raise CourseReferenceAuthorityError(
                     "asset preview lacks accepted identity"
@@ -2436,13 +2518,37 @@ class CourseReferenceAuthorityService:
                 competitor_dispositions=competitor_dispositions,
                 expected_current_decision_id=(expected_current_decision_id),
             )
-        except CourseReferenceAuthorityError as error:
+        except (CourseReferenceAuthorityError, TypeError) as error:
             raise CourseReferenceAuthorityServiceError(
                 CourseReferenceAuthorityFailureReason.INVALID_DISPOSITION,
                 "asset preview is not available",
             ) from error
 
     def append_identity(
+        self,
+        *,
+        preview: ReferenceIdentityDecisionPreview,
+        actor: ReviewActorProvenance,
+        rationale: str,
+        decided_at: str,
+    ) -> ReferenceAuthorityDecisionReceipt:
+        """Append identity authority without leaking owner exceptions."""
+        try:
+            return self._append_identity(
+                preview=preview,
+                actor=actor,
+                rationale=rationale,
+                decided_at=decided_at,
+            )
+        except CourseReferenceAuthorityServiceError:
+            raise
+        except Exception as error:
+            raise _service_operation_error(
+                error,
+                operation="identity decision append",
+            ) from error
+
+    def _append_identity(
         self,
         *,
         preview: ReferenceIdentityDecisionPreview,
@@ -2493,6 +2599,43 @@ class CourseReferenceAuthorityService:
                 preview_id=preview.preview_id,
             )
         try:
+            fresh_item = fresh_queue.item(preview.selection_id)
+            if preview.target_state_projection_id is not None:
+                _target_authority(
+                    fresh_queue,
+                    preview.target_state_projection_id,
+                )
+        except CourseReferenceAuthorityError as error:
+            reason = (
+                CourseReferenceAuthorityFailureReason.TARGET_STALE
+                if preview.target_state_projection_id is not None
+                else CourseReferenceAuthorityFailureReason.REVISION_STALE
+            )
+            raise CourseReferenceAuthorityServiceError(
+                reason,
+                "identity preview target or item is stale",
+            ) from error
+        context_id = (
+            fresh_item.selection.course_id
+            if preview.disposition is ReferenceIdentityDecision.DEFER
+            else _IDENTITY_CONTEXT
+        )
+        current = _current_decision(
+            fresh_item.current_identity_decisions,
+            dimension=HumanReviewDimension.REFERENCE_IDENTITY,
+            context_id=context_id,
+        )
+        try:
+            _require_expected_head(
+                current,
+                preview.expected_current_decision_id,
+            )
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                "identity decision head is stale",
+            ) from error
+        try:
             fresh_preview = ReferenceIdentityDecisionPreview(
                 queue=fresh_queue,
                 selection_id=preview.selection_id,
@@ -2505,10 +2648,10 @@ class CourseReferenceAuthorityService:
                     preview.expected_current_decision_id
                 ),
             )
-        except CourseReferenceAuthorityError as error:
+        except (CourseReferenceAuthorityError, TypeError) as error:
             raise CourseReferenceAuthorityServiceError(
-                CourseReferenceAuthorityFailureReason.REVISION_STALE,
-                "identity preview revision is stale",
+                CourseReferenceAuthorityFailureReason.EVIDENCE_STALE,
+                "identity preview evidence is stale",
             ) from error
         if fresh_preview.preview_id != preview.preview_id:
             raise CourseReferenceAuthorityServiceError(
@@ -2520,20 +2663,14 @@ class CourseReferenceAuthorityService:
             candidates=evidence.candidates,
             observations=evidence.observations,
         )
-        try:
-            result = appender.append_identity(
-                request=AppendReferenceIdentityDecisionRequest(
-                    preview=fresh_preview,
-                    actor=actor,
-                    rationale=rationale,
-                    decided_at=decided_at,
-                )
+        result = appender.append_identity(
+            request=AppendReferenceIdentityDecisionRequest(
+                preview=fresh_preview,
+                actor=actor,
+                rationale=rationale,
+                decided_at=decided_at,
             )
-        except Exception as error:
-            raise CourseReferenceAuthorityServiceError(
-                CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION,
-                "identity decision append did not commit",
-            ) from error
+        )
         return self._receipt(
             result=result,
             scope=preview.queue.scope,
@@ -2543,6 +2680,30 @@ class CourseReferenceAuthorityService:
         )
 
     def append_asset(
+        self,
+        *,
+        preview: CanonicalAssetDecisionPreview,
+        actor: ReviewActorProvenance,
+        rationale: str,
+        decided_at: str,
+    ) -> ReferenceAuthorityDecisionReceipt:
+        """Append asset authority without leaking owner exceptions."""
+        try:
+            return self._append_asset(
+                preview=preview,
+                actor=actor,
+                rationale=rationale,
+                decided_at=decided_at,
+            )
+        except CourseReferenceAuthorityServiceError:
+            raise
+        except Exception as error:
+            raise _service_operation_error(
+                error,
+                operation="canonical asset decision append",
+            ) from error
+
+    def _append_asset(
         self,
         *,
         preview: CanonicalAssetDecisionPreview,
@@ -2595,10 +2756,24 @@ class CourseReferenceAuthorityService:
             )
         try:
             fresh_item = fresh_queue.item(preview.plan.selection_id)
-            if fresh_item.active_authority is None:
+            if (
+                fresh_item.active_authority is None
+                or fresh_item.active_authority.state_projection_id
+                != preview.plan.identity_state_projection_id
+            ):
                 raise CourseReferenceAuthorityError(
                     "accepted identity is stale"
                 )
+            _require_expected_head(
+                fresh_item.current_asset_decision,
+                preview.expected_current_decision_id,
+            )
+        except CourseReferenceAuthorityError as error:
+            raise CourseReferenceAuthorityServiceError(
+                CourseReferenceAuthorityFailureReason.REVISION_STALE,
+                "asset identity or decision revision is stale",
+            ) from error
+        try:
             fresh_plan = CanonicalAssetEvidencePlan(
                 queue=fresh_queue,
                 selection_id=preview.plan.selection_id,
@@ -2615,10 +2790,10 @@ class CourseReferenceAuthorityService:
                     preview.expected_current_decision_id
                 ),
             )
-        except CourseReferenceAuthorityError as error:
+        except (CourseReferenceAuthorityError, TypeError) as error:
             raise CourseReferenceAuthorityServiceError(
-                CourseReferenceAuthorityFailureReason.REVISION_STALE,
-                "asset plan revision is stale",
+                CourseReferenceAuthorityFailureReason.EVIDENCE_STALE,
+                "asset plan evidence is stale",
             ) from error
         if fresh_preview.preview_id != preview.preview_id:
             raise CourseReferenceAuthorityServiceError(
@@ -2630,20 +2805,14 @@ class CourseReferenceAuthorityService:
             candidates=evidence.candidates,
             observations=evidence.observations,
         )
-        try:
-            result = appender.append_asset(
-                request=AppendCanonicalAssetDecisionRequest(
-                    preview=fresh_preview,
-                    actor=actor,
-                    rationale=rationale,
-                    decided_at=decided_at,
-                )
+        result = appender.append_asset(
+            request=AppendCanonicalAssetDecisionRequest(
+                preview=fresh_preview,
+                actor=actor,
+                rationale=rationale,
+                decided_at=decided_at,
             )
-        except Exception as error:
-            raise CourseReferenceAuthorityServiceError(
-                CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION,
-                "asset decision append did not commit",
-            ) from error
+        )
         return self._receipt(
             result=result,
             scope=old_queue.scope,
@@ -3705,6 +3874,60 @@ def _content_ids(
         raise CourseReferenceAuthorityError(f"{field} must be unique")
     if not ordered and values != tuple(sorted(values)):
         raise CourseReferenceAuthorityError(f"{field} must use lexical order")
+
+
+def _service_operation_error(
+    error: Exception,
+    *,
+    operation: str,
+) -> CourseReferenceAuthorityServiceError:
+    import sqlite3
+
+    from projectkoios.references.catalog import (
+        CatalogConflictError,
+        CatalogSchemaError,
+    )
+
+    if isinstance(error, CatalogConflictError):
+        reason = CourseReferenceAuthorityFailureReason.CONCURRENT_DECISION
+        detail = f"{operation} encountered concurrent authority state"
+    elif isinstance(error, (OSError, sqlite3.Error, RuntimeError)):
+        reason = CourseReferenceAuthorityFailureReason.OWNER_UNAVAILABLE
+        detail = f"{operation} owner is unavailable"
+    elif isinstance(
+        error,
+        (
+            CatalogSchemaError,
+            CourseReferenceAuthorityError,
+            TypeError,
+            ValueError,
+            AttributeError,
+        ),
+    ):
+        reason = CourseReferenceAuthorityFailureReason.OWNER_MALFORMED
+        detail = f"{operation} owner evidence is malformed"
+    else:
+        reason = CourseReferenceAuthorityFailureReason.OWNER_MALFORMED
+        detail = f"{operation} failed owner validation"
+    return CourseReferenceAuthorityServiceError(reason, detail)
+
+
+def _ingestion_identity(value: str, *, field: str) -> str:
+    if type(value) is not str or not value:
+        raise CourseReferenceAuthorityError(
+            f"{field} must be a nonempty Ingestion identity"
+        )
+    try:
+        encoded = value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as error:
+        raise CourseReferenceAuthorityError(
+            f"{field} must be valid UTF-8"
+        ) from error
+    if len(encoded) > 1_024:
+        raise CourseReferenceAuthorityError(
+            f"{field} exceeds the Ingestion identity limit"
+        )
+    return value
 
 
 def _sha256(value: str, *, field: str) -> str:
