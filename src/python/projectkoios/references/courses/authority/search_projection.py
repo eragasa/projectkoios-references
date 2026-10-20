@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
-from typing import cast
+from typing import Protocol, cast, runtime_checkable
 
 from projectkoios.base import (
     DataObjectActionizer,
@@ -34,6 +34,16 @@ from .evidence import (
     ReferenceAssetAuthorityEvidence,
     RuntimeAssetAvailability,
 )
+
+
+class SearchReferenceAuthorityProjectionReadError(RuntimeError):
+    """Report path-free failure to obtain persisted projection bytes."""
+
+    code = "search-reference-authority-projection-unavailable"
+
+    def __init__(self) -> None:
+        """Create the sole deterministic public failure projection."""
+        super().__init__("Search reference authority projection is unavailable")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -153,11 +163,10 @@ class SearchReferenceAuthorityProjection(DataObjectActionResult):
             for item in self.bindings
         ):
             raise TypeError("bindings must be an exact typed tuple")
-        if tuple(item.binding_id for item in self.bindings) != tuple(
-            sorted(item.binding_id for item in self.bindings)
-        ):
+        binding_ids = tuple(item.binding_id for item in self.bindings)
+        if binding_ids != tuple(sorted(set(binding_ids))):
             raise CourseReferenceAuthorityError(
-                "Search authority bindings must use canonical order"
+                "Search authority bindings must use unique canonical order"
             )
         projection_id = _stable_id(
             "search-reference-authority-projection",
@@ -342,7 +351,234 @@ class SearchReferenceAuthorityProjectionActionizer(
         )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchReferenceAuthorityProjectionReadRequest(DataObjectActionRequest):
+    """Request one exact persisted Search authority projection."""
+
+    expected_sha256: str
+    expected_byte_size: int
+    expected_projection_id: str
+    expected_projection_result_id: str
+    request_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Validate and finalize the immutable data object."""
+        _sha256(self.expected_sha256, field="expected_sha256")
+        if (
+            type(self.expected_byte_size) is not int
+            or self.expected_byte_size <= 0
+            or self.expected_byte_size > _MAX_SEARCH_AUTHORITY_PROJECTION_BYTES
+        ):
+            raise CourseReferenceAuthorityError(
+                "expected_byte_size must be within the projection byte limit"
+            )
+        _content_id(
+            self.expected_projection_id,
+            field="expected_projection_id",
+        )
+        _content_id(
+            self.expected_projection_result_id,
+            field="expected_projection_result_id",
+        )
+        if not self.expected_projection_id.startswith(
+            "search-reference-authority-projection:sha256:"
+        ):
+            raise CourseReferenceAuthorityError(
+                "expected_projection_id has an invalid identity kind"
+            )
+        if not self.expected_projection_result_id.startswith(
+            "search-reference-authority-result:sha256:"
+        ):
+            raise CourseReferenceAuthorityError(
+                "expected_projection_result_id has an invalid identity kind"
+            )
+        object.__setattr__(
+            self,
+            "request_id",
+            _stable_id(
+                "search-reference-authority-projection-read-request",
+                {
+                    "expected_byte_size": self.expected_byte_size,
+                    "expected_projection_id": self.expected_projection_id,
+                    "expected_projection_result_id": (
+                        self.expected_projection_result_id
+                    ),
+                    "expected_sha256": self.expected_sha256,
+                },
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchReferenceAuthorityProjectionBytesReadResult(DataObjectActionResult):
+    """Carry bounded bytes from an injected read-only source."""
+
+    request_id: str
+    content: bytes
+    content_sha256: str = field(init=False)
+    content_byte_size: int = field(init=False)
+    result_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Validate and finalize the immutable data object."""
+        _content_id(self.request_id, field="request_id")
+        if type(self.content) is not bytes:
+            raise TypeError("content must be exact bytes")
+        if not self.content or (
+            len(self.content) > _MAX_SEARCH_AUTHORITY_PROJECTION_BYTES
+        ):
+            raise CourseReferenceAuthorityError(
+                "projection bytes exceed the bounded source limit"
+            )
+        content_sha256 = hashlib.sha256(self.content).hexdigest()
+        content_byte_size = len(self.content)
+        object.__setattr__(self, "content_sha256", content_sha256)
+        object.__setattr__(self, "content_byte_size", content_byte_size)
+        object.__setattr__(
+            self,
+            "result_id",
+            _stable_id(
+                "search-reference-authority-projection-bytes-read-result",
+                {
+                    "content_byte_size": content_byte_size,
+                    "content_sha256": content_sha256,
+                    "request_id": self.request_id,
+                },
+            ),
+        )
+
+
+@runtime_checkable
+class SearchReferenceAuthorityProjectionBytesSource(Protocol):
+    """Supply bounded bytes without exposing runtime location semantics."""
+
+    def action(
+        self,
+        *,
+        request: SearchReferenceAuthorityProjectionReadRequest,
+    ) -> SearchReferenceAuthorityProjectionBytesReadResult:
+        """Read bytes correlated to one exact semantic request."""
+        ...
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchReferenceAuthorityProjectionReadResult(DataObjectActionResult):
+    """Return an identity-validated exact owner projection."""
+
+    request_id: str
+    source_result_id: str
+    projection: SearchReferenceAuthorityProjection
+    content_sha256: str
+    content_byte_size: int
+    result_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Validate and finalize the immutable data object."""
+        _content_id(self.request_id, field="request_id")
+        _content_id(self.source_result_id, field="source_result_id")
+        if type(self.projection) is not SearchReferenceAuthorityProjection:
+            raise TypeError(
+                "projection must be SearchReferenceAuthorityProjection"
+            )
+        _sha256(self.content_sha256, field="content_sha256")
+        if (
+            type(self.content_byte_size) is not int
+            or self.content_byte_size <= 0
+            or self.content_byte_size > _MAX_SEARCH_AUTHORITY_PROJECTION_BYTES
+        ):
+            raise CourseReferenceAuthorityError(
+                "content_byte_size must be within the projection byte limit"
+            )
+        object.__setattr__(
+            self,
+            "result_id",
+            _stable_id(
+                "search-reference-authority-projection-read-result",
+                {
+                    "content_byte_size": self.content_byte_size,
+                    "content_sha256": self.content_sha256,
+                    "projection_id": self.projection.projection_id,
+                    "projection_result_id": self.projection.result_id,
+                    "request_id": self.request_id,
+                    "source_result_id": self.source_result_id,
+                },
+            ),
+        )
+
+
+class SearchReferenceAuthorityProjectionReadActionizer(
+    DataObjectActionizer[
+        SearchReferenceAuthorityProjectionReadRequest,
+        SearchReferenceAuthorityProjectionReadResult,
+    ]
+):
+    """Load one canonical projection through an injected bytes source."""
+
+    __slots__ = ("_source",)
+
+    def __init__(
+        self,
+        *,
+        source: SearchReferenceAuthorityProjectionBytesSource,
+    ) -> None:
+        """Bind the read-only bytes capability."""
+        if not isinstance(
+            source, SearchReferenceAuthorityProjectionBytesSource
+        ):
+            raise TypeError("source must implement the bytes source port")
+        self._source = source
+
+    def action(
+        self,
+        *,
+        request: SearchReferenceAuthorityProjectionReadRequest,
+    ) -> SearchReferenceAuthorityProjectionReadResult:
+        """Verify exact bytes before strict owner decoding."""
+        if type(request) is not SearchReferenceAuthorityProjectionReadRequest:
+            raise TypeError("request has an invalid type")
+        source_result = self._source.action(request=request)
+        if type(source_result) is not (
+            SearchReferenceAuthorityProjectionBytesReadResult
+        ):
+            raise TypeError("source returned an invalid result type")
+        if source_result.request_id != request.request_id:
+            raise CourseReferenceAuthorityError(
+                "bytes source result is not correlated to the request"
+            )
+        if source_result.content_byte_size != request.expected_byte_size:
+            raise CourseReferenceAuthorityError(
+                "projection byte length differs from the request"
+            )
+        if source_result.content_sha256 != request.expected_sha256:
+            raise CourseReferenceAuthorityError(
+                "projection SHA-256 differs from the request"
+            )
+        projection = _decode_search_reference_authority_projection(
+            source_result.content
+        )
+        if projection.projection_id != request.expected_projection_id:
+            raise CourseReferenceAuthorityError(
+                "projection identity differs from the request"
+            )
+        if projection.result_id != request.expected_projection_result_id:
+            raise CourseReferenceAuthorityError(
+                "projection result identity differs from the request"
+            )
+        return SearchReferenceAuthorityProjectionReadResult(
+            request_id=request.request_id,
+            source_result_id=source_result.result_id,
+            projection=projection,
+            content_sha256=source_result.content_sha256,
+            content_byte_size=source_result.content_byte_size,
+        )
+
+
+_MAX_SEARCH_AUTHORITY_PROJECTION_BYTES = 10_000_000
+_MAX_SEARCH_AUTHORITY_BINDINGS = 10_000
+_MAX_SEARCH_AUTHORITY_LINKS = 10_000
+_MAX_SEARCH_AUTHORITY_EVIDENCE_IDS = 100_000
 _CONTENT_ID = re.compile(r"[a-z][a-z0-9.-]*:sha256:[0-9a-f]{64}")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def _content_id(value: str, *, field: str) -> str:
@@ -448,6 +684,260 @@ def _json_default(value: object) -> object:
             if item.init
         }
     raise TypeError(f"unsupported identity value: {type(value).__name__}")
+
+
+def _sha256(value: str, *, field: str) -> str:
+    """Validate one lowercase SHA-256 digest."""
+    if type(value) is not str or _SHA256.fullmatch(value) is None:
+        raise CourseReferenceAuthorityError(
+            f"{field} must be a lowercase SHA-256 digest"
+        )
+    return value
+
+
+def _canonical_search_reference_authority_projection_bytes(
+    projection: SearchReferenceAuthorityProjection,
+) -> bytes:
+    """Encode one projection in its sole canonical persisted form."""
+    return (
+        json.dumps(
+            asdict(projection),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _decode_search_reference_authority_projection(
+    content: bytes,
+) -> SearchReferenceAuthorityProjection:
+    """Strictly reconstruct one exact projection from canonical bytes."""
+    if type(content) is not bytes:
+        raise TypeError("projection content must be exact bytes")
+    if not content or len(content) > _MAX_SEARCH_AUTHORITY_PROJECTION_BYTES:
+        raise CourseReferenceAuthorityError(
+            "projection content exceeds its byte limit"
+        )
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CourseReferenceAuthorityError(
+            "projection content is not UTF-8"
+        ) from error
+    try:
+        raw = cast(
+            object,
+            json.loads(text, object_pairs_hook=_unique_json_object),
+        )
+    except (json.JSONDecodeError, RecursionError) as error:
+        raise CourseReferenceAuthorityError(
+            "projection content is not valid JSON"
+        ) from error
+    data = _exact_json_object(
+        raw,
+        fields={
+            "bindings",
+            "projection_id",
+            "result_id",
+            "review_projection_id",
+        },
+        label="Search authority projection",
+    )
+    bindings_raw = _json_array(
+        data["bindings"],
+        field="bindings",
+        maximum=_MAX_SEARCH_AUTHORITY_BINDINGS,
+    )
+    projection = SearchReferenceAuthorityProjection(
+        review_projection_id=_json_string(
+            data["review_projection_id"],
+            field="review_projection_id",
+        ),
+        bindings=tuple(_decode_search_binding(item) for item in bindings_raw),
+    )
+    supplied_projection_id = _json_string(
+        data["projection_id"], field="projection_id"
+    )
+    supplied_result_id = _json_string(data["result_id"], field="result_id")
+    if projection.projection_id != supplied_projection_id:
+        raise CourseReferenceAuthorityError(
+            "supplied projection_id differs from reconstructed identity"
+        )
+    if projection.result_id != supplied_result_id:
+        raise CourseReferenceAuthorityError(
+            "supplied result_id differs from reconstructed identity"
+        )
+    if (
+        _canonical_search_reference_authority_projection_bytes(projection)
+        != content
+    ):
+        raise CourseReferenceAuthorityError(
+            "Search authority projection JSON is not canonical"
+        )
+    return projection
+
+
+def _decode_search_binding(raw: object) -> SearchReferenceAuthorityBinding:
+    """Strictly reconstruct one nested Search authority binding."""
+    data = _exact_json_object(
+        raw,
+        fields={
+            "accepted_citekey",
+            "authority_binding_id",
+            "authority_evidence_ids",
+            "bibliographic_work_id",
+            "binding_id",
+            "candidate_id",
+            "canonical_asset_decision_id",
+            "identity_decision_id",
+            "ingestion_artifact_links",
+            "reference_identity_status",
+            "source_asset_id",
+            "state_projection_id",
+        },
+        label="Search authority binding",
+    )
+    links_raw = _json_array(
+        data["ingestion_artifact_links"],
+        field="ingestion_artifact_links",
+        maximum=_MAX_SEARCH_AUTHORITY_LINKS,
+    )
+    evidence_raw = _json_array(
+        data["authority_evidence_ids"],
+        field="authority_evidence_ids",
+        maximum=_MAX_SEARCH_AUTHORITY_EVIDENCE_IDS,
+    )
+    binding = SearchReferenceAuthorityBinding(
+        candidate_id=_json_string(data["candidate_id"], field="candidate_id"),
+        bibliographic_work_id=_json_string(
+            data["bibliographic_work_id"],
+            field="bibliographic_work_id",
+        ),
+        reference_identity_status=_json_string(
+            data["reference_identity_status"],
+            field="reference_identity_status",
+        ),
+        accepted_citekey=_json_string(
+            data["accepted_citekey"], field="accepted_citekey"
+        ),
+        source_asset_id=_json_string(
+            data["source_asset_id"], field="source_asset_id"
+        ),
+        authority_binding_id=_json_string(
+            data["authority_binding_id"], field="authority_binding_id"
+        ),
+        identity_decision_id=_json_string(
+            data["identity_decision_id"], field="identity_decision_id"
+        ),
+        canonical_asset_decision_id=_json_string(
+            data["canonical_asset_decision_id"],
+            field="canonical_asset_decision_id",
+        ),
+        ingestion_artifact_links=tuple(
+            _decode_ingestion_link(item) for item in links_raw
+        ),
+        authority_evidence_ids=tuple(
+            _json_string(item, field="authority_evidence_id")
+            for item in evidence_raw
+        ),
+        state_projection_id=_json_string(
+            data["state_projection_id"], field="state_projection_id"
+        ),
+    )
+    if binding.binding_id != _json_string(
+        data["binding_id"], field="binding_id"
+    ):
+        raise CourseReferenceAuthorityError(
+            "supplied binding_id differs from reconstructed identity"
+        )
+    return binding
+
+
+def _decode_ingestion_link(raw: object) -> IngestionArtifactAuthorityLink:
+    """Strictly reconstruct one nested Ingestion authority link."""
+    data = _exact_json_object(
+        raw,
+        fields={
+            "artifact_verification_result_id",
+            "asset_observation_id",
+            "document_id",
+            "link_id",
+            "source_id",
+        },
+        label="Ingestion artifact authority link",
+    )
+    link = IngestionArtifactAuthorityLink(
+        asset_observation_id=_json_string(
+            data["asset_observation_id"], field="asset_observation_id"
+        ),
+        source_id=_json_string(data["source_id"], field="source_id"),
+        document_id=_json_string(data["document_id"], field="document_id"),
+        artifact_verification_result_id=_json_string(
+            data["artifact_verification_result_id"],
+            field="artifact_verification_result_id",
+        ),
+    )
+    if link.link_id != _json_string(data["link_id"], field="link_id"):
+        raise CourseReferenceAuthorityError(
+            "supplied link_id differs from reconstructed identity"
+        )
+    return link
+
+
+def _unique_json_object(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    """Reject duplicate object members during JSON construction."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise CourseReferenceAuthorityError(
+                f"projection JSON contains duplicate field: {key}"
+            )
+        result[key] = value
+    return result
+
+
+def _exact_json_object(
+    value: object,
+    *,
+    fields: set[str],
+    label: str,
+) -> dict[str, object]:
+    """Require one object with a closed exact field set."""
+    if type(value) is not dict:
+        raise CourseReferenceAuthorityError(f"{label} must be an object")
+    data = cast(dict[str, object], value)
+    if set(data) != fields:
+        raise CourseReferenceAuthorityError(f"{label} fields are invalid")
+    return data
+
+
+def _json_array(
+    value: object,
+    *,
+    field: str,
+    maximum: int,
+) -> list[object]:
+    """Require one bounded exact JSON array."""
+    if type(value) is not list:
+        raise CourseReferenceAuthorityError(f"{field} must be an array")
+    values = cast(list[object], value)
+    if len(values) > maximum:
+        raise CourseReferenceAuthorityError(f"{field} exceeds its count limit")
+    return values
+
+
+def _json_string(value: object, *, field: str) -> str:
+    """Require one bounded exact JSON string."""
+    if type(value) is not str:
+        raise CourseReferenceAuthorityError(f"{field} must be a string")
+    text = value
+    if not text or len(text.encode("utf-8")) > 1_024:
+        raise CourseReferenceAuthorityError(f"{field} is outside its limit")
+    return text
 
 
 def _asset_evidence_ids(

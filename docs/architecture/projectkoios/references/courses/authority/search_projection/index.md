@@ -14,6 +14,12 @@ Courses supplies ordered scope evidence; References validates and owns authority
 - [SearchReferenceAuthorityProjection](SearchReferenceAuthorityProjection/index.md)
 - [SearchReferenceAuthorityProjectionRequest](SearchReferenceAuthorityProjectionRequest/index.md)
 - [SearchReferenceAuthorityProjectionActionizer](SearchReferenceAuthorityProjectionActionizer/index.md)
+- [SearchReferenceAuthorityProjectionReadError](SearchReferenceAuthorityProjectionReadError/index.md)
+- [SearchReferenceAuthorityProjectionReadRequest](SearchReferenceAuthorityProjectionReadRequest/index.md)
+- [SearchReferenceAuthorityProjectionBytesReadResult](SearchReferenceAuthorityProjectionBytesReadResult/index.md)
+- [SearchReferenceAuthorityProjectionBytesSource](SearchReferenceAuthorityProjectionBytesSource/index.md)
+- [SearchReferenceAuthorityProjectionReadResult](SearchReferenceAuthorityProjectionReadResult/index.md)
+- [SearchReferenceAuthorityProjectionReadActionizer](SearchReferenceAuthorityProjectionReadActionizer/index.md)
 
 ## Architecture views
 

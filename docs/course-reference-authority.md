@@ -200,6 +200,26 @@ asset, both controlling decisions, typed Ingestion links, provenance evidence,
 the authority binding, and state projection. Superseding either decision
 removes stale authority on replay without mutating history.
 
+Persisted projections are consumed through the defining-owner
+`SearchReferenceAuthorityProjectionReadRequest` →
+`SearchReferenceAuthorityProjectionReadActionizer.action(request)` →
+`SearchReferenceAuthorityProjectionReadResult` leaf. The request binds only the
+expected byte SHA-256 and length plus projection and projection-result IDs. A
+`SearchReferenceAuthorityProjectionBytesSource` supplies bounded bytes; the
+filesystem implementation is
+`FilesystemSearchReferenceAuthorityProjectionBytesReadActionizer`. Path, root
+alias, `RootStorageClass`, and placeholder probe are constructor-injected only
+into that adapter and never enter semantic identities or results. The core
+verifies SHA-256 and length before strict UTF-8/JSON decoding, rejects
+noncanonical or open-shaped JSON, reconstructs nested Ingestion links,
+bindings, and the projection through their defining constructors, and checks
+every persisted derived ID. Filesystem, preflight, missing, permission,
+symlink, and bounded-read failures are translated to the deterministic path-free
+`SearchReferenceAuthorityProjectionReadError` outside the caught exception
+context; the original cause/context graph and runtime location details do not
+cross the adapter boundary. This read is pure: it performs no network access,
+catalog read, catalog mutation, compatibility mapping, or authority inference.
+
 ## Persistence, CAS, and receipts
 
 `ReferenceIdentityDecisionAppendActionizer` and

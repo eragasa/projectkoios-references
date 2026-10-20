@@ -2,11 +2,12 @@
 
 ```mermaid
 flowchart LR
-    Input[Typed owner input] --> Capability[courses.runtime.filesystem]
-    Capability --> Result[Immutable typed result]
-    Evidence[(Owner evidence)] --> Capability
+    Config[Owner runtime configuration] --> Filesystem[Descriptor-confined filesystem adapters]
+    Evidence[(Bibliography, asset, and linkage bytes)] --> Filesystem
+    Projection[(Persisted Search authority bytes)] --> Filesystem
+    Filesystem --> Safe[Path-free immutable results]
 ```
 
-The module groups contracts with one lifecycle and dependency direction; it is not a one-class compatibility façade.
+Runtime paths, root aliases, storage classes, and placeholder probes remain constructor-injected capabilities. They never enter core requests, results, or content identities.
 
 - [Overview](index.md)
