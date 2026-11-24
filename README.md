@@ -224,7 +224,12 @@ profile, complete-coverage status, candidate identity, explicit noncanonical
 statuses, exact byte identity, and typed unresolved filename/title heuristic
 observations. They contain no score or acceptance recommendation. A limit
 diagnostic remains `incomplete` and is never serialized as a partial plan.
-Canonical-name application requires both a replay-validated identity projection
+Canonical-name application is exposed as the runtime-neutral typed owner action
+`AssetApplicationOperationRequest -> AssetApplicationOperation ->
+AssetApplicationOperationResult`; `assets-apply` only adapts operator arguments
+and renders the resulting path. The stable action identity supports explicit
+Workflow CPN transition binding without introducing Workflow or runtime state
+into References. Application requires both a replay-validated identity projection
 and a separate exact actor-provenanced authorization that dispositions every
 competing candidate and alternate version with rationale. Apply rechecks the PDF
 header, size, and hash and atomically publishes the authorized canonical name;

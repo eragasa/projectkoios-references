@@ -21,6 +21,7 @@ root-facade count includes constants, records, exceptions, and functions.
 | Family | Objects | Actions | Helpers | Root facade | Primary tests | Disposition |
 |---|---:|---:|---:|---:|---|---|
 | `acquisition` | 8 | 3 | 18 | 18 | `test__AcquisitionManifest.py` | OUT_OF_SCOPE |
+| `asset.application` | 4 | 0 | 0 | 0 | mirrored `tests/package/projectkoios/references/asset/application/` | IMPLEMENTED |
 | `assets` | 11 | 3 | 12 | 13 | `test__AssetDiscovery.py` | OUT_OF_SCOPE |
 | `biblatex` | 3 | 2 | 4 | 2 | `test__BibLaTeXImport.py` | OUT_OF_SCOPE |
 | `catalog` | 9 | 0 | 15 | 9 | `test__ReferenceCatalog.py`, `test__CatalogSchema.py` | OUT_OF_SCOPE |
@@ -145,7 +146,10 @@ thin operator adapter is maintained in `scripts/koios_ref.py`; it contains no
 private module-level declarations and calls canonical package objects,
 including the citation-draft parser and renderer. Its `collection-reconcile`
 branch adapts arguments into the runtime-neutral complete owner operation and
-contains no domain evidence-loading or publication implementation. Packaging
+contains no domain evidence-loading or publication implementation. Its
+`assets-apply` branch constructs the runtime-neutral owner request, invokes the
+indivisible owner action, and renders the returned path; authority validation,
+catalog locking, materialization, and recording are not CLI-owned. Packaging
 includes the
 `scripts` package and wires the installed `koios-ref` entry point directly to
 `scripts.koios_ref:main`. Tests import that adapter directly. There is no

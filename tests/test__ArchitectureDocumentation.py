@@ -12,6 +12,12 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[1]
 ARCHITECTURE = REPOSITORY / "docs" / "architecture"
 MIGRATED_MODULES = {
+    "asset/application": {
+        "AssetApplicationError",
+        "AssetApplicationOperation",
+        "AssetApplicationOperationRequest",
+        "AssetApplicationOperationResult",
+    },
     "bibliography": {
         "CitationBibliographyMembershipStatus",
         "CitationBibliographyObservationBinding",
@@ -361,6 +367,31 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         The architecture assertion completes without an artifact.
     """
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
+    assert not (source_root / "asset_application.py").exists()
+    assert not (source_root / "asset_application").exists()
+    asset = source_root / "asset"
+    asset_application = asset / "application"
+    assert asset_application.is_dir()
+    for initializer in (
+        asset / "__init__.py",
+        asset_application / "__init__.py",
+    ):
+        tree = ast.parse(initializer.read_text(encoding="utf-8"))
+        assert all(
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            for node in tree.body
+        ), initializer
+    assert {
+        path.name
+        for path in asset_application.glob("*.py")
+        if path.name != "__init__.py"
+    } == {"action.py", "error.py", "request.py", "result.py"}
+    for source in asset_application.glob("*.py"):
+        if source.name == "__init__.py":
+            continue
+        assert len(_public_classes(source)) == 1, source
     assert not (source_root / "catalog.py").exists()
     assert not (source_root / "document_reference.py").exists()
     document_reference = source_root / "document_reference"
@@ -423,7 +454,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 30
+    assert len(mermaid_documents) == 32
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 
