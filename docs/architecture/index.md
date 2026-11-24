@@ -17,7 +17,6 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.citations`](projectkoios/references/citations/index.md)
 - [`projectkoios.references.bibliography`](projectkoios/references/bibliography/index.md)
 - [`projectkoios.references.citation.identity`](projectkoios/references/citation/identity/index.md)
-- [`projectkoios.references.citation.document`](projectkoios/references/citation/document/index.md)
 - [`projectkoios.references.catalog`](projectkoios/references/catalog/index.md)
 - [`projectkoios.references.collections.reconciliation`](projectkoios/references/collections/reconciliation/index.md)
 - [`projectkoios.references.document.reference`](projectkoios/references/document/reference/index.md)

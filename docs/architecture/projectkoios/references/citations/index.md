@@ -13,13 +13,12 @@ locators remain bounded normalized relative POSIX paths.
 - [`CitationTargetBibliographyEntry`](CitationTargetBibliographyEntry/index.md)
 - [`CitationTargetSourceGap`](CitationTargetSourceGap/index.md)
 - [`CitationTargetSnapshot`](CitationTargetSnapshot/index.md)
-- [`CitationKeyResolutionStatus`](CitationKeyResolutionStatus/index.md)
 
 ## Boundary
 
-`citation.document` depends on these records; this package never imports
-`citation.document`. Its documentation-only initializers expose no moved names,
-wrappers, or parallel identities.
+These records preserve exact target-owned citation state. They do not project
+accepted reference identity or define document processing, availability,
+receipts, or target-association policy.
 
 ## Detail
 

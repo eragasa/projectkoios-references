@@ -18,10 +18,7 @@ MIGRATED_MODULES = {
         "AssetApplicationOperationRequest",
         "AssetApplicationOperationResult",
     },
-    "bibliography": {
-        "CitationBibliographyMembershipStatus",
-        "CitationBibliographyObservationBinding",
-    },
+    "bibliography": {"CitationBibliographyObservationBinding"},
     "catalog": {
         "CandidateConflictError",
         "CatalogConflictError",
@@ -31,6 +28,16 @@ MIGRATED_MODULES = {
         "CatalogSchemaError",
         "CatalogSchemaInfo",
         "ReferenceCatalog",
+        "ReferenceDocument",
+        "ReferenceDocumentAudience",
+        "ReferenceDocumentBinding",
+        "ReferenceDocumentCatalog",
+        "ReferenceDocumentNotFound",
+        "ReferenceDocumentReadError",
+        "ReferenceDocumentReader",
+        "ReferenceDocumentReadRequest",
+        "ReferenceDocumentReadResult",
+        "ReferenceDocumentRegistry",
     },
     "collections/reconciliation": {
         "CitationStatus",
@@ -75,27 +82,12 @@ MIGRATED_MODULES = {
     },
     "citations": {
         "CitationContentIdentity",
-        "CitationKeyResolutionStatus",
         "CitationSourceLocator",
         "CitationTargetBibliographyEntry",
         "CitationTargetGroup",
         "CitationTargetOccurrence",
         "CitationTargetSnapshot",
         "CitationTargetSourceGap",
-    },
-    "citation/document": {
-        "CitationDocumentAvailabilityStatus",
-        "CitationDocumentProjection",
-        "CitationDocumentProjectionItem",
-        "CitationDocumentProjectionRequest",
-        "CitationDocumentProjectionResult",
-        "CitationDocumentProjector",
-        "CitationSourceDocumentDescriptor",
-        "CitationSourceDocumentLink",
-        "CitationSourceDocumentLinkRequest",
-        "CitationSourceDocumentLinkResult",
-        "CitationSourceDocumentLinker",
-        "CitationSourceDocumentObservation",
     },
     "citation/identity": {
         "CitationIdentityProjectionItem",
@@ -468,8 +460,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     assert not (source_root / "citation_document.py").exists()
     assert not (source_root / "citation_document").exists()
     citation = source_root / "citation"
-    citation_document = citation / "document"
-    assert citation_document.is_dir()
+    assert not (citation / "document").exists()
     for flat_name in (
         "citation_closure.py",
         "citation_draft.py",
@@ -478,18 +469,13 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         assert not (source_root / flat_name).exists()
     for owner_name in ("closure.py", "draft.py", "identity.py"):
         assert (citation / owner_name).is_file()
-    for initializer in (
-        citation / "__init__.py",
-        citation_document / "__init__.py",
-    ):
-        tree = ast.parse(initializer.read_text(encoding="utf-8"))
-        assert all(
-            isinstance(node, ast.Expr)
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-            for node in tree.body
-        ), initializer
-    assert not (citation_document / "target.py").exists()
+    tree = ast.parse((citation / "__init__.py").read_text(encoding="utf-8"))
+    assert all(
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        for node in tree.body
+    )
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
     assert not (source_root / "path_safety").exists()
@@ -627,40 +613,26 @@ def test__courses_architecture_and_tests_mirror_every_public_class() -> None:
                 } == required
 
 
-def test__citation_package_dependencies_are_one_way() -> None:
-    """Evaluate deterministic architecture coverage.
-
-    Returns
-    -------
-    None
-        The architecture assertion completes without an artifact.
-    """
+def test__citation_inventory_does_not_depend_on_bibliography() -> None:
+    """Keep neutral citation inventory independent of References evidence."""
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
-    forbidden_document = "projectkoios.references.citation.document"
-    forbidden_bibliography = "projectkoios.references.bibliography"
-    for package_name in ("citations", "bibliography"):
-        for source in (source_root / package_name).glob("*.py"):
-            tree = ast.parse(source.read_text(encoding="utf-8"))
-            imported_modules = {
-                node.module
-                for node in ast.walk(tree)
-                if isinstance(node, ast.ImportFrom) and node.module is not None
-            }
-            imported_modules.update(
-                alias.name
-                for node in ast.walk(tree)
-                if isinstance(node, ast.Import)
-                for alias in node.names
-            )
-            assert all(
-                not name.startswith(forbidden_document)
-                for name in imported_modules
-            ), source
-            if package_name == "citations":
-                assert all(
-                    not name.startswith(forbidden_bibliography)
-                    for name in imported_modules
-                ), source
+    forbidden = "projectkoios.references.bibliography"
+    for source in (source_root / "citations").glob("*.py"):
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        imported_modules = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+        imported_modules.update(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert all(
+            not name.startswith(forbidden) for name in imported_modules
+        ), source
 
 
 # Reachability is checked from the architecture root so generated-looking

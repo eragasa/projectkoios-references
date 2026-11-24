@@ -21,6 +21,14 @@ classDiagram
         +bool backup_required
         +str authority_effect
     }
+    class ReferenceDocumentBinding
+    class ReferenceDocumentRegistry
+    class ReferenceDocument
+    class ReferenceDocumentReadRequest
+    class ReferenceDocumentReadResult
+    class ReferenceDocumentReader {
+        +action(request)
+    }
     class ReferenceCatalog {
         +Path path
         +initialize()
@@ -39,6 +47,12 @@ classDiagram
     CatalogSchemaError <|-- CatalogMigrationRequired
     CatalogError <|-- CatalogConflictError
     CatalogConflictError <|-- CandidateConflictError
+    ReferenceDocumentRegistry *-- ReferenceDocumentBinding
+    ReferenceDocumentReader --> ReferenceDocumentRegistry
+    ReferenceDocumentReader --> ReferenceCatalog
+    ReferenceDocumentReader --> ReferenceDocumentReadRequest
+    ReferenceDocumentReader --> ReferenceDocumentReadResult
+    ReferenceDocumentReadResult *-- ReferenceDocument
     ReferenceCatalog ..> CatalogSchemaInfo : reports
     ReferenceCatalog ..> CatalogMigrationPlan : plans
     ReferenceCatalog ..> CatalogMigrationRequired : raises

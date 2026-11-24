@@ -4,11 +4,10 @@
 classDiagram
     CitationTargetBibliographyEntry --> CitationBibliographyObservationBinding
     SourceBibliographyObservation --> CitationBibliographyObservationBinding
-    CitationBibliographyObservationBinding --> CitationDocumentProjectionRequest
 ```
 
-Membership status remains orthogonal to accepted reference identity and to
-source-document availability.
+The binding preserves exact target and observation identities without deriving
+accepted reference identity or document-processing state.
 
 - [Module index](index.md)
 - [Implementation](implementation.md)

@@ -39,6 +39,17 @@ from projectkoios.references.review import (
 from projectkoios.references.state_projection import ReferenceStateProjection
 
 from ._internals import _CatalogInternals
+from .documents import (
+    ReferenceDocument,
+    ReferenceDocumentAudience,
+    ReferenceDocumentBinding,
+    ReferenceDocumentNotFound,
+    ReferenceDocumentReader,
+    ReferenceDocumentReadError,
+    ReferenceDocumentReadRequest,
+    ReferenceDocumentReadResult,
+    ReferenceDocumentRegistry,
+)
 from .schema import (
     _AUTHORITY_BOUNDARY,
     _KNOWN_LEGACY_SCHEMAS,
@@ -91,6 +102,15 @@ __all__ = [
     "CatalogSchemaError",
     "CatalogSchemaInfo",
     "ReferenceCatalog",
+    "ReferenceDocument",
+    "ReferenceDocumentAudience",
+    "ReferenceDocumentBinding",
+    "ReferenceDocumentNotFound",
+    "ReferenceDocumentReadError",
+    "ReferenceDocumentReader",
+    "ReferenceDocumentReadRequest",
+    "ReferenceDocumentReadResult",
+    "ReferenceDocumentRegistry",
 ]
 
 for _public_type in (
