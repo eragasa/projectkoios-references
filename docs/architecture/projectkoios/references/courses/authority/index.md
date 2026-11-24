@@ -30,6 +30,7 @@ The module receives Courses evidence and owner runtime capabilities, persists on
 - [reviewed_projection](reviewed_projection/index.md)
 - [scope](scope/index.md)
 - [search_projection](search_projection/index.md)
+- [selected_bibliography](selected_bibliography/index.md)
 - [service](service/index.md)
 
 Private underscore-prefixed modules contain only course-local deterministic implementation values and are not public owner boundaries.

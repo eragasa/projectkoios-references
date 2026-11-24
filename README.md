@@ -159,7 +159,11 @@ runtime evidence; stateless identity/asset PUT operations require the exact
 owner-generated preview ID, persist only derived idempotency evidence, replay
 exact retries after service reopen, and reject differing key reuse. Atomic CAS
 append followed by an owner reread produces a
-receipt. Search authority additionally requires typed `source_id`,
+receipt. A separate scope-selected private-bibliography action can project an
+exact Courses-ordered subset of an existing render only through explicit opaque
+locators; it binds current accepted projection IDs and emits path-private
+provenance without changing observations, candidates, decisions, or omitted
+work authority. Search authority additionally requires typed `source_id`,
 `document_id`, and `artifact_verification_result_id` linkage. See
 [Actor-provenanced reference review state](docs/review-state.md) and
 [Course reference authority review](docs/course-reference-authority.md).

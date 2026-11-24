@@ -238,6 +238,36 @@ and inventory identities, projects the full queue, and requires exactly 14
 items, exact Courses selection order, and `READY` resolution for every item.
 No private name, path, or scope payload is committed.
 
+## Scope-selected private bibliography handoff
+
+`CourseReferenceSelectedBibliographyProjectionActionizer` produces a private,
+non-authoritative course handoff from an existing complete CONTROL queue and its
+original render. The request binds a revised Courses manifest identity, the
+predecessor scope and queue, an ordered tuple of retained predecessor selection
+IDs, locator-binding IDs, and opaque rendered-entry locators, plus one explicit
+omission guard. Resolution is exclusively by those opaque identities; display
+citekeys are checked only after locator resolution and are never join keys.
+
+The action requires the retained tuple to equal predecessor order with exactly
+the guarded omission removed. Every retained item must remain `READY`, bind the
+same original rendered bytes and source-observation inventory, and have a
+current accepted authority whose candidate and state-projection identities are
+present in the predecessor queue. Missing, duplicate, reordered, stale, or
+mismatched evidence fails closed. The expected live queue ID is checked only as
+private execution freshness evidence. It is excluded from the portable request,
+manifest, and result identities, so runtime asset availability cannot perturb
+bibliography identity when the selected authority projections are unchanged.
+
+The result emits the retained TeX-safe entries once in Courses order, a bounded
+artifact digest and size, path-private root alias and relative path, path-free
+original declaration provenance, and per-item predecessor, locator, rendered
+entry, candidate, source-observation, and current authority-projection IDs. Its
+fixed status is `proposed-noncanonical-private-course-handoff`. The projection
+does not create a source observation or candidate, append a decision, delete or
+reject an omitted reference, modify the catalog, grant rights, support a claim,
+or authorize publication. A later Courses inventory may bind the generated
+private bibliography before Courses mints its final revised scope.
+
 ## Reviewed Courses output
 
 `project_reviewed_course_references` fails unless every Courses item has accepted
