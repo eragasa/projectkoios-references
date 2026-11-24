@@ -20,11 +20,13 @@ from projectkoios.references.candidate_bibliography import (
     CandidateBibliographyRenderResult,
     CandidateBibliographySourceDeclaration,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     SourceBibliographyObservation,
 )
-from projectkoios.references.path_safety import RootStorageClass
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "candidate-bibliography"
 

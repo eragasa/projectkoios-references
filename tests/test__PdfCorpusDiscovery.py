@@ -19,20 +19,32 @@ from projectkoios.references import (
     PDF_CORPUS_DISCOVERY_GENERATOR_VERSION,
     PDF_CORPUS_DISCOVERY_IO_LIMITS,
     PDF_CORPUS_DISCOVERY_SCHEMA_VERSION,
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    MacOSFileProviderPlaceholderProbe,
     PdfCorpusDiscoveryPlan,
     PdfCorpusRoot,
     PdfSkipReason,
     PdfSourceObservation,
-    PlaceholderPreflightError,
-    PlaceholderProbeSupport,
-    PlaceholderStatus,
     ReferenceIOLimitError,
-    RootStorageClass,
     discover_pdf_corpus,
     rebind_pdf_source,
+)
+from projectkoios.references.adapters.filesystem.macos.file.provider.placeholder.probe import (  # noqa: E501
+    MacOSFileProviderPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.error import (
+    PlaceholderPreflightError,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.filesystem.root.preflight.support import (
+    PlaceholderProbeSupport,
 )
 
 
@@ -746,13 +758,15 @@ def test__macos_file_provider_probe__rejects_cross_device_parent(
     (child / "candidate.pdf").write_bytes(b"must not be inspected")
     child_inode = child.stat().st_ino
     probe = MacOSFileProviderPlaceholderProbe(tmp_path)
-    AuthorizedRoot.existing(
+    root = AuthorizedRoot.existing(
         tmp_path,
         label="synthetic iCloud root",
         root_alias="icloud",
         storage_class=RootStorageClass.CLOUD_BACKED,
         placeholder_probe=probe,
     )
+    bound_probe = root.placeholder_probe
+    assert bound_probe is not None
     real_fstat = os.fstat
     real_stat = os.stat
 
@@ -783,7 +797,7 @@ def test__macos_file_provider_probe__rejects_cross_device_parent(
     )
 
     assert (
-        probe.observe(
+        bound_probe.observe(
             root_alias="icloud",
             relative_path=PurePosixPath("child/candidate.pdf"),
         )
@@ -801,13 +815,15 @@ def test__macos_file_provider_probe__uses_nofollow_metadata_not_leaf_bytes(
     candidate = tmp_path / "candidate.pdf"
     candidate.write_bytes(b"placeholder bytes must not be read")
     probe = MacOSFileProviderPlaceholderProbe(tmp_path)
-    AuthorizedRoot.existing(
+    root = AuthorizedRoot.existing(
         tmp_path,
         label="synthetic iCloud root",
         root_alias="icloud",
         storage_class=RootStorageClass.CLOUD_BACKED,
         placeholder_probe=probe,
     )
+    bound_probe = root.placeholder_probe
+    assert bound_probe is not None
     real_stat = os.stat
     real_open = os.open
     dataless = True
@@ -848,7 +864,7 @@ def test__macos_file_provider_probe__uses_nofollow_metadata_not_leaf_bytes(
         probe.support(root_alias="icloud") is PlaceholderProbeSupport.SUPPORTED
     )
     assert (
-        probe.observe(
+        bound_probe.observe(
             root_alias="icloud",
             relative_path=PurePosixPath("candidate.pdf"),
         )
@@ -856,7 +872,7 @@ def test__macos_file_provider_probe__uses_nofollow_metadata_not_leaf_bytes(
     )
     dataless = False
     assert (
-        probe.observe(
+        bound_probe.observe(
             root_alias="icloud",
             relative_path=PurePosixPath("candidate.pdf"),
         )
@@ -877,16 +893,18 @@ def test__macos_file_provider_probe__uncertain_leaf_is_ambiguous(
     target.write_bytes(b"%PDF- target")
     (tmp_path / "linked.pdf").symlink_to(target)
     probe = MacOSFileProviderPlaceholderProbe(tmp_path)
-    AuthorizedRoot.existing(
+    root = AuthorizedRoot.existing(
         tmp_path,
         label="synthetic iCloud root",
         root_alias="icloud",
         storage_class=RootStorageClass.CLOUD_BACKED,
         placeholder_probe=probe,
     )
+    bound_probe = root.placeholder_probe
+    assert bound_probe is not None
 
     assert (
-        probe.observe(
+        bound_probe.observe(
             root_alias="icloud",
             relative_path=PurePosixPath("linked.pdf"),
         )

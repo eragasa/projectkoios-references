@@ -30,7 +30,9 @@ from projectkoios.references.enrichment import (
 from projectkoios.references.enrichment import (
     CrossrefClient as _CrossrefClient,
 )
-from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 
 def CrossrefClient(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]

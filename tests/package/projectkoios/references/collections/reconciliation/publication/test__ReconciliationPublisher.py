@@ -34,11 +34,14 @@ from projectkoios.references.collections.reconciliation.reconciliation import (
     CollectionReconciler,
     CollectionReconciliationRequest,
 )
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
 )
-from projectkoios.references.path_safety import AuthorizedRoot, RootStorageClass
 
 
 def build_citation_closure(*args: object, **kwargs: object):
@@ -272,15 +275,15 @@ def test__ReconciliationPublisher__writes_package_manifest_last(
     outputs = _publication_outputs(tmp_path)
     destination = tmp_path / "output" / "fixture"
     writes: list[str] = []
-    original_write = AuthorizedRoot.write_bytes
+    original_create = AuthorizedRoot.create_bytes
 
-    def tracked_write(
-        self: AuthorizedRoot, relative: str, content: bytes, *, replace: bool
+    def tracked_create(
+        self: AuthorizedRoot, relative: str, content: bytes
     ) -> Path:
         writes.append(str(relative))
-        return original_write(self, relative, content, replace=replace)
+        return original_create(self, relative, content)
 
-    monkeypatch.setattr(AuthorizedRoot, "write_bytes", tracked_write)
+    monkeypatch.setattr(AuthorizedRoot, "create_bytes", tracked_create)
     result = (
         ReconciliationPublisher()
         .action(
@@ -339,19 +342,19 @@ def test__ReconciliationPublisher__write_failure_leaves_incomplete_claim(
 ) -> None:
     outputs = _publication_outputs(tmp_path)
     destination = tmp_path / "output" / "fixture"
-    original_write = AuthorizedRoot.write_bytes
+    original_create = AuthorizedRoot.create_bytes
     failed = False
 
     def fail_payload_once(
-        self: AuthorizedRoot, relative: str, content: bytes, *, replace: bool
+        self: AuthorizedRoot, relative: str, content: bytes
     ) -> Path:
         nonlocal failed
         if not failed and str(relative) != "package-manifest.json":
             failed = True
             raise OSError("synthetic payload write failure")
-        return original_write(self, relative, content, replace=replace)
+        return original_create(self, relative, content)
 
-    monkeypatch.setattr(AuthorizedRoot, "write_bytes", fail_payload_once)
+    monkeypatch.setattr(AuthorizedRoot, "create_bytes", fail_payload_once)
     with pytest.raises(IncompleteReconciliationPublicationError) as caught:
         ReconciliationPublisher().action(
             request=ReconciliationPublicationRequest(
@@ -370,19 +373,19 @@ def test__ReconciliationPublisher__extra_file_fails_exact_verification(
 ) -> None:
     outputs = _publication_outputs(tmp_path)
     destination = tmp_path / "output" / "fixture"
-    original_write = AuthorizedRoot.write_bytes
+    original_create = AuthorizedRoot.create_bytes
 
     def inject_extra_before_final_payload(
-        self: AuthorizedRoot, relative: str, content: bytes, *, replace: bool
+        self: AuthorizedRoot, relative: str, content: bytes
     ) -> Path:
         if str(relative) == "package-manifest.json":
             self.child_path("unexpected.txt").write_text(
                 "raced", encoding="utf-8"
             )
-        return original_write(self, relative, content, replace=replace)
+        return original_create(self, relative, content)
 
     monkeypatch.setattr(
-        AuthorizedRoot, "write_bytes", inject_extra_before_final_payload
+        AuthorizedRoot, "create_bytes", inject_extra_before_final_payload
     )
     with pytest.raises(
         IncompleteReconciliationPublicationError,

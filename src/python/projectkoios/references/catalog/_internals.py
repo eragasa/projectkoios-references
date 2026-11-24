@@ -4,14 +4,16 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ReferenceCandidate,
     SourceBibliographyObservation,
-)
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    RootStorageClass,
 )
 
 from ._replay import _CatalogReplayInternals

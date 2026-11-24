@@ -12,12 +12,14 @@ from projectkoios.references.catalog import (
     CatalogSchemaError,
     ReferenceCatalog,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import ProducerIdentity
 from projectkoios.references.io_limits import (
     REVIEW_IO_LIMITS,
     ReferenceIOLimitError,
 )
-from projectkoios.references.path_safety import RootStorageClass
 from projectkoios.references.review import (
     ClaimSupportCheckDecision,
     HumanReviewDecision,

@@ -9,8 +9,10 @@ from projectkoios.base import DataObjectModel
 from projectkoios.references.courses.authority.evidence import (
     ReferenceRecordDiscrepancy,
 )
-from projectkoios.references.path_safety import (
+from projectkoios.references.filesystem.root.preflight.probe import (
     CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
     RootStorageClass,
 )
 

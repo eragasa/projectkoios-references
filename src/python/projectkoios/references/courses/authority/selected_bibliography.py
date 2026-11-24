@@ -19,6 +19,7 @@ from projectkoios.references.candidate_bibliography import (
     CandidateBibliographyRenderedEntry,
     CandidateBibliographyRenderResult,
 )
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.courses.authority.errors import (
     CourseReferenceAuthorityError,
 )
@@ -30,8 +31,7 @@ from projectkoios.references.courses.authority.queue import (
 from projectkoios.references.courses.authority.scope import (
     CourseDisplayCitekeyStatus,
 )
-from projectkoios.references.path_safety import (
-    validate_citekey,
+from projectkoios.references.filesystem.path.validation import (
     validate_relative_path,
     validate_root_alias,
 )

@@ -1,0 +1,1 @@
+"""Descriptor-confined filesystem ownership."""

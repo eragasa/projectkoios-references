@@ -10,18 +10,24 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Self, cast
 
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+)
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.io_limits import (
     RECONCILIATION_PACKAGE_IO_LIMITS,
     ReferenceIOLimitError,
     bounded_utf8_size,
-)
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    PathLimitError,
-    PathSafetyError,
-    RootStorageClass,
-    validate_relative_path,
 )
 
 PACKAGE_MANIFEST_FILENAME = "package-manifest.json"
@@ -102,7 +108,7 @@ class ContentEvidence:
                 self.filename,
                 field="content-evidence filename",
             ).as_posix()
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise ValueError(str(error)) from error
         if normalized != self.filename:
             raise ValueError("content-evidence filename must be normalized")
@@ -595,14 +601,14 @@ def load_reconciliation_package(
                     observed=total_bytes,
                 )
             files[item.name] = content
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise _limit_error(
             resource=error.resource,
             limit_name=error.limit_name,
             limit=error.limit,
             observed=error.observed,
         ) from error
-    except PathSafetyError as error:
+    except FilesystemOperationError as error:
         raise ReconciliationPackageError(str(error)) from error
     return parse_package_files(files)
 

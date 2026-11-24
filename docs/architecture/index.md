@@ -22,7 +22,11 @@ The packaged `scripts` package remains outside the migrated slice.
 - [`projectkoios.references.collections.reconciliation`](projectkoios/references/collections/reconciliation/index.md)
 - [`projectkoios.references.document.reference`](projectkoios/references/document/reference/index.md)
 - [`projectkoios.references.courses`](projectkoios/references/courses/index.md)
-- [`projectkoios.references.path_safety`](projectkoios/references/path_safety/index.md)
+- [`projectkoios.references.filesystem`](projectkoios/references/filesystem/index.md)
+- [`projectkoios.references.ingestion.evidence`](projectkoios/references/ingestion/evidence/index.md)
+- [`projectkoios.references.citation.key`](projectkoios/references/citation/key/index.md)
+- [`projectkoios.references.adapters.filesystem.linux`](projectkoios/references/adapters/filesystem/linux/index.md)
+- [`projectkoios.references.adapters.filesystem.macos`](projectkoios/references/adapters/filesystem/macos/index.md)
 - [`projectkoios.references.state_projection_replay`](projectkoios/references/state_projection_replay/index.md)
 - [`projectkoios.references.adapters.bibliography.pybtex_metadata_reader`](projectkoios/references/adapters/bibliography/pybtex_metadata_reader/index.md)
 - [`projectkoios.references.adapters.filesystem.sha256_pdf_object_store`](projectkoios/references/adapters/filesystem/sha256_pdf_object_store/index.md)
@@ -45,7 +49,6 @@ manually maintained page count.
 - `projectkoios.references.enrichment`
 - `projectkoios.references.graph`
 - `projectkoios.references.identity`
-- `projectkoios.references.ingestion_evidence`
 - `projectkoios.references.io_limits`
 - `projectkoios.references.models`
 - `projectkoios.references.naming`

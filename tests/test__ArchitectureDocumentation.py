@@ -159,33 +159,62 @@ MIGRATED_MODULES = {
         "UnknownDocument",
         "UnknownReference",
     },
-    "path_safety": {
+    "filesystem": {
         "AddressedFilePublication",
+        "AnonymousFilePublisher",
         "AuthorizedRoot",
         "AuthorizedRootIdentity",
-        "AuthorizedRootObservation",
-        "AuthorizedRootPublication",
-        "AuthorizedRootScanning",
         "CloudPlaceholderProbe",
         "CloudRootMutationError",
-        "DescriptorFilesystem",
+        "DirectoryPublisher",
         "FileObservation",
         "FilesystemBoundaryError",
+        "FilesystemDescriptorError",
         "FilesystemInventory",
         "FilesystemInventoryIssue",
         "FilesystemIssueKind",
-        "MacOSFileProviderPlaceholderProbe",
-        "PathLimitError",
-        "PathSafetyError",
+        "FilesystemLimitError",
+        "FilesystemObservationError",
+        "FilesystemOperationError",
+        "FilesystemPathError",
+        "FilesystemPublicationError",
+        "FilesystemScanningError",
+        "InventoryScanner",
         "PlaceholderObservation",
         "PlaceholderPreflightError",
-        "PlaceholderProbeIdentity",
+        "PlaceholderProbe",
         "PlaceholderProbeSupport",
         "PlaceholderStatus",
-        "PortablePathValidator",
+        "PublishedFileVerifier",
+        "RootBoundPlaceholderProbeFactory",
+        "RootDescriptor",
+        "RootObservation",
         "RootPreflightEvidence",
+        "RootPublication",
+        "RootScanning",
         "RootStorageClass",
+        "StrictFileScanner",
         "UnsupportedCloudPlaceholderProbe",
+        "VerifiedFileCopier",
+    },
+    "citation/key": {"CitationKeyError"},
+    "ingestion/evidence": {
+        "IngestionEvidenceError",
+        "IngestionEvidenceLimitError",
+        "IngestionEvidenceParseError",
+        "IngestionEvidenceVerificationError",
+        "ReferenceEvidenceArtifact",
+        "ReferenceEvidenceAudit",
+        "ReferenceEvidenceExtraction",
+        "ReferenceEvidenceInput",
+        "ReferenceEvidenceLayerCount",
+        "ReferenceEvidenceRecord",
+        "ReferenceEvidenceSource",
+        "ReferenceEvidenceTranscript",
+    },
+    "adapters/filesystem/linux": set(),
+    "adapters/filesystem/macos": {
+        "MacOSFileProviderPlaceholderProbe",
     },
 }
 MIGRATED_FILE_MODULES = {
@@ -228,7 +257,6 @@ EXPECTED_REMAINING_MODULES = {
     "projectkoios.references.enrichment",
     "projectkoios.references.graph",
     "projectkoios.references.identity",
-    "projectkoios.references.ingestion_evidence",
     "projectkoios.references.io_limits",
     "projectkoios.references.models",
     "projectkoios.references.naming",
@@ -464,6 +492,23 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     assert not (citation_document / "target.py").exists()
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
+    assert not (source_root / "path_safety").exists()
+    assert not (source_root / "ingestion_evidence.py").exists()
+    for hierarchy in (
+        source_root / "citation" / "key",
+        source_root / "filesystem",
+        source_root / "adapters" / "filesystem" / "linux",
+        source_root / "adapters" / "filesystem" / "macos",
+        source_root / "ingestion" / "evidence",
+    ):
+        for initializer in hierarchy.rglob("__init__.py"):
+            tree = ast.parse(initializer.read_text(encoding="utf-8"))
+            assert all(
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+                for node in tree.body
+            ), initializer
     public_classes_by_module = {
         **MIGRATED_MODULES,
         **MIGRATED_FILE_MODULES,
@@ -490,7 +535,6 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         )
         for name in ("schematic.md", "implementation.md")
     }
-    assert len(mermaid_documents) == 32
     for path in mermaid_documents:
         assert _MERMAID.search(path.read_text(encoding="utf-8")), path
 

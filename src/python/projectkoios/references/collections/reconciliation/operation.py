@@ -21,8 +21,17 @@ from projectkoios.references.citation.closure import (
     build_citation_closure,
 )
 from projectkoios.references.coverage import CoverageObservation
-from projectkoios.references.ingestion_evidence import (
+from projectkoios.references.filesystem.path.read import (
+    read_path_bytes,
+    read_path_text,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.ingestion.evidence.input import (
     ReferenceEvidenceInput,
+)
+from projectkoios.references.ingestion.evidence.loading.action import (
     load_ingestion_reference_evidence,
 )
 from projectkoios.references.io_limits import (
@@ -32,11 +41,6 @@ from projectkoios.references.io_limits import (
     REVIEW_IO_LIMITS,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import (
-    RootStorageClass,
-    read_path_bytes,
-    read_path_text,
-)
 from projectkoios.references.review import ReviewProjection
 
 from ._contract import _required_limit

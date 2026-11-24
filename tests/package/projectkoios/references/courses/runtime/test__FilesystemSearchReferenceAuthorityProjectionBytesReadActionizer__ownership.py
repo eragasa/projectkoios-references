@@ -16,10 +16,14 @@ from projectkoios.references.courses.authority.search_projection import (
 from projectkoios.references.courses.runtime.filesystem import (
     FilesystemSearchReferenceAuthorityProjectionBytesReadActionizer,
 )
-from projectkoios.references.path_safety import (
-    PlaceholderProbeSupport,
+from projectkoios.references.filesystem.root.preflight.status import (
     PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
     RootStorageClass,
+)
+from projectkoios.references.filesystem.root.preflight.support import (
+    PlaceholderProbeSupport,
 )
 
 _FIXTURE = (

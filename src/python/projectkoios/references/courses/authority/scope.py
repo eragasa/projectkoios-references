@@ -11,7 +11,7 @@ from enum import Enum, StrEnum
 from projectkoios.base import (
     DataObjectModel,
 )
-from projectkoios.references.path_safety import validate_citekey
+from projectkoios.references.citation.key.validation import validate_citekey
 
 from .errors import CourseReferenceAuthorityError
 

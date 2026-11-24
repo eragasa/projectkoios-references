@@ -15,18 +15,20 @@ from typing import Protocol, cast, runtime_checkable
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.io_limits import (
     METADATA_IO_LIMITS,
     ReferenceIOLimitError,
     ReferenceIOLimits,
 )
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    PathLimitError,
-    PathSafetyError,
-    RootStorageClass,
-)
 
 CACHE_SCHEMA_VERSION = 2
 CROSSREF_PARSER_VERSION = "crossref-metadata-v1"
@@ -601,9 +603,9 @@ class CrossrefClient:
                 ),
                 max_depth=1,
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise _limit_error(error, self.limits) from error
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise ProviderCacheError("provider cache is unsafe") from error
         if any(item.name.startswith(legacy_prefix) for item in names):
             raise ProviderCacheError(
@@ -686,16 +688,16 @@ class CrossrefClient:
         content_digest = hashlib.sha256(content).hexdigest()
         name = f"v2-{request_digest}-{content_digest}.json"
         try:
-            self._cache_root.write_bytes(name, content, replace=False)
+            self._cache_root.create_bytes(name, content)
         except FileExistsError:
             try:
                 existing = self._cache_root.read_bytes(
                     name,
                     max_bytes=max_cache_bytes,
                 )
-            except PathLimitError as error:
+            except FilesystemLimitError as error:
                 raise _limit_error(error, self.limits) from error
-            except (OSError, UnicodeError, PathSafetyError) as error:
+            except (OSError, UnicodeError, FilesystemOperationError) as error:
                 raise ProviderCacheError(
                     "existing cache entry cannot be safely verified"
                 ) from error
@@ -726,9 +728,9 @@ class CrossrefClient:
                     "max_cache_bytes",
                 ),
             )
-        except PathLimitError as error:
+        except FilesystemLimitError as error:
             raise _limit_error(error, self.limits) from error
-        except (OSError, UnicodeError, PathSafetyError) as error:
+        except (OSError, UnicodeError, FilesystemOperationError) as error:
             raise ProviderCacheError(
                 "cache entry cannot be safely read"
             ) from error
@@ -1147,7 +1149,7 @@ def _required_limit(value: int | None, name: str) -> int:
 
 
 def _limit_error(
-    error: PathLimitError,
+    error: FilesystemLimitError,
     limits: ReferenceIOLimits,
 ) -> ProviderCacheLimitError:
     return ProviderCacheLimitError(

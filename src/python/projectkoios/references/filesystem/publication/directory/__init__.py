@@ -1,0 +1,1 @@
+"""Create-only directory publication."""

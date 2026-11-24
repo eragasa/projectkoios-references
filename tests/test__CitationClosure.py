@@ -16,11 +16,13 @@ from projectkoios.references.citation.closure import (
     CitationScanMode,
     build_citation_closure,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.io_limits import (
     RECONCILIATION_IO_LIMITS,
     ReferenceIOLimitError,
 )
-from projectkoios.references.path_safety import RootStorageClass
 
 from scripts.koios_ref import main
 

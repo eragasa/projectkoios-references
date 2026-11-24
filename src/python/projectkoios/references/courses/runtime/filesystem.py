@@ -36,17 +36,25 @@ from projectkoios.references.courses.authority.service import (
     CourseReferenceAuthorityEvidenceLoadRequest,
     CourseReferenceAuthorityEvidenceLoadResult,
 )
-from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    PathLimitError,
-    PathSafetyError,
-    PlaceholderStatus,
-    RootStorageClass,
-    read_path_bytes,
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.read import read_path_bytes
+from projectkoios.references.filesystem.path.validation import (
     validate_root_alias,
 )
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.models import SourceAssetRecord
 
 from .configuration import (
     CourseReferenceAuthorityAssetRoot,
@@ -124,7 +132,7 @@ class FilesystemSearchReferenceAuthorityProjectionBytesReadActionizer(
                 placeholder_probe=self._placeholder_probe,
                 max_bytes=request.expected_byte_size,
             )
-        except PathSafetyError, OSError:
+        except FilesystemOperationError, OSError:
             unavailable = True
         if unavailable:
             _raise_search_reference_authority_projection_read_error()
@@ -469,7 +477,7 @@ def _observe_runtime_asset(
             placeholder_probe=root.placeholder_probe,
         )
         preflight = authorized.preflight_file(asset.relative_path)
-    except OSError, PathSafetyError:
+    except OSError, FilesystemOperationError:
         return RuntimeAssetAvailability.UNKNOWN, None
     if preflight.status is PlaceholderStatus.MISSING:
         return (
@@ -502,7 +510,7 @@ def _observe_runtime_asset(
                 observed_byte_size=None,
             ),
         )
-    except PathLimitError:
+    except FilesystemLimitError:
         return (
             RuntimeAssetAvailability.UNAVAILABLE,
             _runtime_asset_evidence_id(
@@ -513,7 +521,7 @@ def _observe_runtime_asset(
                 observed_byte_size=None,
             ),
         )
-    except OSError, PathSafetyError:
+    except OSError, FilesystemOperationError:
         return RuntimeAssetAvailability.UNKNOWN, None
     availability = (
         RuntimeAssetAvailability.AVAILABLE

@@ -98,13 +98,15 @@ from projectkoios.references.courses.transport.identity import (
 from projectkoios.references.courses.transport.queue import (
     CourseReferenceQueueTransportRequest,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
     SourceBibliographyObservation,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import RootStorageClass
 from projectkoios.references.review import (
     CanonicalAssetDecision,
     ReferenceIdentityDecision,

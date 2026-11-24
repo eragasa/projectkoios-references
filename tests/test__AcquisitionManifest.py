@@ -17,14 +17,18 @@ from projectkoios.references import (
     AcquisitionManifest,
     AcquisitionObservation,
     AcquisitionPublicationError,
-    PathSafetyError,
     ReferenceIOLimitError,
     RightsObservation,
-    RootStorageClass,
     SearchRoot,
     create_acquisition_manifest,
     publish_acquisition_manifest,
     verify_acquisition_manifest,
+)
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 
 from scripts.koios_ref import main
@@ -698,7 +702,7 @@ def test__acquisition_source__rejects_leaf_replacement_during_observation(
     pdf, roots = _source(tmp_path)
     _replace_path_during_first_read(monkeypatch, pdf)
 
-    with pytest.raises(PathSafetyError, match="changed|replaced"):
+    with pytest.raises(FilesystemOperationError, match="changed|replaced"):
         create_acquisition_manifest(
             source_id="operator-recommendation-2026",
             rows=_rows(),
@@ -724,7 +728,7 @@ def test__acquisition_replay__rejects_output_replacement_during_comparison(
     )
     _replace_path_during_first_read(monkeypatch, output)
 
-    with pytest.raises(PathSafetyError, match="changed|replaced"):
+    with pytest.raises(FilesystemOperationError, match="changed|replaced"):
         publish_acquisition_manifest(
             manifest,
             output_path=output,

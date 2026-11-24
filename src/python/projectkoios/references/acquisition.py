@@ -9,6 +9,26 @@ from typing import cast
 from urllib.parse import urlparse
 
 from projectkoios.references.assets import SearchRoot
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.observation.file import FileObservation
+from projectkoios.references.filesystem.path.validation import (
+    validate_relative_path,
+    validate_root_alias,
+)
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.filesystem.root.preflight.support import (
+    PlaceholderProbeSupport,
+)
 from projectkoios.references.io_limits import (
     ACQUISITION_IO_LIMITS,
     ReferenceIOLimitError,
@@ -17,18 +37,6 @@ from projectkoios.references.io_limits import (
     validate_json_text_nesting,
 )
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    FileObservation,
-    PathLimitError,
-    PlaceholderProbeSupport,
-    RootPreflightEvidence,
-    RootStorageClass,
-    validate_citekey,
-    validate_relative_path,
-    validate_root_alias,
-)
 
 ACQUISITION_MANIFEST_SCHEMA_VERSION = 4
 ACQUISITION_ARTIFACT_KIND = "projectkoios.references.acquisition-manifest"
@@ -1067,7 +1075,7 @@ def publish_acquisition_manifest(
             "acquisition manifest output is not a regular file"
         )
     try:
-        published = root.write_bytes(filename, content, replace=False)
+        published = root.create_bytes(filename, content)
     except FileExistsError:
         _require_identical_existing(
             root,
@@ -1094,7 +1102,7 @@ def _require_identical_existing(
 ) -> None:
     try:
         actual = root.read_bytes(filename, max_bytes=maximum)
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise ReferenceIOLimitError(
             resource=error.resource,
             limit_name=error.limit_name,
@@ -1172,7 +1180,7 @@ def _observe_source(
         raise ValueError(
             f"source is not a regular file: {relative_path}"
         ) from error
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         aggregate_limited = remaining_total < max_file_bytes
         raise ReferenceIOLimitError(
             resource=(

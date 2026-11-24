@@ -12,8 +12,8 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.models import normalize_doi
-from projectkoios.references.path_safety import validate_citekey
 
 CITATION_DRAFT_SCHEMA_VERSION = 1
 CITATION_DRAFT_AUTHORITY = "proposed-noncanonical"

@@ -14,8 +14,8 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import validate_citekey
 
 from .errors import CourseReferenceAuthorityError
 

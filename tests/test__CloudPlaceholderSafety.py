@@ -6,18 +6,9 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 from projectkoios.references import (
-    AuthorizedRoot,
     CitationScanMode,
-    CloudPlaceholderProbe,
-    CloudRootMutationError,
-    PlaceholderObservation,
-    PlaceholderPreflightError,
-    PlaceholderProbeSupport,
-    PlaceholderStatus,
     ProducerIdentity,
     ReferenceCandidate,
-    RootPreflightEvidence,
-    RootStorageClass,
 )
 from projectkoios.references.acquisition import create_acquisition_manifest
 from projectkoios.references.assets import (
@@ -41,7 +32,30 @@ from projectkoios.references.collections.reconciliation.reconciliation import (
     CollectionReconciler,
     CollectionReconciliationRequest,
 )
-from projectkoios.references.path_safety import read_path_bytes
+from projectkoios.references.filesystem.path.read import read_path_bytes
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.error import CloudRootMutationError
+from projectkoios.references.filesystem.root.preflight.error import (
+    PlaceholderPreflightError,
+)
+from projectkoios.references.filesystem.root.preflight.evidence import (
+    RootPreflightEvidence,
+)
+from projectkoios.references.filesystem.root.preflight.observation import (
+    PlaceholderObservation,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.filesystem.root.preflight.support import (
+    PlaceholderProbeSupport,
+)
 from projectkoios.references.validation import validate_reference_objects
 
 from scripts.koios_ref import main
@@ -235,9 +249,7 @@ def test__bound_cloud_mutation_methods_are_forbidden(tmp_path: Path) -> None:
     with pytest.raises(CloudRootMutationError):
         root.create_directory("child")
     with pytest.raises(CloudRootMutationError):
-        root.rename_child("source.pdf", "renamed.pdf")
-    with pytest.raises(CloudRootMutationError):
-        root.write_bytes("result.pdf", b"bytes", replace=False)
+        root.create_bytes("result.pdf", b"bytes")
     with pytest.raises(CloudRootMutationError):
         root.copy_file_from(
             local,

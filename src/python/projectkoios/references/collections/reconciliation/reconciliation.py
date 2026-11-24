@@ -19,10 +19,17 @@ from projectkoios.references.citation.closure import (
     CITATION_PARSER_VERSION,
     CitationClosure,
 )
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.coverage import (
     AmbiguityEvaluation,
     CoverageObservation,
     CoverageState,
+)
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.root.preflight.observation import (
+    PlaceholderObservation,
 )
 from projectkoios.references.identity import ReferenceCandidate
 from projectkoios.references.io_limits import (
@@ -31,11 +38,6 @@ from projectkoios.references.io_limits import (
     ReferenceIOLimits,
 )
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import (
-    PathSafetyError,
-    PlaceholderObservation,
-    validate_citekey,
-)
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,
     FrozenCounts,
@@ -387,7 +389,7 @@ class CollectionReconciler(
                 validate_citekey(citekey, field="acquisition-evidence citekey")
             for citekey in catalog_assets_by_citekey:
                 validate_citekey(citekey, field="catalog-asset citekey")
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise CollectionReconciliationError(str(error)) from error
         if len(citekeys) != len(set(citekeys)):
             raise CollectionReconciliationError(

@@ -4,20 +4,26 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.error import (
+    PlaceholderPreflightError,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.status import (
+    PlaceholderStatus,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import ReferenceCandidate
 from projectkoios.references.io_limits import (
     VALIDATION_IO_LIMITS,
     ReferenceIOLimitError,
     ReferenceIOLimits,
-)
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    PathLimitError,
-    PlaceholderPreflightError,
-    PlaceholderStatus,
-    RootStorageClass,
-    validate_citekey,
 )
 
 _CITEKEY_FIELD = re.compile(r'^citekey:\s*["\']?([^"\'\s]+)')
@@ -92,7 +98,7 @@ def validate_reference_objects(
             max_entries=max_entries_per_root,
             max_depth=1,
         )
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise _limit_error(error, limits) from error
     total_files = len(note_files) + len(pdf_files)
     max_files = _required_limit(limits.max_files, "max_files")
@@ -174,7 +180,7 @@ def _declared_citekey(
     )
     try:
         content = root.read_bytes(relative, max_bytes=max_file_bytes)
-    except PathLimitError as error:
+    except FilesystemLimitError as error:
         raise _limit_error(error, limits) from error
     text = content.decode("utf-8")
     for number, line in enumerate(text.splitlines()):
@@ -193,7 +199,7 @@ def _required_limit(value: int | None, name: str) -> int:
 
 
 def _limit_error(
-    error: PathLimitError,
+    error: FilesystemLimitError,
     limits: ReferenceIOLimits,
 ) -> ReferenceIOLimitError:
     return ReferenceIOLimitError(

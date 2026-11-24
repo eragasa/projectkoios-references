@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from projectkoios.references.path_safety import (
-    validate_citekey,
+from projectkoios.references.citation.key.validation import validate_citekey
+from projectkoios.references.filesystem.path.validation import (
     validate_relative_path,
     validate_root_alias,
 )

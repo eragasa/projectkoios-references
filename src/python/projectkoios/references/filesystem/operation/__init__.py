@@ -1,0 +1,1 @@
+"""Shared filesystem operation categories."""

@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from projectkoios.references.citation.key.error import CitationKeyError
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.citations import (
     CITATION_DOCUMENT_MAX_CANONICAL_PAYLOAD_BYTES,
     CITATION_DOCUMENT_MAX_CITATION_KEY_CHARACTERS,
@@ -26,9 +28,10 @@ from projectkoios.references.citations import (
     CitationTargetSnapshot,
     CitationTargetSourceGap,
 )
-from projectkoios.references.path_safety import (
-    PathSafetyError,
-    validate_citekey,
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.validation import (
     validate_relative_path,
 )
 
@@ -337,7 +340,7 @@ def test__owner_valid_literal_keys_are_not_treated_as_filenames(
     )
 
     assert adapted.key == literal_citekey
-    with pytest.raises(PathSafetyError):
+    with pytest.raises(CitationKeyError):
         validate_citekey(literal_citekey)
 
 
@@ -351,7 +354,7 @@ def test__owner_valid_posix_source_path_is_not_treated_as_a_portable_path() -> (
     adapted = replace(snapshot.occurrences[0].locator, source_path=source_path)
 
     assert adapted.source_path == source_path
-    with pytest.raises(PathSafetyError):
+    with pytest.raises(FilesystemOperationError):
         validate_relative_path(source_path)
 
 

@@ -30,12 +30,14 @@ from projectkoios.references.catalog import (
     CatalogConflictError,
     ReferenceCatalog,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
     SourceBibliographyObservation,
 )
-from projectkoios.references.path_safety import RootStorageClass
 from test_asset_authorization_helpers import authorize_asset
 
 from scripts.koios_ref import main

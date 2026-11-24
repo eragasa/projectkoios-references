@@ -11,10 +11,10 @@ from enum import Enum
 from projectkoios.base import (
     DataObjectModel,
 )
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.identity import (
     ReferenceCandidate,
 )
-from projectkoios.references.path_safety import validate_citekey
 from projectkoios.references.review import (
     CanonicalAssetDecision,
     HumanReviewDimension,

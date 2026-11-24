@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import hashlib
 
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
 from projectkoios.references.io_limits import (
     ReferenceIOLimitError,
     ReferenceIOLimits,
-)
-from projectkoios.references.path_safety import (
-    PathLimitError,
 )
 from projectkoios.references.reconciliation_package import (
     canonical_json_bytes,
@@ -62,7 +60,7 @@ def _required_limit(value: int | None, name: str) -> int:
 
 
 def _limit_error(
-    error: PathLimitError,
+    error: FilesystemLimitError,
     limits: ReferenceIOLimits,
 ) -> ReferenceIOLimitError:
     return ReferenceIOLimitError(

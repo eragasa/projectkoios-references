@@ -45,11 +45,13 @@ from projectkoios.references.courses.authority.selected_bibliography import (
     CourseReferenceSelectedBibliographyProjectionRequest,
     CourseReferenceSelectedBibliographySelection,
 )
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.identity import (
     ProducerIdentity,
     ReferenceCandidate,
 )
-from projectkoios.references.path_safety import RootStorageClass
 
 
 def _cid(kind: str, value: str) -> str:

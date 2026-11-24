@@ -9,10 +9,10 @@ from projectkoios.references.assets import (
     materialize_asset_with_result,
 )
 from projectkoios.references.catalog import ReferenceCatalog
+from projectkoios.references.filesystem.path.read import read_path_text
 from projectkoios.references.identity import IdentityProjection
 from projectkoios.references.io_limits import ASSET_DISCOVERY_IO_LIMITS
 from projectkoios.references.models import SourceAssetRecord
-from projectkoios.references.path_safety import read_path_text
 
 from .error import AssetApplicationError
 from .request import AssetApplicationOperationRequest

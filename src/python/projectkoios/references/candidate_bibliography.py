@@ -17,8 +17,8 @@ from projectkoios.base import (
     DataObjectModel,
 )
 from projectkoios.references.biblatex import biblatex_parser_identity
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.identity import SourceBibliographyObservation
-from projectkoios.references.path_safety import validate_citekey
 from pybtex.database import parse_string  # type: ignore[import-untyped]
 from pybtex.scanner import PybtexSyntaxError  # type: ignore[import-untyped]
 

@@ -3,16 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from projectkoios.references import (
-    PathSafetyError,
-    RootStorageClass,
-)
 from projectkoios.references.collections.reconciliation.errors import (
     CollectionReconciliationError,
 )
 from projectkoios.references.collections.reconciliation.loading import (
     ManagedPdfScanner,
     ManagedPdfScanRequest,
+)
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
 )
 from projectkoios.references.identity import (
     ProducerIdentity,
@@ -54,7 +56,7 @@ def test__managed_pdf_and_object_validation__reject_symlinks(
     outside_note = tmp_path / "outside.md"
     outside_note.write_text("citekey: example2026\n", encoding="utf-8")
     (notes / "example2026.md").symlink_to(outside_note)
-    with pytest.raises(PathSafetyError, match="symlink"):
+    with pytest.raises(FilesystemOperationError, match="symlink"):
         validate_reference_objects(
             (_record(),),
             notes_directory=notes,

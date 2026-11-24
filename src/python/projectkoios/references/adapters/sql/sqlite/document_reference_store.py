@@ -74,8 +74,10 @@ from projectkoios.references.document.reference.documents.receipt.effect import 
 from projectkoios.references.document.reference.errors import (
     DocumentReferenceStoreError,
 )
-from projectkoios.references.path_safety.preflight import RootStorageClass
-from projectkoios.references.path_safety.root import AuthorizedRoot
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 _DATABASE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}\.sqlite3")
 
@@ -130,10 +132,9 @@ class SqliteDocumentReferenceStore:
                 )
             if state == "missing":
                 try:
-                    self._database_root.write_bytes(
+                    self._database_root.create_bytes(
                         self._database_name,
                         b"",
-                        replace=False,
                     )
                 except FileExistsError:
                     pass

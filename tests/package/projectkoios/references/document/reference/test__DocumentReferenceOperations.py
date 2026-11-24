@@ -82,8 +82,10 @@ from projectkoios.references.document.reference.intake.request import (
 from projectkoios.references.document.reference.intake.status import (
     ReferencePdfProvisionStatus,
 )
-from projectkoios.references.path_safety.preflight import RootStorageClass
-from projectkoios.references.path_safety.root import AuthorizedRoot
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 PybtexBibliographyMetadataReader = (
     pybtex_metadata_reader.PybtexBibliographyMetadataReader

@@ -14,7 +14,9 @@ from projectkoios.references.collections.reconciliation.operation import (
     CollectionReconciliationOperationRequest,
     CollectionReconciliationOperationResult,
 )
-from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 
 from scripts.koios_ref import main
 

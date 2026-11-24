@@ -1,1 +1,1 @@
-"""Citation ownership boundaries."""
+"""Citation-domain ownership."""

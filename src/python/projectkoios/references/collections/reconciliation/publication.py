@@ -11,17 +11,25 @@ from projectkoios.base import (
     DataObjectActionResult,
     DataObjectModel,
 )
-from projectkoios.references.io_limits import RECONCILIATION_PACKAGE_IO_LIMITS
-from projectkoios.references.path_safety import (
-    AuthorizedRoot,
-    CloudPlaceholderProbe,
-    CloudRootMutationError,
-    PathLimitError,
-    PathSafetyError,
-    PlaceholderPreflightError,
-    RootStorageClass,
+from projectkoios.references.filesystem.limit.error import FilesystemLimitError
+from projectkoios.references.filesystem.operation.error import (
+    FilesystemOperationError,
+)
+from projectkoios.references.filesystem.path.validation import (
     validate_relative_path,
 )
+from projectkoios.references.filesystem.root.capability import AuthorizedRoot
+from projectkoios.references.filesystem.root.error import CloudRootMutationError
+from projectkoios.references.filesystem.root.preflight.error import (
+    PlaceholderPreflightError,
+)
+from projectkoios.references.filesystem.root.preflight.probe import (
+    CloudPlaceholderProbe,
+)
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.io_limits import RECONCILIATION_PACKAGE_IO_LIMITS
 from projectkoios.references.reconciliation_package import (
     PACKAGE_MANIFEST_FILENAME,
     LoadedReconciliationPackage,
@@ -165,7 +173,7 @@ class ReconciliationPublisher(
             output_state = parent.state(output_name)
         except CloudRootMutationError, PlaceholderPreflightError:
             raise
-        except PathSafetyError as error:
+        except FilesystemOperationError as error:
             raise CollectionReconciliationError(str(error)) from error
         if output_state == "regular":
             raise CollectionReconciliationError(
@@ -174,11 +182,11 @@ class ReconciliationPublisher(
         if output_state == "directory":
             try:
                 _bind_reconciliation_publication(parent, output_name, expected)
-            except PathLimitError as error:
+            except FilesystemLimitError as error:
                 raise _limit_error(
                     error, RECONCILIATION_PACKAGE_IO_LIMITS
                 ) from error
-            except PathSafetyError as error:
+            except FilesystemOperationError as error:
                 raise CollectionReconciliationError(str(error)) from error
             return ReconciliationPublicationResult(
                 request=request,
@@ -193,11 +201,11 @@ class ReconciliationPublisher(
         except FileExistsError:
             try:
                 _bind_reconciliation_publication(parent, output_name, expected)
-            except PathLimitError as error:
+            except FilesystemLimitError as error:
                 raise _limit_error(
                     error, RECONCILIATION_PACKAGE_IO_LIMITS
                 ) from error
-            except PathSafetyError as error:
+            except FilesystemOperationError as error:
                 raise CollectionReconciliationError(str(error)) from error
             return ReconciliationPublicationResult(
                 request=request,
@@ -209,11 +217,10 @@ class ReconciliationPublisher(
             )
         try:
             for name in sorted(set(expected) - {PACKAGE_MANIFEST_FILENAME}):
-                published.write_bytes(name, expected[name], replace=False)
-            published.write_bytes(
+                published.create_bytes(name, expected[name])
+            published.create_bytes(
                 PACKAGE_MANIFEST_FILENAME,
                 expected[PACKAGE_MANIFEST_FILENAME],
-                replace=False,
             )
             _verify_reconciliation_publication(published, expected)
         except Exception as error:

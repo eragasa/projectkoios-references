@@ -13,20 +13,30 @@ from projectkoios.references.collections.reconciliation.evidence import (
 from projectkoios.references.collections.reconciliation.loading import (
     ManagedPdf,
 )
-from projectkoios.references.ingestion_evidence import (
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
+from projectkoios.references.ingestion.evidence.contract import (
     REFERENCE_EVIDENCE_CONTRACT_STATUS,
     REFERENCE_EVIDENCE_MAX_BYTES,
+)
+from projectkoios.references.ingestion.evidence.error import (
     IngestionEvidenceLimitError,
     IngestionEvidenceParseError,
     IngestionEvidenceVerificationError,
-    load_ingestion_reference_evidence,
-    parse_reference_evidence,
-    verify_reference_evidence_source,
 )
-from projectkoios.references.ingestion_evidence import (
+from projectkoios.references.ingestion.evidence.input import (
     ReferenceEvidenceInput as _ReferenceEvidenceInput,
 )
-from projectkoios.references.path_safety import RootStorageClass
+from projectkoios.references.ingestion.evidence.loading.action import (
+    load_ingestion_reference_evidence,
+)
+from projectkoios.references.ingestion.evidence.parsing.action import (
+    parse_reference_evidence,
+)
+from projectkoios.references.ingestion.evidence.verification.action import (
+    verify_reference_evidence_source,
+)
 
 from scripts.koios_ref import main
 

@@ -1,9 +1,11 @@
 from pathlib import Path
 
+from projectkoios.references.filesystem.root.preflight.storage import (
+    RootStorageClass,
+)
 from projectkoios.references.graph import (
     load_candidate_graph as _load_candidate_graph,
 )
-from projectkoios.references.path_safety import RootStorageClass
 
 
 def load_candidate_graph(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]

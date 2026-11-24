@@ -13,7 +13,7 @@ from projectkoios.base import (
     DataObjectActionRequest,
     DataObjectActionResult,
 )
-from projectkoios.references.path_safety import validate_citekey
+from projectkoios.references.citation.key.validation import validate_citekey
 from projectkoios.references.review import (
     HumanReviewDimension,
     ReferenceIdentityDecision,

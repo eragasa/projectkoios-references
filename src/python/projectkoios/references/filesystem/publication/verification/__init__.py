@@ -1,0 +1,1 @@
+"""Published-file verification."""
