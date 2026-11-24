@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from typing import BinaryIO, final
 
-from projectkoios.references.document_reference.constants import MAX_PDF_BYTES
-from projectkoios.references.document_reference.documents.errors import (
+from projectkoios.references.document.reference.constants import MAX_PDF_BYTES
+from projectkoios.references.document.reference.documents.errors import (
     DocumentContentConflict,
 )
-from projectkoios.references.document_reference.documents.receipt.errors import (  # noqa: E501
+from projectkoios.references.document.reference.documents.pdf.stored import (
+    StoredPdfObject,
+)
+from projectkoios.references.document.reference.documents.receipt.errors import (  # noqa: E501
     InvalidPdfUpload,
     PdfUploadTooLarge,
 )
-from projectkoios.references.document_reference.documents.stored_pdf import (
-    StoredPdfObject,
-)
-from projectkoios.references.document_reference.errors import (
+from projectkoios.references.document.reference.errors import (
     DocumentReferenceStoreError,
 )
 from projectkoios.references.path_safety.errors import (

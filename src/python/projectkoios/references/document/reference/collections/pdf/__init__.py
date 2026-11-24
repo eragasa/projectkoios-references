@@ -1,0 +1,1 @@
+"""Collection PDF requirement records."""

@@ -96,7 +96,7 @@ object storage.
 ```bash
 uv run python -m pytest -q \
   tests/test__DocumentReferenceSchema.py \
-  tests/package/projectkoios/references/document_reference/test__DocumentReferenceOperations.py
+  tests/package/projectkoios/references/document/reference/test__DocumentReferenceOperations.py
 uv run ruff check src/python tests tools
 uv run mypy src/python/projectkoios/references
 ```

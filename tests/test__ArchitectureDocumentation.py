@@ -109,7 +109,7 @@ MIGRATED_MODULES = {
         "ReferenceStateReplayRequest",
         "ReferenceStateReplayResult",
     },
-    "document_reference": {
+    "document/reference": {
         "AbstractDocumentReferenceDataObject",
         "AbstractRebuildReplayDataObject",
         "AbstractSameStoreReplayDataObject",
@@ -394,9 +394,24 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         assert len(_public_classes(source)) == 1, source
     assert not (source_root / "catalog.py").exists()
     assert not (source_root / "document_reference.py").exists()
-    document_reference = source_root / "document_reference"
+    assert not (source_root / "document_reference").exists()
+    document = source_root / "document"
+    document_reference = document / "reference"
     assert document_reference.is_dir()
-    for initializer in document_reference.rglob("__init__.py"):
+    for obsolete in (
+        "bibliography/metadata/errors.py",
+        "bindings/errors.py",
+        "bindings/verified_local",
+        "collections/pdf_requirement.py",
+        "documents/stored_pdf.py",
+        "replay/same_store",
+        "replay/same",
+    ):
+        assert not (document_reference / obsolete).exists()
+    for initializer in (
+        document / "__init__.py",
+        *document_reference.rglob("__init__.py"),
+    ):
         tree = ast.parse(initializer.read_text(encoding="utf-8"))
         assert all(
             isinstance(node, ast.Expr)
@@ -410,11 +425,11 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             for node in tree.body
         ), source
-        if source.name in {"__init__.py", "errors.py"}:
+        if source.name in {"__init__.py", "error.py", "errors.py"}:
             continue
         assert len(_public_classes(source)) <= 1, source
     assert (
-        REPOSITORY / "tests/package/projectkoios/references/document_reference/"
+        REPOSITORY / "tests/package/projectkoios/references/document/reference/"
         "test__DocumentReferenceOperations.py"
     ).is_file()
     assert (source_root / "catalog" / "__init__.py").is_file()
