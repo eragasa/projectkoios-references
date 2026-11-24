@@ -687,9 +687,9 @@ def test__citation_closure_cli__requires_explicit_mode_and_entrypoint(
         "--manuscript-storage-class",
         "local",
     ]
-    with pytest.raises(SystemExit, match="--manuscript-mode"):
+    with pytest.raises(SystemExit, match="manuscript root, storage class"):
         main(common)
-    with pytest.raises(SystemExit, match="--manuscript-entrypoint"):
+    with pytest.raises(SystemExit, match="requires an entrypoint"):
         main([*common, "--manuscript-mode", "build-graph"])
 
 

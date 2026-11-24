@@ -35,6 +35,12 @@ from projectkoios.references.collections.reconciliation.manifest import (
     CollectionManifest,
     ReconciliationOutputs,
 )
+from projectkoios.references.collections.reconciliation.operation import (
+    COLLECTION_RECONCILIATION_OPERATION_ACTION_ID,
+    CollectionReconciliationOperation,
+    CollectionReconciliationOperationRequest,
+    CollectionReconciliationOperationResult,
+)
 from projectkoios.references.collections.reconciliation.publication import (
     PublicationResult,
     ReconciliationPackageParser,
@@ -73,6 +79,7 @@ _REQUESTS = (
     CollectionRowsLoadRequest,
     ManagedPdfScanRequest,
     CollectionReconciliationRequest,
+    CollectionReconciliationOperationRequest,
     ReconciliationPackageParseRequest,
     ReconciliationPackageVerificationRequest,
     ReconciliationPublicationRequest,
@@ -82,6 +89,7 @@ _RESULTS = (
     CollectionRowsLoadResult,
     ManagedPdfScanResult,
     CollectionReconciliationResult,
+    CollectionReconciliationOperationResult,
     ReconciliationPackageParseResult,
     ReconciliationPackageVerificationResult,
     ReconciliationPublicationResult,
@@ -91,6 +99,7 @@ _ACTIONIZERS = (
     CollectionRowsLoader,
     ManagedPdfScanner,
     CollectionReconciler,
+    CollectionReconciliationOperation,
     ReconciliationPackageParser,
     ReconciliationPackageVerifier,
     ReconciliationPublisher,
@@ -107,6 +116,9 @@ def test__reconciliation_package__uses_classic_data_object_roles() -> None:
     assert all(issubclass(value, DataObjectActionResult) for value in _RESULTS)
     assert all(
         issubclass(value, DataObjectActionizer) for value in _ACTIONIZERS
+    )
+    assert CollectionReconciliationOperation.action_id == (
+        COLLECTION_RECONCILIATION_OPERATION_ACTION_ID
     )
     for actionizer in _ACTIONIZERS:
         methods = {

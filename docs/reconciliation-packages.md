@@ -89,6 +89,11 @@ The canonical Python API is owned by
 `projectkoios.references.collections.reconciliation` and provides explicit
 action families:
 
+- `CollectionReconciliationOperation.action` with
+  `CollectionReconciliationOperationRequest`/
+  `CollectionReconciliationOperationResult` for the complete runtime-neutral
+  owner operation from explicit runtime capabilities through verified
+  create-once publication;
 - `ReconciliationPackageParser.action` with
   `ReconciliationPackageParseRequest`/`ReconciliationPackageParseResult` for
   strict manifest-text parsing;
@@ -104,6 +109,11 @@ action families:
   create-once publication.
 
 The package exposes no free-function or root-package compatibility facade.
+The complete operation has stable action identity
+`projectkoios.references.collections.reconciliation.operation@1`. Workflow CPN
+transitions may bind that identity explicitly, treating requests and results as
+token colors; References does not infer topology or persist scheduler, marking,
+retry, checkpoint, or transition-occurrence state.
 
 Publication creates an empty temporary directory under the authorized parent
 and atomically claims the final name with a platform no-replace directory

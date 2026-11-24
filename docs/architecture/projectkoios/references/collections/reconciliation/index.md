@@ -23,6 +23,12 @@ Reconciliation:
 - [`CollectionReconciliationResult`](CollectionReconciliationResult/index.md)
 - [`CollectionReconciler`](CollectionReconciler/index.md)
 
+Complete runtime-neutral owner operation:
+
+- [`CollectionReconciliationOperationRequest`](CollectionReconciliationOperationRequest/index.md)
+- [`CollectionReconciliationOperationResult`](CollectionReconciliationOperationResult/index.md)
+- [`CollectionReconciliationOperation`](CollectionReconciliationOperation/index.md)
+
 Publication, parsing, verification, and replay:
 
 - [`ReconciliationPublicationRequest`](ReconciliationPublicationRequest/index.md)
@@ -61,7 +67,9 @@ Publication, parsing, verification, and replay:
 Reconciliation preserves and projects supplied evidence. It does not create
 identity, rights, reading, scientific, Search, ingestion, use, or publication
 authority. Publication succeeds only after package files and the manifest replay
-exactly and the completed output directory verifies in place.
+exactly and the completed output directory verifies in place. The complete
+operation exposes a stable owner action identity for explicit CPN transition
+binding; it does not infer Workflow topology or embed runtime state.
 
 ## Detail
 
