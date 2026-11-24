@@ -37,7 +37,8 @@ FIXTURE = (
     REPOSITORY
     / "tests"
     / "fixtures"
-    / "citation_document"
+    / "citation"
+    / "document"
     / "ksdft-3ec21b4-compact-result.json"
 )
 OWNER_COMMIT = "3ec21b4318020d700be671a8f220b2149b3d28c7"

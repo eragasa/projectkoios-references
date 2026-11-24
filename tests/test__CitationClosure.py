@@ -6,9 +6,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-import projectkoios.references.citation_closure as citation_closure_module
+import projectkoios.references.citation.closure as citation_closure_module
 import pytest
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CITATION_CLOSURE_SCHEMA_VERSION,
     DEFAULT_CITATION_PARSER_CONFIGURATION,
     CitationCoverageIncomplete,

@@ -8,7 +8,7 @@ from typing import final
 from projectkoios.base import DataObjectModel
 from projectkoios.references.acquisition import AcquisitionProjection
 from projectkoios.references.assets import AssetDiscoveryPlan
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CitationClosure,
 )
 from projectkoios.references.coverage import (

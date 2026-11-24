@@ -12,9 +12,9 @@ manuscript use, rights clearance, or publication acceptance.
 - [`citations`](citations/index.md) — canonical target citation inventory.
 - [`bibliography`](bibliography/index.md) — exact bibliography evidence binding
   and membership state.
-- [`citation_identity`](citation_identity/index.md) — a
+- [`citation.identity`](citation/identity/index.md) — a
   bounded citation-facing projection over replay-derived identity state.
-- [`citation_document`](citation_document/index.md) — deterministic
+- [`citation.document`](citation/document/index.md) — deterministic
   whole-target citation correlation and neutral source-document linkage.
 - [`document.reference`](document/reference/index.md) — independent document
   and reference identity, custody, collection requirements, and neutral binding.

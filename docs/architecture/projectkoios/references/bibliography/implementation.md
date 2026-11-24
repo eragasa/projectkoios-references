@@ -17,7 +17,7 @@ correlation: only candidates naming the exact bound observation and exact
 literal bibliography key are retained.
 
 The package depends on citation base records and existing References identity
-evidence. It does not import `citation_document`; projection depends on this
+evidence. It does not import `citation.document`; projection depends on this
 package in the forward direction.
 
 - [Module index](index.md)

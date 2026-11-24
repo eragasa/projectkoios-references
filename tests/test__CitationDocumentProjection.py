@@ -20,7 +20,7 @@ from projectkoios.references.bibliography import (
 from projectkoios.references.bibliography.resolution import (
     candidate_identity_ids_by_key,
 )
-from projectkoios.references.citation_document import (
+from projectkoios.references.citation.document._contract import (
     CITATION_DOCUMENT_MAX_AGGREGATE_EVIDENCE_IDS,
     CITATION_DOCUMENT_MAX_DOCUMENTS_PER_KEY,
     CITATION_DOCUMENT_MAX_EVIDENCE_IDS_PER_KEY,
@@ -29,20 +29,28 @@ from projectkoios.references.citation_document import (
     CITATION_DOCUMENT_MAX_SOURCE_DOCUMENTS,
     CITATION_DOCUMENT_PROJECTION_CONTRACT_ID,
     CITATION_SOURCE_DOCUMENT_LINK_CONTRACT_ID,
-    CitationDocumentAvailabilityStatus,
+)
+from projectkoios.references.citation.document.document import (
+    CitationSourceDocumentDescriptor,
+    CitationSourceDocumentObservation,
+)
+from projectkoios.references.citation.document.linkage import (
+    CitationSourceDocumentLink,
+    CitationSourceDocumentLinker,
+    CitationSourceDocumentLinkRequest,
+    CitationSourceDocumentLinkResult,
+)
+from projectkoios.references.citation.document.projection import (
     CitationDocumentProjection,
     CitationDocumentProjectionItem,
     CitationDocumentProjectionRequest,
     CitationDocumentProjectionResult,
     CitationDocumentProjector,
-    CitationSourceDocumentDescriptor,
-    CitationSourceDocumentLink,
-    CitationSourceDocumentLinker,
-    CitationSourceDocumentLinkRequest,
-    CitationSourceDocumentLinkResult,
-    CitationSourceDocumentObservation,
 )
-from projectkoios.references.citation_identity import (
+from projectkoios.references.citation.document.statuses import (
+    CitationDocumentAvailabilityStatus,
+)
+from projectkoios.references.citation.identity import (
     CitationIdentityProjectionStatus,
 )
 from projectkoios.references.citations import (

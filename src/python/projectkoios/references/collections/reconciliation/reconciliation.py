@@ -15,7 +15,7 @@ from projectkoios.base import (
 )
 from projectkoios.references.acquisition import AcquisitionProjection
 from projectkoios.references.assets import AssetDiscoveryPlan
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CITATION_PARSER_VERSION,
     CitationClosure,
 )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from projectkoios.references.citation_identity import (
+from projectkoios.references.citation.identity import (
     CITATION_IDENTITY_PROJECTION_MAX_IDENTITIES,
     CitationIdentityProjectionItem,
     CitationIdentityProjectionRequest,

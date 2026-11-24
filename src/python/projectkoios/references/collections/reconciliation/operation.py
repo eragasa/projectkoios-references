@@ -16,7 +16,7 @@ from projectkoios.references.biblatex import (
     load_bibliography,
 )
 from projectkoios.references.catalog import ReferenceCatalog
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CitationScanMode,
     build_citation_closure,
 )

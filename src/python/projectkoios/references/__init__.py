@@ -82,7 +82,7 @@ from projectkoios.references.catalog import (
     CatalogSchemaInfo,
     ReferenceCatalog,
 )
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CITATION_CLOSURE_SCHEMA_VERSION,
     CITATION_PARSER_NAME,
     CITATION_PARSER_VERSION,

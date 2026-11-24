@@ -4,7 +4,7 @@ import csv
 import io
 import json
 
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import (
     CitationClosure,
 )
 from projectkoios.references.coverage import (

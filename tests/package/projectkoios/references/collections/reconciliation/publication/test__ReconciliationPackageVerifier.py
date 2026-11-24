@@ -8,8 +8,8 @@ from dataclasses import FrozenInstanceError, fields, is_dataclass, replace
 from pathlib import Path
 
 import pytest
-from projectkoios.references.citation_closure import CitationScanMode
-from projectkoios.references.citation_closure import (
+from projectkoios.references.citation.closure import CitationScanMode
+from projectkoios.references.citation.closure import (
     build_citation_closure as _build_citation_closure,
 )
 from projectkoios.references.collections.reconciliation.errors import (

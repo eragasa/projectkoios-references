@@ -440,7 +440,7 @@ class TaxonomyMilestoneVerifier:
 
             from projectkoios.base import DataObjectActionizer, DataObjectModel
             from projectkoios.references import ReferenceFilenames
-            from projectkoios.references.citation_draft import (
+            from projectkoios.references.citation.draft import (
                 CitationDraftParser,
                 CitationDraftRenderer,
             )
