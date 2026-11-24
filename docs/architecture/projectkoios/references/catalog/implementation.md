@@ -1,7 +1,8 @@
 # Catalog implementation
 
-`ReferenceCatalog` remains the sole public orchestration facade. Its package is
-partitioned by responsibility without introducing a second catalog abstraction:
+`ReferenceCatalog` remains the storage facade. `ReferenceDocumentReader` is a
+small read actionizer over that facade and an explicit identity registry; it
+introduces no second store or schema:
 
 - `schema.py` owns normalized SQL, schema fingerprints, schema metadata, known
   legacy layouts, migration plans, and catalog exception types.
@@ -11,12 +12,16 @@ partitioned by responsibility without introducing a second catalog abstraction:
   replay checks.
 - `_internals.py` owns private schema inspection, migration snapshot/restore,
   exact inserts, SQLite setup, and path authorization.
-- `__init__.py` preserves public imports and owns orchestration, transactions,
-  exports, and domain-facing catalog operations.
+- `documents.py` owns stable application document IDs and privacy-reduced reads;
+  it performs no writes and does not depend on Search or Ingestion.
+- `__init__.py` preserves intentional public imports and owns storage
+  orchestration, transactions, exports, and domain-facing catalog operations.
 
 ```mermaid
 flowchart TD
-    C[ReferenceCatalog facade] --> T[Explicit read or write transaction]
+    D[ReferenceDocumentReader] --> C[ReferenceCatalog facade]
+    D --> G[Explicit ReferenceDocumentRegistry]
+    C --> T[Explicit read or write transaction]
     T --> S[Schema inspection and exact fingerprint]
     S -->|unknown or inconsistent| F[Fail closed without mutation]
     S -->|known legacy| M[Explicit migration plan]

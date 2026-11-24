@@ -16,6 +16,16 @@ transaction boundaries, JSON exports, or database compatibility.
 - [`CatalogSchemaInfo`](CatalogSchemaInfo/index.md)
 - [`CatalogMigrationPlan`](CatalogMigrationPlan/index.md)
 - [`ReferenceCatalog`](ReferenceCatalog/index.md)
+- [`ReferenceDocumentAudience`](ReferenceDocumentAudience/index.md)
+- [`ReferenceDocumentBinding`](ReferenceDocumentBinding/index.md)
+- [`ReferenceDocumentRegistry`](ReferenceDocumentRegistry/index.md)
+- [`ReferenceDocument`](ReferenceDocument/index.md)
+- [`ReferenceDocumentReadRequest`](ReferenceDocumentReadRequest/index.md)
+- [`ReferenceDocumentReadResult`](ReferenceDocumentReadResult/index.md)
+- [`ReferenceDocumentReader`](ReferenceDocumentReader/index.md)
+- [`ReferenceDocumentCatalog`](ReferenceDocumentCatalog/index.md)
+- [`ReferenceDocumentReadError`](ReferenceDocumentReadError/index.md)
+- [`ReferenceDocumentNotFound`](ReferenceDocumentNotFound/index.md)
 
 ## Authority boundary
 
@@ -31,4 +41,5 @@ Authoritative immutable records remain owned by their source contracts.
 - source: [`catalog`](../../../../../src/python/projectkoios/references/catalog/)
 - schema and migration tests: [`test__CatalogSchema.py`](../../../../../tests/test__CatalogSchema.py)
 - catalog behavior tests: [`test__ReferenceCatalog.py`](../../../../../tests/test__ReferenceCatalog.py)
+- document reader tests: [`test__ReferenceDocumentReader.py`](../../../../../tests/package/projectkoios/references/catalog/documents/test__ReferenceDocumentReader.py)
 - [Package index](../index.md)

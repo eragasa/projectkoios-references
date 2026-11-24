@@ -4,4 +4,4 @@ An exact immutable binding from one target bibliography entry to one References 
 
 This public class is implemented and validated in the owning module; it introduces no rights, review, manuscript-use, ingestion, scientific, or publication authority.
 
-Evidence: [module implementation](../implementation.md) and [`test__CitationDocumentProjection.py`](../../../../../../tests/test__CitationDocumentProjection.py).
+Evidence: [module implementation](../implementation.md) and [`test__CitationBibliographyBinding.py`](../../../../../../tests/test__CitationBibliographyBinding.py).
