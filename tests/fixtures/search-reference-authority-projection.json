@@ -1,0 +1,35 @@
+{
+  "bindings": [
+    {
+      "accepted_citekey": "Synthetic1994",
+      "authority_binding_id": "reference-source-asset-binding:sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "authority_evidence_ids": [
+        "catalog-asset-observation:sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "managed-artifact-verification-result:sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "reading-evidence-document:sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "reading-managed-artifact-source:sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "reference-ingestion-artifact-link:sha256:59e437d6aaf187acb5066537ad782d19288a2390ae9907a2d61e5ef39c00ca83"
+      ],
+      "bibliographic_work_id": "bibliographic-work:sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "binding_id": "search-reference-authority-binding:sha256:6fc4fbe88b350b629bec326d92e774225f010dd5d24c10794c239af9b295b2e5",
+      "candidate_id": "reference-candidate:sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "canonical_asset_decision_id": "review-decision:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity_decision_id": "review-decision:sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "ingestion_artifact_links": [
+        {
+          "artifact_verification_result_id": "managed-artifact-verification-result:sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "asset_observation_id": "catalog-asset-observation:sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "document_id": "reading-evidence-document:sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "link_id": "reference-ingestion-artifact-link:sha256:59e437d6aaf187acb5066537ad782d19288a2390ae9907a2d61e5ef39c00ca83",
+          "source_id": "reading-managed-artifact-source:sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ],
+      "reference_identity_status": "accepted",
+      "source_asset_id": "source-asset:sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "state_projection_id": "reference-state-projection:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "projection_id": "search-reference-authority-projection:sha256:4bfe2c6354f74bfa8501cfcc7546db32311ee69f6a81ea0e075dd3919b358302",
+  "result_id": "search-reference-authority-result:sha256:3b6857b84357d731b276204eb38d9352d51d66b7476c344c1aedefb0270a49e5",
+  "review_projection_id": "review-projection:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

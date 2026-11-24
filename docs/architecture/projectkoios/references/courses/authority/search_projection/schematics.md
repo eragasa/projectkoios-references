@@ -2,11 +2,13 @@
 
 ```mermaid
 flowchart LR
-    Input[Typed owner input] --> Capability[courses.authority.search_projection]
-    Capability --> Result[Immutable typed result]
-    Evidence[(Owner evidence)] --> Capability
+    Evidence[(Replay-current owner evidence)] --> Producer[Projection actionizer]
+    Producer --> Projection[SearchReferenceAuthorityProjection]
+    Request[Path-free expected identities] --> Reader[Strict read actionizer]
+    Source[Read-only bytes source port] --> Reader
+    Reader --> Loaded[Correlated exact typed projection]
 ```
 
-The module groups contracts with one lifecycle and dependency direction; it is not a one-class compatibility façade.
+The producer emits the defining type. The read leaf verifies expected byte facts before strict canonical decoding and constructor-based identity reconstruction. It has no filesystem or catalog dependency.
 
 - [Overview](index.md)

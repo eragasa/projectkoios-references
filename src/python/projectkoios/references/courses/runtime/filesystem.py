@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Never
 
 from projectkoios.base import DataObjectActionizer
 from projectkoios.references.biblatex import load_bibliography
@@ -26,6 +27,11 @@ from projectkoios.references.courses.authority.evidence import (
     RenderedEntryCandidateBinding,
     RuntimeAssetAvailability,
 )
+from projectkoios.references.courses.authority.search_projection import (
+    SearchReferenceAuthorityProjectionBytesReadResult,
+    SearchReferenceAuthorityProjectionReadError,
+    SearchReferenceAuthorityProjectionReadRequest,
+)
 from projectkoios.references.courses.authority.service import (
     CourseReferenceAuthorityEvidenceLoadRequest,
     CourseReferenceAuthorityEvidenceLoadResult,
@@ -39,6 +45,7 @@ from projectkoios.references.path_safety import (
     PlaceholderStatus,
     RootStorageClass,
     read_path_bytes,
+    validate_root_alias,
 )
 
 from .configuration import (
@@ -62,6 +69,79 @@ type AssetLinkageValue = tuple[
     tuple[str, ...],
     tuple[IngestionArtifactAuthorityLink, ...],
 ]
+
+
+class FilesystemSearchReferenceAuthorityProjectionBytesReadActionizer(
+    DataObjectActionizer[
+        SearchReferenceAuthorityProjectionReadRequest,
+        SearchReferenceAuthorityProjectionBytesReadResult,
+    ]
+):
+    """Read one bounded projection through an explicit filesystem root."""
+
+    __slots__ = (
+        "_path",
+        "_placeholder_probe",
+        "_root_alias",
+        "_storage_class",
+    )
+
+    def __init__(
+        self,
+        *,
+        path: Path,
+        root_alias: str,
+        storage_class: RootStorageClass,
+        placeholder_probe: CloudPlaceholderProbe | None = None,
+    ) -> None:
+        """Bind location and storage capabilities outside semantic identity."""
+        if not isinstance(path, Path):
+            raise TypeError("path must be a Path")
+        validate_root_alias(root_alias)
+        if not isinstance(storage_class, RootStorageClass):
+            raise TypeError("storage_class must be a RootStorageClass")
+        self._path = path
+        self._root_alias = root_alias
+        self._storage_class = storage_class
+        self._placeholder_probe = placeholder_probe
+
+    def action(
+        self,
+        *,
+        request: SearchReferenceAuthorityProjectionReadRequest,
+    ) -> SearchReferenceAuthorityProjectionBytesReadResult:
+        """Return descriptor-confined bytes with no location in the result."""
+        if type(request) is not SearchReferenceAuthorityProjectionReadRequest:
+            raise TypeError("request has an invalid type")
+        content: bytes | None = None
+        unavailable = False
+        try:
+            content = read_path_bytes(
+                self._path,
+                label="Search reference authority projection",
+                root_alias=self._root_alias,
+                storage_class=self._storage_class,
+                placeholder_probe=self._placeholder_probe,
+                max_bytes=request.expected_byte_size,
+            )
+        except PathSafetyError, OSError:
+            unavailable = True
+        if unavailable:
+            _raise_search_reference_authority_projection_read_error()
+        if content is None:
+            raise AssertionError("successful bounded read returned no bytes")
+        return SearchReferenceAuthorityProjectionBytesReadResult(
+            request_id=request.request_id,
+            content=content,
+        )
+
+
+def _raise_search_reference_authority_projection_read_error() -> Never:
+    """Raise the path-free owner error outside the caught exception context."""
+    error = SearchReferenceAuthorityProjectionReadError()
+    error.__cause__ = None
+    error.__context__ = None
+    raise error
 
 
 class FilesystemCourseReferenceAuthorityEvidenceLoadActionizer(

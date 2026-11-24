@@ -11,6 +11,7 @@ Courses supplies ordered scope evidence; References validates and owns authority
 ## Public contracts
 
 - [FilesystemCourseReferenceAuthorityEvidenceLoadActionizer](FilesystemCourseReferenceAuthorityEvidenceLoadActionizer/index.md)
+- [FilesystemSearchReferenceAuthorityProjectionBytesReadActionizer](FilesystemSearchReferenceAuthorityProjectionBytesReadActionizer/index.md)
 
 ## Architecture views
 
