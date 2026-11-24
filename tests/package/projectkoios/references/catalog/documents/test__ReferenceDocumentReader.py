@@ -1,15 +1,41 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import projectkoios.base as base
 import projectkoios.references.catalog as catalog
 import projectkoios.references.identity as identity
 import projectkoios.references.models as models
+import projectkoios.references.review as review
 import pytest
 from projectkoios.references.filesystem.root.preflight.storage import (
     RootStorageClass,
 )
+
+
+class _CatalogAccessTrap:
+    """Fail if a PUBLIC read attempts private catalog access."""
+
+    def read_candidates(self) -> tuple[identity.ReferenceCandidate, ...]:
+        raise AssertionError("PUBLIC read accessed candidates")
+
+    def read_observations(
+        self,
+    ) -> tuple[identity.SourceBibliographyObservation, ...]:
+        raise AssertionError("PUBLIC read accessed observations")
+
+    def read_source_assets(
+        self,
+        *,
+        max_records: int | None = None,
+    ) -> tuple[models.SourceAssetRecord, ...]:
+        raise AssertionError(
+            f"PUBLIC read accessed assets with limit {max_records!r}"
+        )
+
+    def read_review_projection(self) -> review.ReviewProjection:
+        raise AssertionError("PUBLIC read accessed review state")
 
 
 def _registry() -> catalog.ReferenceDocumentRegistry:
@@ -109,12 +135,10 @@ def test__ReferenceDocumentReader__uses_explicit_reference_identity(
     assert document.publication_eligibility == "not-established"
 
 
-def test__ReferenceDocumentReader__public_is_empty_until_owner_decision(
-    tmp_path: Path,
-) -> None:
+def test__public_documents__are_empty_without_catalog_access() -> None:
     registry = _registry()
     reader = catalog.ReferenceDocumentReader(
-        catalog=_catalog(tmp_path / "references.sqlite3"),
+        catalog=_CatalogAccessTrap(),
         registry=registry,
     )
 
@@ -126,6 +150,26 @@ def test__ReferenceDocumentReader__public_is_empty_until_owner_decision(
     )
 
     assert result.documents == ()
+
+
+def test__public_lookup__fails_without_catalog_access() -> None:
+    registry = _registry()
+    reader = catalog.ReferenceDocumentReader(
+        catalog=_CatalogAccessTrap(),
+        registry=registry,
+    )
+
+    with pytest.raises(
+        catalog.ReferenceDocumentNotFound,
+        match="doc-01.*was not found",
+    ):
+        reader.action(
+            request=catalog.ReferenceDocumentReadRequest(
+                registry_id=registry.registry_id,
+                audience=catalog.ReferenceDocumentAudience.PUBLIC,
+                document_id="doc-01",
+            )
+        )
 
 
 def test__ReferenceDocumentReader__reads_one_document_without_search(
@@ -237,10 +281,20 @@ def test__ReferenceDocumentReader__rejects_unbound_asset_candidate(
 def test__ReferenceDocumentRegistry__round_trips_canonical_json() -> None:
     registry = _registry()
 
-    loaded = catalog.ReferenceDocumentRegistry.from_json(registry.to_json())
+    mapping = registry.to_dict()
+    encoded = registry.to_json()
+    loaded_mapping = json.loads(encoded)
+    loaded = catalog.ReferenceDocumentRegistry.from_json(encoded)
 
+    assert loaded_mapping == mapping
+    assert catalog.ReferenceDocumentRegistry.from_dict(mapping) == registry
     assert loaded == registry
     assert loaded.registry_id == registry.registry_id
+    assert loaded.bindings[0].to_dict() == mapping["documents"][0]
+    assert (
+        catalog.ReferenceDocumentBinding.from_dict(loaded.bindings[0].to_dict())
+        == loaded.bindings[0]
+    )
 
 
 def test__ReferenceDocumentRegistry__rejects_duplicate_filenames() -> None:

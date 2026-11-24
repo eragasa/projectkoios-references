@@ -34,7 +34,9 @@ the [source-backed citation graph](docs/citation-graph.md), the
 materialization](docs/reference-assets.md), and the Proposed
 [acquisition-observation contract](docs/contracts/acquisition-observation.md).
 Remaining metadata and validation work is decomposed in the
-[citation and review backlog](docs/tasks/citation-review-backlog.md).
+[citation and review backlog](docs/tasks/citation-review-backlog.md). Package
+versioning, supported Python, JSON composition, and local verification follow
+the [release and support policy](docs/release-support-policy.md).
 
 The initial [`ksdft2effmass` review seed](collections/ksdft2effmass/README.md)
 preserves the external application's citation keys and records a conservative,

@@ -60,6 +60,43 @@ class ReferenceDocumentBinding(base.DataObjectModel):
                 "reference document filename must be a basename"
             )
 
+    def to_dict(self) -> dict[str, str]:
+        """Return the exact domain-owned binding mapping."""
+        return {
+            "collection_id": self.collection_id,
+            "collection_label": self.collection_label,
+            "document_id": self.document_id,
+            "filename": self.filename,
+            "proposed_citekey": self.proposed_citekey,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        """Reconstruct one binding from its exact mapping."""
+        fields = {
+            "collection_id",
+            "collection_label",
+            "document_id",
+            "filename",
+            "proposed_citekey",
+        }
+        if not isinstance(value, dict) or set(value) != fields:
+            raise ReferenceDocumentReadError(
+                "reference document binding fields differ"
+            )
+        document = cast(dict[str, object], value)
+        if any(not isinstance(document[name], str) for name in fields):
+            raise ReferenceDocumentReadError(
+                "reference document binding values are malformed"
+            )
+        return cls(
+            document_id=cast(str, document["document_id"]),
+            proposed_citekey=cast(str, document["proposed_citekey"]),
+            collection_id=cast(str, document["collection_id"]),
+            collection_label=cast(str, document["collection_label"]),
+            filename=cast(str, document["filename"]),
+        )
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ReferenceDocumentRegistry(base.DataObjectModel):
@@ -104,7 +141,7 @@ class ReferenceDocumentRegistry(base.DataObjectModel):
                 raise ReferenceDocumentReadError(
                     f"reference document registry has duplicate {label}"
                 )
-        payload = [asdict(binding) for binding in self.bindings]
+        payload = [binding.to_dict() for binding in self.bindings]
         object.__setattr__(
             self,
             "registry_id",
@@ -125,18 +162,16 @@ class ReferenceDocumentRegistry(base.DataObjectModel):
             + hashlib.sha256(content).hexdigest()
         )
 
+    def to_dict(self) -> dict[str, object]:
+        """Return the exact versioned registry mapping."""
+        return {
+            "schema_version": 1,
+            "documents": [binding.to_dict() for binding in self.bindings],
+        }
+
     @classmethod
-    def from_json(cls, content: str) -> Self:
-        """Load one exact registry without performing filesystem discovery."""
-        try:
-            value = json.loads(
-                content,
-                object_pairs_hook=cls._without_duplicate_members,
-            )
-        except (json.JSONDecodeError, UnicodeError) as error:
-            raise ReferenceDocumentReadError(
-                "reference document registry is malformed JSON"
-            ) from error
+    def from_dict(cls, value: object) -> Self:
+        """Reconstruct one registry from its exact versioned mapping."""
         if not isinstance(value, dict) or set(value) != {
             "schema_version",
             "documents",
@@ -153,53 +188,38 @@ class ReferenceDocumentRegistry(base.DataObjectModel):
             raise ReferenceDocumentReadError(
                 "reference document registry entries are malformed"
             )
-        bindings: list[ReferenceDocumentBinding] = []
-        fields = {
-            "collection_id",
-            "collection_label",
-            "document_id",
-            "filename",
-            "proposed_citekey",
-        }
-        for raw_document in raw_documents:
-            if (
-                not isinstance(raw_document, dict)
-                or set(raw_document) != fields
-            ):
-                raise ReferenceDocumentReadError(
-                    "reference document binding fields differ"
-                )
-            document = cast(dict[str, object], raw_document)
-            if any(not isinstance(document[name], str) for name in fields):
-                raise ReferenceDocumentReadError(
-                    "reference document binding values are malformed"
-                )
-            bindings.append(
-                ReferenceDocumentBinding(
-                    document_id=cast(str, document["document_id"]),
-                    proposed_citekey=cast(str, document["proposed_citekey"]),
-                    collection_id=cast(str, document["collection_id"]),
-                    collection_label=cast(str, document["collection_label"]),
-                    filename=cast(str, document["filename"]),
-                )
+        return cls(
+            bindings=tuple(
+                ReferenceDocumentBinding.from_dict(raw_document)
+                for raw_document in raw_documents
             )
-        return cls(bindings=tuple(bindings))
+        )
 
     def to_json(self) -> str:
-        """Return canonical portable registry JSON."""
-        value = {
-            "schema_version": 1,
-            "documents": [asdict(binding) for binding in self.bindings],
-        }
+        """Serialize canonical JSON through :meth:`to_dict`."""
         return (
             json.dumps(
-                value,
+                self.to_dict(),
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=True,
             )
             + "\n"
         )
+
+    @classmethod
+    def from_json(cls, content: str) -> Self:
+        """Parse JSON and reconstruct through :meth:`from_dict`."""
+        try:
+            value = json.loads(
+                content,
+                object_pairs_hook=cls._without_duplicate_members,
+            )
+        except (json.JSONDecodeError, UnicodeError) as error:
+            raise ReferenceDocumentReadError(
+                "reference document registry is malformed JSON"
+            ) from error
+        return cls.from_dict(value)
 
     @staticmethod
     def _without_duplicate_members(

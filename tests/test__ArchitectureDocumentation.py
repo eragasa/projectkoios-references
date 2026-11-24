@@ -268,6 +268,19 @@ _MERMAID = re.compile(
 )
 
 
+def _contains_python_source(path: Path) -> bool:
+    """Return whether a path contains tracked-shape Python source.
+
+    Ignored bytecode and empty directories left by branch switches are not
+    implementation modules.
+    """
+    if path.is_file():
+        return path.suffix == ".py"
+    if not path.is_dir():
+        return False
+    return any(candidate.is_file() for candidate in path.rglob("*.py"))
+
+
 def _public_classes(path: Path) -> set[str]:
     """Evaluate deterministic architecture coverage.
 
@@ -377,6 +390,18 @@ def _source_modules() -> set[str]:
     return modules
 
 
+def test__source_shape__ignores_cache_only_directories(tmp_path: Path) -> None:
+    """Treat ignored bytecode as workspace residue, not source structure."""
+    stale = tmp_path / "removed_package" / "__pycache__"
+    stale.mkdir(parents=True)
+    (stale / "module.cpython-314.pyc").write_bytes(b"ignored")
+
+    assert not _contains_python_source(stale.parent)
+
+    (stale.parent / "module.py").write_text("value = 1\n", encoding="utf-8")
+    assert _contains_python_source(stale.parent)
+
+
 def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     """Evaluate deterministic architecture coverage.
 
@@ -386,8 +411,8 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         The architecture assertion completes without an artifact.
     """
     source_root = REPOSITORY / "src" / "python" / "projectkoios" / "references"
-    assert not (source_root / "asset_application.py").exists()
-    assert not (source_root / "asset_application").exists()
+    assert not _contains_python_source(source_root / "asset_application.py")
+    assert not _contains_python_source(source_root / "asset_application")
     asset = source_root / "asset"
     asset_application = asset / "application"
     assert asset_application.is_dir()
@@ -411,9 +436,9 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         if source.name == "__init__.py":
             continue
         assert len(_public_classes(source)) == 1, source
-    assert not (source_root / "catalog.py").exists()
-    assert not (source_root / "document_reference.py").exists()
-    assert not (source_root / "document_reference").exists()
+    assert not _contains_python_source(source_root / "catalog.py")
+    assert not _contains_python_source(source_root / "document_reference.py")
+    assert not _contains_python_source(source_root / "document_reference")
     document = source_root / "document"
     document_reference = document / "reference"
     assert document_reference.is_dir()
@@ -426,7 +451,7 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         "replay/same_store",
         "replay/same",
     ):
-        assert not (document_reference / obsolete).exists()
+        assert not _contains_python_source(document_reference / obsolete)
     for initializer in (
         document / "__init__.py",
         *document_reference.rglob("__init__.py"),
@@ -452,15 +477,19 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
         "test__DocumentReferenceOperations.py"
     ).is_file()
     assert (source_root / "catalog" / "__init__.py").is_file()
-    assert not (source_root / "collection_reconciliation.py").exists()
-    assert not (source_root / "collection_reconciliation").exists()
+    assert not _contains_python_source(
+        source_root / "collection_reconciliation.py"
+    )
+    assert not _contains_python_source(
+        source_root / "collection_reconciliation"
+    )
     assert (
         source_root / "collections" / "reconciliation" / "__init__.py"
     ).is_file()
-    assert not (source_root / "citation_document.py").exists()
-    assert not (source_root / "citation_document").exists()
+    assert not _contains_python_source(source_root / "citation_document.py")
+    assert not _contains_python_source(source_root / "citation_document")
     citation = source_root / "citation"
-    assert not (citation / "document").exists()
+    assert not _contains_python_source(citation / "document")
     for flat_name in (
         "citation_closure.py",
         "citation_draft.py",
@@ -478,8 +507,8 @@ def test__architecture_docs__cover_exact_touched_vertical_slices() -> None:
     )
     assert (source_root / "citations" / "base.py").is_file()
     assert (source_root / "bibliography" / "base.py").is_file()
-    assert not (source_root / "path_safety").exists()
-    assert not (source_root / "ingestion_evidence.py").exists()
+    assert not _contains_python_source(source_root / "path_safety")
+    assert not _contains_python_source(source_root / "ingestion_evidence.py")
     for hierarchy in (
         source_root / "citation" / "key",
         source_root / "filesystem",
