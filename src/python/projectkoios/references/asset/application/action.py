@@ -24,7 +24,12 @@ ASSET_APPLICATION_OPERATION_ACTION_ID = (
 
 
 @final
-class AssetApplicationOperation(DataObjectActionizer):
+class AssetApplicationOperation(
+    DataObjectActionizer[
+        AssetApplicationOperationRequest,
+        AssetApplicationOperationResult,
+    ]
+):
     """Apply one authorized asset as an indivisible owner operation."""
 
     action_id = ASSET_APPLICATION_OPERATION_ACTION_ID
