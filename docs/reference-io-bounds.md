@@ -30,7 +30,8 @@ output publication, and do not publish partial evidence.
 | collection reconciliation | 10,000 | 4 GB | 40 GB | 10,000 CSV rows | CSV 50 MB; JSON 20 MB/depth 64; TeX 50 MB |
 | reconciliation package verification | 100,000 | 50 MB | 100 MB | 100,000 entries | manifest 20 MB; JSON depth 64 |
 | reference validation | 20,000 | 1 MB note | 50 MB notes | 10,000 candidates | directory entries bounded |
-| metadata provider/cache | 1,000 cache files | 2 MB response / 3 MB cache | 500 MB per-request cache replay | 2,000 directory entries | JSON depth 64; provider field bounds |
+| Crossref provider/cache | 1,000 cache files | 2 MB response / 3 MB cache | 500 MB per-request cache replay | 2,000 directory entries | JSON depth 64; provider field bounds |
+| OpenAlex works search | n/a | 2 MB response | 2 MB per request | 100 works; 1,024 authors/work | JSON depth 16; 100,000 JSON values/keys; 512 KB aggregate JSON text; query 500 characters; counts at most 1,000,000,000; cost at most USD 1,000,000 with 8 decimal places / 16 fixed characters; basic paging at most 10,000 results |
 | citation graph import | 3 CSV files | 2 MB | 4 MB | 128 sources; 10,000 candidates and edges | 2,000 direct edges per source; JSON depth 64 |
 | review record/replay | n/a | n/a | JSON 20 MB | 256 records; 64 evidence IDs per record | JSON depth 64; text 4,096 bytes; content IDs 512 bytes |
 

@@ -240,9 +240,13 @@ receiving inferred authority. Authorized
 roots are resolved and identity-bound once; traversal, root replacement, and
 symlink files or directories fail closed before bytes are read, hashed, copied,
 or reported. Confined writes use no-follow directory descriptors and atomic
-same-directory publication. Provider responses are cached locally under
-`.koios/` when requested. The immutable provider observation and cache boundary
-is documented in
+same-directory publication. Crossref provider responses are cached locally
+under `.koios/` when requested. The separate OpenAlex works-search provider
+performs one bounded, read-only request to a fixed endpoint, supports anonymous
+first-page use and an optional bearer API key, returns only typed untrusted
+provider observations plus credential-free retrieval provenance, and has no
+cache, catalog mutation, or promotion path. The immutable provider boundaries
+are documented in
 [`docs/reference-metadata-providers.md`](docs/reference-metadata-providers.md).
 
 Recurring lawful acquisition uses a separate version-4 manifest under the

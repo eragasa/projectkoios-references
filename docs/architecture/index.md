@@ -51,6 +51,7 @@ manually maintained page count.
 - `projectkoios.references.io_limits`
 - `projectkoios.references.models`
 - `projectkoios.references.naming`
+- `projectkoios.references.openalex`
 - `projectkoios.references.pdf_corpus`
 - `projectkoios.references.provided_intake`
 - `projectkoios.references.reconciliation_package`
